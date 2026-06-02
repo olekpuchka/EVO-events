@@ -1,0 +1,9 @@
+.git
+.github
+.gitignore
+.vscode
+node_modules
+*.log
+README.md
+LICENSE
+data/
