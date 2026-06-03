@@ -1,0 +1,14 @@
+{
+  "name": "evo-events-telegram-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot that mentions all group members with @all",
+  "type": "module",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "node --watch bot.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "grammy": "^1.30.0"
+  }
+}

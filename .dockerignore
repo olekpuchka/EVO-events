@@ -1,0 +1,8 @@
+.git
+.github
+.gitignore
+.env*
+node_modules
+*.log
+README.md
+ecosystem.config.cjs

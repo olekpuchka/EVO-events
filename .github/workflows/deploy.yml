@@ -1,0 +1,29 @@
+name: Deploy Bot
+
+on:
+  push:
+    branches: [master]
+
+jobs:
+  build-and-push:
+    name: Build & push to JustRunMy.App
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to JustRunMy.App registry
+        uses: docker/login-action@v3
+        with:
+          # Registry URL — copy from your app's "Docker Registry Push" tab in the panel
+          registry: ${{ secrets.JRMA_REGISTRY }}
+          username: ${{ secrets.JRMA_USERNAME }}
+          password: ${{ secrets.JRMA_TOKEN }}
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          # JustRunMy.App triggers a redeploy when a new image is pushed with the app tag
+          tags: ${{ secrets.JRMA_REGISTRY }}:latest
