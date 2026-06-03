@@ -25,5 +25,6 @@ jobs:
         with:
           context: .
           push: true
+          provenance: false
           # JustRunMy.App triggers a redeploy when a new image is pushed with the app tag
           tags: ${{ secrets.JRMA_REGISTRY }}:latest
