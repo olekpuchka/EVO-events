@@ -7,7 +7,7 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 ## Features
 
 - Mention all group members with `@all`
-- Attach an event name and time: `@all CS 22:00`
+- Attach an event name and time: `@all CS 22:00` or `@all CS 22-00`
 - **RSVP buttons** — 🍌 Joining / 🚫 Not joining, live-updated on the pinned message (only for timed events); tapping the same button twice is a no-op — message is only edited when the status actually changes
 - **Poster auto-joins** — the person who posts the event is automatically RSVPed as joining
 - **Squad cap at 5** — buttons hidden and event locked with a random hype message when 5 people join; the cap is enforced server-side, so a tap on a stale (not-yet-synced) join button can't push the squad past 5
@@ -27,11 +27,13 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 
 | Trigger | Effect |
 |---|---|
-| `@all CS 22:00` | Mentions all, pins event with RSVP buttons, schedules reminder & unpin |
+| `@all CS 22:00` or `@all CS 22-00` | Mentions all, pins event with RSVP buttons, schedules reminder & unpin |
 | `@all CS` | Mentions all without pinning or RSVP (no time = no event) |
 | `/cancel` | Cancel the current active event (unpins + deletes event message + deletes reminder if sent) — **any group member can cancel**, no admin check |
 | `/mute` | Opt out of @all mentions |
 | `/unmute` | Opt into @all mentions |
+| `/faceit <nickname>` | Link your FACEIT account — validates against the API and saves your level |
+| `/result` | Post your latest CS2 match as a map photo — shows all registered group members who played in that match, sorted by ADR, with K/D/A, ADR and team Elo |
 
 ## Event lifecycle
 
@@ -66,6 +68,7 @@ If no time is given (`@all CS`), the bot mentions everyone but does not pin, tra
 2. In **Environment**, set:
    - `BOT_TOKEN` = your Telegram bot token
    - `DATA_DIR` = `/app/data`
+   - `FACEIT_API_KEY` = your FACEIT API key (get one free at [developers.faceit.com](https://developers.faceit.com))
 3. Mount a persistent volume at `/app/data`
 
 ### Automated deploy via GitHub Actions
@@ -100,7 +103,8 @@ EVO-events/
 │       └── deploy.yml # Auto-deploy to JustRunMy.App on v* tag push
 ├── src/
 │   ├── db.js          # SQLite — members, events, RSVPs, scheduled jobs
-│   ├── handlers.js    # mentionAll, handleRsvp, cancelEvent, mute/unmute, sendReminder
+│   ├── faceit.js      # FACEIT API client — player lookup, match history, stats, map images
+│   ├── handlers.js    # mentionAll, handleRsvp, cancelEvent, mute/unmute, sendReminder, FACEIT handlers
 │   └── helpers.js     # buildMention, escapeHtml, splitIntoChunks, autoDelete
 ├── bot.js             # Entry point — commands, scheduler loop, graceful shutdown
 ├── Dockerfile

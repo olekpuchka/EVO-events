@@ -18,6 +18,8 @@ db.exec(`
     first_name TEXT   NOT NULL,
     last_name TEXT,
     notifications_enabled INTEGER NOT NULL DEFAULT 1,
+    faceit_player_id  TEXT,
+    faceit_level      INTEGER,
     PRIMARY KEY (chat_id, user_id)
   )
 `);
@@ -229,6 +231,41 @@ export function deleteScheduledReminder(chatId, messageId) {
 
 export function getActiveEvent(chatId) {
   return stmtGetActiveEvent.get(String(chatId)) ?? null;
+}
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_settings (
+    chat_id TEXT PRIMARY KEY,
+    last_result_match_id TEXT
+  )
+`);
+
+const stmtSetFaceit = db.prepare(`UPDATE members SET faceit_player_id = ?, faceit_level = ? WHERE chat_id = ? AND user_id = ?`);
+const stmtGetFaceitMembers = db.prepare(`
+  SELECT user_id, faceit_player_id, faceit_level
+  FROM members WHERE chat_id = ? AND faceit_player_id IS NOT NULL
+`);
+
+export function setFaceitAccount(chatId, userId, playerId, level) {
+  stmtSetFaceit.run(playerId, level, String(chatId), userId);
+}
+
+export function getFaceitMembers(chatId) {
+  return stmtGetFaceitMembers.all(String(chatId));
+}
+
+const stmtGetLastResult = db.prepare(`SELECT last_result_match_id FROM chat_settings WHERE chat_id = ?`);
+const stmtSetLastResult = db.prepare(`
+  INSERT INTO chat_settings (chat_id, last_result_match_id) VALUES (?, ?)
+  ON CONFLICT (chat_id) DO UPDATE SET last_result_match_id = excluded.last_result_match_id
+`);
+
+export function getLastResultMatch(chatId) {
+  return stmtGetLastResult.get(String(chatId))?.last_result_match_id ?? null;
+}
+
+export function setLastResultMatch(chatId, matchId) {
+  stmtSetLastResult.run(String(chatId), matchId);
 }
 
 export function deleteEventData(chatId, messageId) {

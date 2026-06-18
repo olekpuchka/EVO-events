@@ -1,10 +1,11 @@
-import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvent, deleteEventData, getReminderMessageId } from "./db.js";
+import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvent, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, getLastResultMatch, setLastResultMatch } from "./db.js";
 import { buildMention, escapeHtml, splitIntoChunks, autoDelete } from "./helpers.js";
+import { getPlayer, getRecentMatches, getMatchStats, getMatchDetails, getMapImageUrl } from "./faceit.js";
 
 // Parse HH:MM from a message string. Interprets the time as Kyiv (Europe/Kyiv) timezone.
 // Returns Unix timestamp (today or tomorrow Kyiv time) or null.
 function parseEventTime(text) {
-  const match = text.match(/(\d{1,2}):(\d{2})/);
+  const match = text.match(/(\d{1,2})[:-](\d{2})/);
   if (!match) return null;
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
@@ -24,6 +25,32 @@ function parseEventTime(text) {
 
 
 const MAX_PLAYERS = 5;
+
+const WIN_PHRASES = [
+  "WE ARE SO BACK 🍌🍌🍌",
+  "Banana squad NEVER loses 👑",
+  "Certified elite performance right there 🔥",
+  "They never stood a chance. Not even close. 😤",
+  "Different breed, different level, different game 🚀",
+  "ELO incoming, boys. ELO INCOMING. 📈",
+  "That's what peak CS looks like. Bow down. 🏆",
+  "Opponents just got cooked, seasoned and served 🍳",
+  "We don't lose, we just occasionally don't win 💅",
+  "Another day, another domination. Routine. 😎",
+];
+
+const LOSS_PHRASES = [
+  "At least one of them definitely had a spinbot 🌀",
+  "FACEIT anticheat was clearly on vacation ✈️",
+  "Their crosshair placement was suspiciously perfect 👁️",
+  "We lost to highly skilled legitimate players 😤",
+  "That one guy's 97% HS rate was totally normal 🎯",
+  "Enemy team: 2-hour-old accounts, god-tier aim 🆕",
+  "We wuz robbed. By technology. 💀",
+  "Nothing to see here. Just pure skill. Against us. 😶",
+  "FACEIT points donated to the community 🫳",
+  "Their VAC-clean accounts played suspiciously well 🤔",
+];
 
 const HYPE_PHRASES = [
   "Squad locked in! Let's GOOOOOOO! 🚀",
@@ -166,11 +193,7 @@ export async function mentionAll(ctx, message = "") {
     console.log(`[mention] "${message}"`);
   }
 
-  try {
-    await ctx.deleteMessage();
-  } catch (err) {
-    console.error("[event] delete trigger failed:", err.message);
-  }
+  try { await ctx.deleteMessage(); } catch {}
 }
 
 export async function cancelEvent(ctx) {
@@ -276,9 +299,10 @@ export async function handleRsvp(ctx) {
 
   const rsvps = getRsvps(chatId, messageId);
   const joining = rsvps.filter(r => r.status === "join");
+  const notJoining = rsvps.filter(r => r.status === "not_join");
   const isFull = joining.length >= MAX_PLAYERS;
   const fullPhrase = isFull ? pickHypePhrase() : "";
-  console.log(`[rsvp] ${status === "join" ? "joined" : "not joining"} (${joining.length}/${MAX_PLAYERS})${isFull ? " — squad full" : ""}`);
+  console.log(`[rsvp] ${status === "join" ? "joined" : "not joining"} (🍌 ${joining.length}/${MAX_PLAYERS}, 🚫 ${notJoining.length})${isFull ? " — squad full" : ""}`);
   const newText = row.base_text + buildRsvpSection(rsvps) + (isFull ? `\n\n🔥 <b>${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS})</b> 🔒` : "");
   const keyboard = isFull ? { inline_keyboard: [] } : buildKeyboard();
 
@@ -324,6 +348,178 @@ function buildReminderText(row, joining, phrase) {
     (eventName ? `\n\n${eventName}` : "") +
     `\n\n🍌 <b>Joining (${joining.length}):</b>\n${joining.map(buildMention).join(", ")}` +
     `\n\n🔥 <b>${phrase}</b>`
+  );
+}
+
+export async function registerFaceit(ctx) {
+  if (ctx.chat.type === "private") return;
+  const nickname = ctx.match?.trim();
+  if (!nickname) {
+    const reply = await ctx.reply("Usage: /faceit &lt;your FACEIT nickname&gt;", { parse_mode: "HTML" });
+    autoDelete(ctx, reply);
+    return;
+  }
+
+  let player;
+  try {
+    player = await getPlayer(nickname);
+  } catch (err) {
+    console.error("[faceit] API error:", err.message);
+    const reply = await ctx.reply("FACEIT API is unavailable, try again later.");
+    autoDelete(ctx, reply);
+    return;
+  }
+
+  if (!player) {
+    const reply = await ctx.reply(`Player "${escapeHtml(nickname)}" not found on FACEIT.`, { parse_mode: "HTML" });
+    autoDelete(ctx, reply);
+    return;
+  }
+
+  const cs2 = player.games?.cs2;
+  if (!cs2) {
+    const reply = await ctx.reply(`"${escapeHtml(player.nickname)}" has no CS2 stats on FACEIT.`, { parse_mode: "HTML" });
+    autoDelete(ctx, reply);
+    return;
+  }
+
+  trackMember(ctx.chat.id, ctx.from);
+  setFaceitAccount(ctx.chat.id, ctx.from.id, player.player_id, cs2.skill_level);
+  console.log(`[faceit] registered "${player.nickname}"`);
+
+  const reply = await ctx.reply(
+    `Linked! <b>${escapeHtml(player.nickname)}</b> (${cs2.skill_level ? `${cs2.skill_level} level` : "? Unranked"})`,
+    { parse_mode: "HTML" }
+  );
+  autoDelete(ctx, reply);
+  try { await ctx.deleteMessage(); } catch {}
+}
+
+export async function fetchResult(ctx) {
+  if (ctx.chat.type === "private") return;
+
+  const members = getFaceitMembers(ctx.chat.id);
+  const caller = members.find(m => m.user_id === ctx.from.id);
+  if (!caller) {
+    const reply = await ctx.reply("Link your FACEIT account first with /faceit &lt;nickname&gt;.", { parse_mode: "HTML" });
+    autoDelete(ctx, reply);
+    return;
+  }
+
+  const matches = await getRecentMatches(caller.faceit_player_id, 1).catch(err => {
+    console.error("[faceit] match history failed:", err.message);
+    return null;
+  });
+  if (!matches) {
+    const reply = await ctx.reply("Couldn't reach FACEIT right now, try again later.");
+    autoDelete(ctx, reply);
+    return;
+  }
+  if (!matches.length) {
+    const reply = await ctx.reply("No recent FACEIT match found. Play a match first, then try again.");
+    autoDelete(ctx, reply);
+    return;
+  }
+
+  const matchId = matches[0].match_id;
+  if (getLastResultMatch(ctx.chat.id) === matchId) {
+    const reply = await ctx.reply("Already posted this match. Play another one first! 🎮");
+    autoDelete(ctx, reply);
+    return;
+  }
+
+  let stats, matchDetails;
+  try {
+    [stats, matchDetails] = await Promise.all([
+      getMatchStats(matchId),
+      getMatchDetails(matchId),
+    ]);
+  } catch (err) {
+    console.error("[faceit] stats fetch failed:", err.message);
+    const reply = await ctx.reply("Couldn't fetch match stats right now.");
+    autoDelete(ctx, reply);
+    return;
+  }
+  if (!stats || !matchDetails) {
+    const reply = await ctx.reply("That match has been voided or is unavailable.");
+    autoDelete(ctx, reply);
+    return;
+  }
+
+  const registeredIds = new Map(members.map(m => [m.faceit_player_id, { level: m.faceit_level }]));
+  const mapId = stats.rounds?.[0]?.round_stats?.Map;
+  const imageUrl = getMapImageUrl(matchDetails, mapId);
+
+  const factions = Object.values(matchDetails.teams ?? {});
+  const ourFaction = factions.find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
+  const theirFaction = factions.find(f => f !== ourFaction);
+  console.log("[faceit] ourFaction rating:", ourFaction?.stats?.rating, "theirFaction rating:", theirFaction?.stats?.rating);
+  const elo = ourFaction?.stats?.rating && theirFaction?.stats?.rating
+    ? { ours: ourFaction.stats.rating, theirs: theirFaction.stats.rating }
+    : null;
+
+  const text = formatMatchResult(stats, registeredIds, elo, matchId);
+  if (!text) {
+    const reply = await ctx.reply("Couldn't parse match data.");
+    autoDelete(ctx, reply);
+    return;
+  }
+
+  try {
+    if (imageUrl) {
+      await ctx.replyWithPhoto(imageUrl, { caption: text, parse_mode: "HTML" });
+    } else {
+      await ctx.reply(text, { parse_mode: "HTML" });
+    }
+  } catch {
+    await ctx.reply(text, { parse_mode: "HTML" });
+  }
+  setLastResultMatch(ctx.chat.id, matchId);
+  console.log("[faceit] result posted");
+  try { await ctx.deleteMessage(); } catch {}
+}
+
+function formatMatchResult(stats, registeredIds, elo = null, matchId = null) {
+  const round = stats.rounds?.[0];
+  if (!round) return null;
+  let ourTeam = null, theirScore = "?";
+
+  for (const team of round.teams ?? []) {
+    if (team.players.some(p => registeredIds.has(p.player_id))) ourTeam = team;
+    else theirScore = team.team_stats?.["Final Score"] ?? "?";
+  }
+  if (!ourTeam) return null;
+
+  const won = ourTeam.team_stats?.["Team Win"] === "1";
+  const ourScore = ourTeam.team_stats?.["Final Score"] ?? "?";
+
+  const registered = ourTeam.players.filter(p => registeredIds.has(p.player_id));
+
+  const rows = registered
+    .sort((a, b) => Number(b.player_stats?.ADR ?? 0) - Number(a.player_stats?.ADR ?? 0))
+    .map(p => {
+      const s = p.player_stats ?? {};
+      const lvl = registeredIds.get(p.player_id)?.level ?? 1;
+      return `· <b>${escapeHtml(p.nickname)}</b> (${lvl} level) — ${s.Kills ?? "?"}/${s.Deaths ?? "?"}/${s.Assists ?? "?"} · ${s.ADR ?? "?"} ADR`;
+    });
+
+  if (!rows.length) return null;
+
+  const phrase = won
+    ? WIN_PHRASES[Math.floor(Math.random() * WIN_PHRASES.length)]
+    : LOSS_PHRASES[Math.floor(Math.random() * LOSS_PHRASES.length)];
+
+  const eloStr = elo ? ` (${elo.ours} Elo vs ${elo.theirs} Elo)` : "";
+
+  const matchLink = matchId
+    ? `\n\n<a href="https://www.faceit.com/en/cs2/room/${matchId}/scoreboard">View on FACEIT</a>`
+    : "";
+
+  return (
+    `${won ? "🍌" : "❌"} ${ourScore}:${theirScore}${eloStr}\n\n` +
+    rows.join("\n") +
+    `\n\n<i>${phrase}</i>` +
+    matchLink
   );
 }
 
