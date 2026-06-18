@@ -17,5 +17,10 @@ jobs:
         with:
           node-version: 24
 
+      - name: Create GitHub Release
+        run: gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --generate-notes
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Deploy to JustRunMy.App
         run: git push "${{ secrets.JUSTRUNMY_DEPLOY_URL }}" HEAD:refs/heads/deploy
