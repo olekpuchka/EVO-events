@@ -143,7 +143,7 @@ export async function mentionAll(ctx, message = "") {
     try {
       saveEvent(ctx.chat.id, lastSent.message_id, fullText, eventTime);
     } catch (err) {
-      console.error(`[event] save failed chat=${ctx.chat.id} message=${lastSent.message_id}:`, err.message);
+      console.error("[event] save failed:", err.message);
     }
     saveRsvp(ctx.chat.id, lastSent.message_id, ctx.from, "join");
 
@@ -154,21 +154,22 @@ export async function mentionAll(ctx, message = "") {
       if (reminderAt > Math.floor(Date.now() / 1000)) {
         scheduleReminder(ctx.chat.id, lastSent.message_id, reminderAt);
       }
-      console.log(`[event] created chat=${ctx.chat.id} message=${lastSent.message_id} time=${eventTime}`);
+      console.log(`[event] created "${message}"`);
     } catch (err) {
-      console.error(`[event] pin failed chat=${ctx.chat.id} message=${lastSent.message_id}:`, err.message);
+      console.error("[event] pin failed:", err.message);
     }
   } else {
     const chunks = splitIntoChunks(fullText);
     for (const chunk of chunks) {
       lastSent = await ctx.reply(chunk, { parse_mode: "HTML" });
     }
+    console.log(`[mention] "${message}"`);
   }
 
   try {
     await ctx.deleteMessage();
   } catch (err) {
-    console.error(`[event] delete trigger failed chat=${ctx.chat.id}:`, err.message);
+    console.error("[event] delete trigger failed:", err.message);
   }
 }
 
@@ -191,7 +192,7 @@ export async function cancelEvent(ctx) {
   }
   deleteEventData(ctx.chat.id, message_id);
   clearReminderPhrase(ctx.chat.id, message_id);
-  console.log(`[cancel] chat=${ctx.chat.id} message=${message_id} by=${ctx.from.id}`);
+  console.log("[cancel] done");
 
   try { await ctx.deleteMessage(); } catch {}
 }
@@ -206,7 +207,7 @@ export async function muteNotifications(ctx) {
   }
   trackMember(ctx.chat.id, ctx.from);
   setNotifications(ctx.chat.id, ctx.from.id, false);
-  console.log(`[mute] chat=${ctx.chat.id} user=${ctx.from.id}`);
+  console.log("[mute] done");
   const reply = await ctx.reply("You've been muted. You won't be mentioned by @all in this group.\nUse /unmute to re-enable.");
   autoDelete(ctx, reply);
 }
@@ -221,7 +222,7 @@ export async function unmuteNotifications(ctx) {
   }
   trackMember(ctx.chat.id, ctx.from);
   setNotifications(ctx.chat.id, ctx.from.id, true);
-  console.log(`[unmute] chat=${ctx.chat.id} user=${ctx.from.id}`);
+  console.log("[unmute] done");
   const reply = await ctx.reply("You've been added to the mention list. You'll be mentioned by @all in this group.");
   autoDelete(ctx, reply);
 }
@@ -248,7 +249,7 @@ export async function handleRsvp(ctx) {
 
   const row = getEventBaseText(chatId, messageId);
   if (!row) {
-    console.error(`[rsvp] no event found chat=${chatId} message=${messageId}`);
+    console.error("[rsvp] no active event found");
     await ctx.answerCallbackQuery({ text: "This event has already ended." });
     return;
   }
@@ -265,7 +266,7 @@ export async function handleRsvp(ctx) {
   if (status === "join") {
     const joiningNow = getRsvps(chatId, messageId).filter(r => r.status === "join");
     if (joiningNow.length >= MAX_PLAYERS) {
-      console.log(`[rsvp] chat=${chatId} user=${ctx.from.id} rejected — squad full`);
+      console.log("[rsvp] rejected — squad full");
       await ctx.answerCallbackQuery({ text: `🔒 Squad's already full (${MAX_PLAYERS}/${MAX_PLAYERS})!` });
       return;
     }
@@ -277,7 +278,7 @@ export async function handleRsvp(ctx) {
   const joining = rsvps.filter(r => r.status === "join");
   const isFull = joining.length >= MAX_PLAYERS;
   const fullPhrase = isFull ? pickHypePhrase() : "";
-  console.log(`[rsvp] chat=${chatId} user=${ctx.from.id} ${status} (${joining.length}/${MAX_PLAYERS})${isFull ? ' — squad full' : ''}`);
+  console.log(`[rsvp] ${status === "join" ? "joined" : "not joining"} (${joining.length}/${MAX_PLAYERS})${isFull ? " — squad full" : ""}`);
   const newText = row.base_text + buildRsvpSection(rsvps) + (isFull ? `\n\n🔥 <b>${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS})</b> 🔒` : "");
   const keyboard = isFull ? { inline_keyboard: [] } : buildKeyboard();
 
@@ -288,7 +289,7 @@ export async function handleRsvp(ctx) {
     });
   } catch (err) {
     if (!err.message?.includes("message is not modified")) {
-      console.error(`[rsvp] edit failed chat=${chatId} message=${messageId}:`, err.message);
+      console.error("[rsvp] edit failed:", err.message);
     }
   }
 
@@ -300,7 +301,7 @@ export async function handleRsvp(ctx) {
     await ctx.api.editMessageText(chatId, reminderMessageId, updatedReminderText, { parse_mode: "HTML" })
       .catch(err => {
         if (!err.message?.includes("message is not modified")) {
-          console.error(`[reminder] edit failed chat=${chatId} message=${messageId}:`, err.message);
+          console.error("[reminder] edit failed:", err.message);
         }
       });
   }
@@ -333,7 +334,7 @@ export async function sendReminder(api, chatId, messageId) {
   const rsvps = getRsvps(chatId, messageId);
   const joining = rsvps.filter(r => r.status === "join");
   if (joining.length <= 1) {
-    console.log(`[reminder] skipped chat=${chatId} message=${messageId} — ${joining.length} joining`);
+    console.log(`[reminder] skipped — ${joining.length} joining`);
     return;
   }
 
@@ -341,6 +342,6 @@ export async function sendReminder(api, chatId, messageId) {
   reminderPhraseCache.set(`${chatId}:${messageId}`, phrase);
   const text = buildReminderText(row, joining, phrase);
   const sent = await api.sendMessage(chatId, text, { parse_mode: "HTML" });
-  console.log(`[reminder] sent chat=${chatId} message=${messageId} (${joining.length} joining)`);
+  console.log(`[reminder] sent — ${joining.length} joining`);
   return sent;
 }

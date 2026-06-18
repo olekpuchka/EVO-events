@@ -35,7 +35,7 @@ const schedulerInterval = setInterval(async () => {
     sendReminder(bot.api, chat_id, message_id)
       .then(sent => {
         if (sent) saveReminderMessageId(chat_id, message_id, sent.message_id);
-      }, err => console.error(`[reminder] send failed chat=${chat_id} message=${message_id}:`, err.message))
+      }, err => console.error("[reminder] send failed:", err.message))
       .finally(() => deleteScheduledReminder(chat_id, message_id))
   );
 
@@ -49,12 +49,12 @@ const schedulerInterval = setInterval(async () => {
         if (err.message?.includes("message to unpin not found")) {
           unpinOk = true; // already unpinned manually — still clean up buttons
         } else {
-          console.error(`[unpin] failed chat=${chat_id} message=${message_id}:`, err.message);
+          console.error("[unpin] failed:", err.message);
         }
       })
       .then(() => {
         if (!unpinOk) return;
-        console.log(`[unpin] chat=${chat_id} message=${message_id}`);
+        console.log("[unpin] done");
         return Promise.all([
           bot.api.editMessageReplyMarkup(chat_id, message_id, { reply_markup: { inline_keyboard: [] } })
             .catch(() => {}),
@@ -80,7 +80,7 @@ bot.on("message:pinned_message", async (ctx) => {
 bot.catch((err) => {
   const { ctx, error } = err;
   const msg = error instanceof Error ? error.message : String(error);
-  console.error(`Error handling update ${ctx.update.update_id}:`, msg);
+  console.error("[error]", msg);
 });
 
 // ─── Graceful shutdown ───────────────────────────────────────────────────────
