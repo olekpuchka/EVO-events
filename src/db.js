@@ -233,13 +233,6 @@ export function getActiveEvent(chatId) {
   return stmtGetActiveEvent.get(String(chatId)) ?? null;
 }
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS chat_settings (
-    chat_id TEXT PRIMARY KEY,
-    last_result_match_id TEXT
-  )
-`);
-
 const stmtSetFaceit = db.prepare(`UPDATE members SET faceit_player_id = ?, faceit_elo = ? WHERE chat_id = ? AND user_id = ?`);
 const stmtGetFaceitMembers = db.prepare(`
   SELECT user_id, faceit_player_id, faceit_elo
@@ -256,21 +249,16 @@ export function getFaceitMembers(chatId) {
 
 db.exec(`
   CREATE TABLE IF NOT EXISTS posted_matches (
-    chat_id  TEXT NOT NULL,
-    match_id TEXT NOT NULL,
+    chat_id   TEXT NOT NULL,
+    match_id  TEXT NOT NULL,
+    posted_at TEXT,
     PRIMARY KEY (chat_id, match_id)
   )
 `);
 
-// Migrate existing last_result_match_id into posted_matches
-db.exec(`
-  INSERT OR IGNORE INTO posted_matches (chat_id, match_id)
-  SELECT chat_id, last_result_match_id FROM chat_settings
-  WHERE last_result_match_id IS NOT NULL
-`);
-
 const stmtHasPostedMatch = db.prepare(`SELECT 1 FROM posted_matches WHERE chat_id = ? AND match_id = ?`);
-const stmtMarkMatchPosted = db.prepare(`INSERT OR IGNORE INTO posted_matches (chat_id, match_id) VALUES (?, ?)`);
+const stmtMarkMatchPosted = db.prepare(`INSERT OR IGNORE INTO posted_matches (chat_id, match_id, posted_at) VALUES (?, ?, datetime('now'))`);
+const stmtPrunePostedMatches = db.prepare(`DELETE FROM posted_matches WHERE posted_at < datetime('now', '-30 days')`);
 
 export function hasPostedMatch(chatId, matchId) {
   return !!stmtHasPostedMatch.get(String(chatId), matchId);
@@ -278,6 +266,10 @@ export function hasPostedMatch(chatId, matchId) {
 
 export function markMatchPosted(chatId, matchId) {
   stmtMarkMatchPosted.run(String(chatId), matchId);
+}
+
+export function pruneOldPostedMatches() {
+  stmtPrunePostedMatches.run();
 }
 
 const stmtGetFaceitChats = db.prepare(`SELECT DISTINCT chat_id FROM members WHERE faceit_player_id IS NOT NULL`);

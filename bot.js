@@ -1,6 +1,6 @@
 import { Bot } from "grammy";
 import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearReminderPhrase, registerFaceit, autoPostResult } from "./src/handlers.js";
-import { getDueUnpins, getDueReminders, deleteScheduledReminder, deleteEventData, saveReminderMessageId, getAllFaceitChats } from "./src/db.js";
+import { getDueUnpins, getDueReminders, deleteScheduledReminder, deleteEventData, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/db.js";
 
 if (!process.env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN is not set.");
@@ -33,7 +33,9 @@ bot.callbackQuery(/^(join|not_join)$/, handleRsvp);
 // ─── Unpin + reminder scheduler: check every minute ──────────────────────────
 
 const FACEIT_POLL_INTERVAL = Math.max(5, Number(process.env.FACEIT_POLL_MINUTES) || 15) * 60;
+const PRUNE_INTERVAL = 24 * 60 * 60;
 let lastFaceitPoll = 0;
+let lastPrune = Math.floor(Date.now() / 1000);
 
 const schedulerInterval = setInterval(async () => {
   const now = Math.floor(Date.now() / 1000);
@@ -44,6 +46,11 @@ const schedulerInterval = setInterval(async () => {
     await Promise.allSettled(
       chats.map(chatId => autoPostResult(bot.api, chatId).catch(err => console.error("[faceit] poll failed:", err.message)))
     );
+  }
+
+  if (now - lastPrune >= PRUNE_INTERVAL) {
+    lastPrune = now;
+    try { pruneOldPostedMatches(); } catch (err) { console.error("[prune] failed:", err.message); }
   }
 
   const reminderJobs = getDueReminders(now).map(({ chat_id, message_id }) =>

@@ -33,7 +33,7 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 | `/mute` | Opt out of @all mentions |
 | `/unmute` | Opt into @all mentions |
 | `/faceit <nickname>` | Link your FACEIT account — validates against the API and saves your Elo |
-| *(auto)* | Match results are posted automatically — the bot polls FACEIT every 15 minutes and posts any new finished match showing all registered group members who played, sorted by ADR, with K/D/A, ADR and team Elo |
+| *(auto)* | Match results are posted automatically — the bot polls FACEIT every 15 minutes and posts any new finished match showing all registered group members who played, sorted by ADR, with K/D/A, ADR and team Elo; deduplication records are pruned after 30 days |
 
 ## Event lifecycle
 
