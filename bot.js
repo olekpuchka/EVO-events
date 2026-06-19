@@ -1,6 +1,6 @@
 import { Bot } from "grammy";
-import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearReminderPhrase, registerFaceit, fetchResult } from "./src/handlers.js";
-import { getDueUnpins, getDueReminders, deleteScheduledReminder, deleteEventData, saveReminderMessageId } from "./src/db.js";
+import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearReminderPhrase, registerFaceit, fetchResult, autoPostResult } from "./src/handlers.js";
+import { getDueUnpins, getDueReminders, deleteScheduledReminder, deleteEventData, saveReminderMessageId, getAllFaceitChats } from "./src/db.js";
 
 if (!process.env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN is not set.");
@@ -33,8 +33,19 @@ bot.callbackQuery(/^(join|not_join)$/, handleRsvp);
 
 // ─── Unpin + reminder scheduler: check every minute ──────────────────────────
 
+const FACEIT_POLL_INTERVAL = Math.max(5, Number(process.env.FACEIT_POLL_MINUTES) || 15) * 60;
+let lastFaceitPoll = 0;
+
 const schedulerInterval = setInterval(async () => {
   const now = Math.floor(Date.now() / 1000);
+
+  if (now - lastFaceitPoll >= FACEIT_POLL_INTERVAL) {
+    lastFaceitPoll = now;
+    const chats = getAllFaceitChats();
+    await Promise.allSettled(
+      chats.map(chatId => autoPostResult(bot.api, chatId).catch(err => console.error("[faceit] poll failed:", err.message)))
+    );
+  }
 
   const reminderJobs = getDueReminders(now).map(({ chat_id, message_id }) =>
     sendReminder(bot.api, chat_id, message_id)
@@ -59,7 +70,6 @@ const schedulerInterval = setInterval(async () => {
       })
       .then(() => {
         if (!unpinOk) return;
-        console.log("[unpin] done");
         return Promise.all([
           bot.api.editMessageReplyMarkup(chat_id, message_id, { reply_markup: { inline_keyboard: [] } })
             .catch(() => {}),

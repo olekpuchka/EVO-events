@@ -215,8 +215,6 @@ export async function cancelEvent(ctx) {
   }
   deleteEventData(ctx.chat.id, message_id);
   clearReminderPhrase(ctx.chat.id, message_id);
-  console.log("[cancel] done");
-
   try { await ctx.deleteMessage(); } catch {}
 }
 
@@ -230,7 +228,6 @@ export async function muteNotifications(ctx) {
   }
   trackMember(ctx.chat.id, ctx.from);
   setNotifications(ctx.chat.id, ctx.from.id, false);
-  console.log("[mute] done");
   const reply = await ctx.reply("You've been muted. You won't be mentioned by @all in this group.\nUse /unmute to re-enable.");
   autoDelete(ctx, reply);
 }
@@ -245,7 +242,6 @@ export async function unmuteNotifications(ctx) {
   }
   trackMember(ctx.chat.id, ctx.from);
   setNotifications(ctx.chat.id, ctx.from.id, true);
-  console.log("[unmute] done");
   const reply = await ctx.reply("You've been added to the mention list. You'll be mentioned by @all in this group.");
   autoDelete(ctx, reply);
 }
@@ -453,7 +449,6 @@ export async function fetchResult(ctx) {
   const factions = Object.values(matchDetails.teams ?? {});
   const ourFaction = factions.find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
   const theirFaction = factions.find(f => f !== ourFaction);
-  console.log("[faceit] ourFaction rating:", ourFaction?.stats?.rating, "theirFaction rating:", theirFaction?.stats?.rating);
   const elo = ourFaction?.stats?.rating && theirFaction?.stats?.rating
     ? { ours: ourFaction.stats.rating, theirs: theirFaction.stats.rating }
     : null;
@@ -512,7 +507,7 @@ function formatMatchResult(stats, registeredIds, elo = null, matchId = null) {
   const eloStr = elo ? ` (${elo.ours} Elo vs ${elo.theirs} Elo)` : "";
 
   const matchLink = matchId
-    ? `\n\n<a href="https://www.faceit.com/en/cs2/room/${matchId}/scoreboard">View on FACEIT</a>`
+    ? `\n\n🔗 View on <a href="https://www.faceit.com/en/cs2/room/${matchId}/scoreboard">FACEIT</a>`
     : "";
 
   return (
@@ -523,16 +518,98 @@ function formatMatchResult(stats, registeredIds, elo = null, matchId = null) {
   );
 }
 
+export async function autoPostResult(api, chatId) {
+  const members = getFaceitMembers(chatId);
+  if (!members.length) return;
+
+  const now = Math.floor(Date.now() / 1000);
+  const lastPosted = getLastResultMatch(chatId);
+
+  // Fetch latest match for all members in parallel
+  const results = await Promise.allSettled(
+    members.map(m => getRecentMatches(m.faceit_player_id, 1))
+  );
+
+  // Collect candidates: finished, within 24h, not already posted
+  const matchCounts = new Map();
+  let historyErrors = 0;
+  for (const result of results) {
+    if (result.status !== "fulfilled") {
+      historyErrors++;
+      continue;
+    }
+    const match = result.value?.[0];
+    if (!match) continue;
+    if (match.match_id === lastPosted) continue;
+    if (match.status !== "finished") continue;
+    if (now - match.finished_at > 24 * 60 * 60) continue;
+    const existing = matchCounts.get(match.match_id);
+    if (existing) existing.count++;
+    else matchCounts.set(match.match_id, { count: 1, finished_at: match.finished_at });
+  }
+
+  if (historyErrors) console.error(`[faceit] poll: ${historyErrors}/${members.length} history calls failed`);
+  if (!matchCounts.size) return;
+
+  // Pick match with most registered members; break ties by most recent
+  const matchId = [...matchCounts.entries()]
+    .sort((a, b) => b[1].count - a[1].count || b[1].finished_at - a[1].finished_at)
+    [0][0];
+
+  let stats, matchDetails;
+  try {
+    [stats, matchDetails] = await Promise.all([getMatchStats(matchId), getMatchDetails(matchId)]);
+  } catch (err) {
+    console.error("[faceit] poll stats fetch failed:", err.message);
+    return;
+  }
+  if (!stats || !matchDetails) {
+    setLastResultMatch(chatId, matchId);
+    return;
+  }
+
+  const registeredIds = new Map(members.map(m => [m.faceit_player_id, { level: m.faceit_level }]));
+  const mapId = stats.rounds?.[0]?.round_stats?.Map;
+  const imageUrl = getMapImageUrl(matchDetails, mapId);
+
+  const factions = Object.values(matchDetails.teams ?? {});
+  const ourFaction = factions.find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
+  const theirFaction = factions.find(f => f !== ourFaction);
+  const elo = ourFaction?.stats?.rating && theirFaction?.stats?.rating
+    ? { ours: ourFaction.stats.rating, theirs: theirFaction.stats.rating }
+    : null;
+
+  const text = formatMatchResult(stats, registeredIds, elo, matchId);
+  if (!text) {
+    setLastResultMatch(chatId, matchId);
+    return;
+  }
+
+  let sent = false;
+  try {
+    if (imageUrl) {
+      await api.sendPhoto(chatId, imageUrl, { caption: text, parse_mode: "HTML" });
+    } else {
+      await api.sendMessage(chatId, text, { parse_mode: "HTML" });
+    }
+    sent = true;
+  } catch {
+    await api.sendMessage(chatId, text, { parse_mode: "HTML" })
+      .then(() => { sent = true; })
+      .catch(err => console.error("[faceit] poll send failed:", err.message));
+  }
+  if (!sent) return;
+  setLastResultMatch(chatId, matchId);
+  console.log("[faceit] auto-posted result");
+}
+
 export async function sendReminder(api, chatId, messageId) {
   const row = getEventBaseText(chatId, messageId);
   if (!row) return;
 
   const rsvps = getRsvps(chatId, messageId);
   const joining = rsvps.filter(r => r.status === "join");
-  if (joining.length <= 1) {
-    console.log(`[reminder] skipped — ${joining.length} joining`);
-    return;
-  }
+  if (joining.length <= 1) return;
 
   const phrase = pickHypePhrase();
   reminderPhraseCache.set(`${chatId}:${messageId}`, phrase);

@@ -264,6 +264,12 @@ export function getLastResultMatch(chatId) {
   return stmtGetLastResult.get(String(chatId))?.last_result_match_id ?? null;
 }
 
+const stmtGetFaceitChats = db.prepare(`SELECT DISTINCT chat_id FROM members WHERE faceit_player_id IS NOT NULL`);
+
+export function getAllFaceitChats() {
+  return stmtGetFaceitChats.all().map(r => r.chat_id);
+}
+
 export function setLastResultMatch(chatId, matchId) {
   stmtSetLastResult.run(String(chatId), matchId);
 }

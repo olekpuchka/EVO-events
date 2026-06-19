@@ -34,6 +34,7 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 | `/unmute` | Opt into @all mentions |
 | `/faceit <nickname>` | Link your FACEIT account — validates against the API and saves your level |
 | `/result` | Post your latest CS2 match as a map photo — shows all registered group members who played in that match, sorted by ADR, with K/D/A, ADR and team Elo |
+| *(auto)* | Match results are also posted automatically — the bot polls FACEIT every 15 minutes and posts any new finished match |
 
 ## Event lifecycle
 
@@ -69,6 +70,7 @@ If no time is given (`@all CS`), the bot mentions everyone but does not pin, tra
    - `BOT_TOKEN` = your Telegram bot token
    - `DATA_DIR` = `/app/data`
    - `FACEIT_API_KEY` = your FACEIT API key (get one free at [developers.faceit.com](https://developers.faceit.com))
+   - `FACEIT_POLL_MINUTES` = how often to auto-check for new matches (default: `15`, minimum: `5`)
 3. Mount a persistent volume at `/app/data`
 
 ### Automated deploy via GitHub Actions
