@@ -1,12 +1,12 @@
 import { Bot } from "grammy";
-import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearReminderPhrase, registerFaceit, fetchResult, autoPostResult } from "./src/handlers.js";
+import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearReminderPhrase, registerFaceit, autoPostResult } from "./src/handlers.js";
 import { getDueUnpins, getDueReminders, deleteScheduledReminder, deleteEventData, saveReminderMessageId, getAllFaceitChats } from "./src/db.js";
 
 if (!process.env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN is not set.");
 }
 if (!process.env.FACEIT_API_KEY) {
-  console.warn("FACEIT_API_KEY is not set — /faceit and /result commands will fail.");
+  console.warn("FACEIT_API_KEY is not set — /faceit command will fail.");
 }
 
 const bot = new Bot(process.env.BOT_TOKEN);
@@ -17,7 +17,6 @@ bot.command("mute", muteNotifications);
 bot.command("unmute", unmuteNotifications);
 bot.command("cancel", cancelEvent);
 bot.command("faceit", registerFaceit);
-bot.command("result", fetchResult);
 
 // ─── Text trigger: @all <optional message> ────────────────────────────────────
 // Works when the bot has privacy mode disabled (set via BotFather → /setprivacy → Disable).

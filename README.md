@@ -32,9 +32,8 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 | `/cancel` | Cancel the current active event (unpins + deletes event message + deletes reminder if sent) — **any group member can cancel**, no admin check |
 | `/mute` | Opt out of @all mentions |
 | `/unmute` | Opt into @all mentions |
-| `/faceit <nickname>` | Link your FACEIT account — validates against the API and saves your level |
-| `/result` | Post your latest CS2 match as a map photo — shows all registered group members who played in that match, sorted by ADR, with K/D/A, ADR and team Elo |
-| *(auto)* | Match results are also posted automatically — the bot polls FACEIT every 15 minutes and posts any new finished match |
+| `/faceit <nickname>` | Link your FACEIT account — validates against the API and saves your Elo |
+| *(auto)* | Match results are posted automatically — the bot polls FACEIT every 15 minutes and posts any new finished match showing all registered group members who played, sorted by ADR, with K/D/A, ADR and team Elo |
 
 ## Event lifecycle
 
@@ -106,7 +105,7 @@ EVO-events/
 ├── src/
 │   ├── db.js          # SQLite — members, events, RSVPs, scheduled jobs
 │   ├── faceit.js      # FACEIT API client — player lookup, match history, stats, map images
-│   ├── handlers.js    # mentionAll, handleRsvp, cancelEvent, mute/unmute, sendReminder, FACEIT handlers
+│   ├── handlers.js    # mentionAll, handleRsvp, cancelEvent, mute/unmute, sendReminder, registerFaceit, autoPostResult
 │   └── helpers.js     # buildMention, escapeHtml, splitIntoChunks, autoDelete
 ├── bot.js             # Entry point — commands, scheduler loop, graceful shutdown
 ├── Dockerfile

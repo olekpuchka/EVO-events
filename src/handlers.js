@@ -1,6 +1,6 @@
-import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvent, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, getLastResultMatch, setLastResultMatch } from "./db.js";
+import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvent, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, hasPostedMatch, markMatchPosted } from "./db.js";
 import { buildMention, escapeHtml, splitIntoChunks, autoDelete } from "./helpers.js";
-import { getPlayer, getRecentMatches, getMatchStats, getMatchDetails, getMapImageUrl } from "./faceit.js";
+import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapImageUrl } from "./faceit.js";
 
 // Parse HH:MM from a message string. Interprets the time as Kyiv (Europe/Kyiv) timezone.
 // Returns Unix timestamp (today or tomorrow Kyiv time) or null.
@@ -380,97 +380,14 @@ export async function registerFaceit(ctx) {
   }
 
   trackMember(ctx.chat.id, ctx.from);
-  setFaceitAccount(ctx.chat.id, ctx.from.id, player.player_id, cs2.skill_level);
+  setFaceitAccount(ctx.chat.id, ctx.from.id, player.player_id, cs2.faceit_elo);
   console.log(`[faceit] registered "${player.nickname}"`);
 
   const reply = await ctx.reply(
-    `Linked! <b>${escapeHtml(player.nickname)}</b> (${cs2.skill_level ? `${cs2.skill_level} level` : "? Unranked"})`,
+    `Linked! <b>${escapeHtml(player.nickname)}</b> (${cs2.faceit_elo ? `${cs2.faceit_elo} Elo` : "Unranked"})`,
     { parse_mode: "HTML" }
   );
   autoDelete(ctx, reply);
-  try { await ctx.deleteMessage(); } catch {}
-}
-
-export async function fetchResult(ctx) {
-  if (ctx.chat.type === "private") return;
-
-  const members = getFaceitMembers(ctx.chat.id);
-  const caller = members.find(m => m.user_id === ctx.from.id);
-  if (!caller) {
-    const reply = await ctx.reply("Link your FACEIT account first with /faceit &lt;nickname&gt;.", { parse_mode: "HTML" });
-    autoDelete(ctx, reply);
-    return;
-  }
-
-  const matches = await getRecentMatches(caller.faceit_player_id, 1).catch(err => {
-    console.error("[faceit] match history failed:", err.message);
-    return null;
-  });
-  if (!matches) {
-    const reply = await ctx.reply("Couldn't reach FACEIT right now, try again later.");
-    autoDelete(ctx, reply);
-    return;
-  }
-  if (!matches.length) {
-    const reply = await ctx.reply("No recent FACEIT match found. Play a match first, then try again.");
-    autoDelete(ctx, reply);
-    return;
-  }
-
-  const matchId = matches[0].match_id;
-  if (getLastResultMatch(ctx.chat.id) === matchId) {
-    const reply = await ctx.reply("Already posted this match. Play another one first! 🎮");
-    autoDelete(ctx, reply);
-    return;
-  }
-
-  let stats, matchDetails;
-  try {
-    [stats, matchDetails] = await Promise.all([
-      getMatchStats(matchId),
-      getMatchDetails(matchId),
-    ]);
-  } catch (err) {
-    console.error("[faceit] stats fetch failed:", err.message);
-    const reply = await ctx.reply("Couldn't fetch match stats right now.");
-    autoDelete(ctx, reply);
-    return;
-  }
-  if (!stats || !matchDetails) {
-    const reply = await ctx.reply("That match has been voided or is unavailable.");
-    autoDelete(ctx, reply);
-    return;
-  }
-
-  const registeredIds = new Map(members.map(m => [m.faceit_player_id, { level: m.faceit_level }]));
-  const mapId = stats.rounds?.[0]?.round_stats?.Map;
-  const imageUrl = getMapImageUrl(matchDetails, mapId);
-
-  const factions = Object.values(matchDetails.teams ?? {});
-  const ourFaction = factions.find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
-  const theirFaction = factions.find(f => f !== ourFaction);
-  const elo = ourFaction?.stats?.rating && theirFaction?.stats?.rating
-    ? { ours: ourFaction.stats.rating, theirs: theirFaction.stats.rating }
-    : null;
-
-  const text = formatMatchResult(stats, registeredIds, elo, matchId);
-  if (!text) {
-    const reply = await ctx.reply("Couldn't parse match data.");
-    autoDelete(ctx, reply);
-    return;
-  }
-
-  try {
-    if (imageUrl) {
-      await ctx.replyWithPhoto(imageUrl, { caption: text, parse_mode: "HTML" });
-    } else {
-      await ctx.reply(text, { parse_mode: "HTML" });
-    }
-  } catch {
-    await ctx.reply(text, { parse_mode: "HTML" });
-  }
-  setLastResultMatch(ctx.chat.id, matchId);
-  console.log("[faceit] result posted");
   try { await ctx.deleteMessage(); } catch {}
 }
 
@@ -494,8 +411,8 @@ function formatMatchResult(stats, registeredIds, elo = null, matchId = null) {
     .sort((a, b) => Number(b.player_stats?.ADR ?? 0) - Number(a.player_stats?.ADR ?? 0))
     .map(p => {
       const s = p.player_stats ?? {};
-      const lvl = registeredIds.get(p.player_id)?.level ?? 1;
-      return `· <b>${escapeHtml(p.nickname)}</b> (${lvl} level) — ${s.Kills ?? "?"}/${s.Deaths ?? "?"}/${s.Assists ?? "?"} · ${s.ADR ?? "?"} ADR`;
+      const playerElo = registeredIds.get(p.player_id)?.elo;
+      return `· <b>${escapeHtml(p.nickname)}</b> (${playerElo ? `${playerElo} Elo` : "? Elo"}) — ${s.Kills ?? "?"}/${s.Deaths ?? "?"}/${s.Assists ?? "?"} · ${s.ADR ?? "?"} ADR`;
     });
 
   if (!rows.length) return null;
@@ -523,11 +440,10 @@ export async function autoPostResult(api, chatId) {
   if (!members.length) return;
 
   const now = Math.floor(Date.now() / 1000);
-  const lastPosted = getLastResultMatch(chatId);
 
-  // Fetch latest match for all members in parallel
+  // Fetch last 5 matches per member in parallel
   const results = await Promise.allSettled(
-    members.map(m => getRecentMatches(m.faceit_player_id, 1))
+    members.map(m => getRecentMatches(m.faceit_player_id, 5))
   );
 
   // Collect candidates: finished, within 24h, not already posted
@@ -538,69 +454,87 @@ export async function autoPostResult(api, chatId) {
       historyErrors++;
       continue;
     }
-    const match = result.value?.[0];
-    if (!match) continue;
-    if (match.match_id === lastPosted) continue;
-    if (match.status !== "finished") continue;
-    if (now - match.finished_at > 24 * 60 * 60) continue;
-    const existing = matchCounts.get(match.match_id);
-    if (existing) existing.count++;
-    else matchCounts.set(match.match_id, { count: 1, finished_at: match.finished_at });
+    for (const match of result.value ?? []) {
+      if (match.status !== "finished") continue;
+      if (now - match.finished_at > 24 * 60 * 60) continue;
+      if (hasPostedMatch(chatId, match.match_id)) continue;
+      const existing = matchCounts.get(match.match_id);
+      if (existing) existing.count++;
+      else matchCounts.set(match.match_id, { count: 1, finished_at: match.finished_at });
+    }
   }
 
   if (historyErrors) console.error(`[faceit] poll: ${historyErrors}/${members.length} history calls failed`);
   if (!matchCounts.size) return;
 
-  // Pick match with most registered members; break ties by most recent
-  const matchId = [...matchCounts.entries()]
-    .sort((a, b) => b[1].count - a[1].count || b[1].finished_at - a[1].finished_at)
-    [0][0];
+  // Refresh Elo for all members once before posting any results
+  const registeredIds = new Map(members.map(m => [m.faceit_player_id, { elo: m.faceit_elo }]));
+  await Promise.all(members.map(async m => {
+    const profile = await getPlayerById(m.faceit_player_id).catch(() => null);
+    if (!profile) return;
+    const elo = profile.games?.cs2?.faceit_elo ?? null;
+    registeredIds.get(m.faceit_player_id).elo = elo;
+    setFaceitAccount(chatId, m.user_id, m.faceit_player_id, elo);
+  }));
 
-  let stats, matchDetails;
-  try {
-    [stats, matchDetails] = await Promise.all([getMatchStats(matchId), getMatchDetails(matchId)]);
-  } catch (err) {
-    console.error("[faceit] poll stats fetch failed:", err.message);
-    return;
-  }
-  if (!stats || !matchDetails) {
-    setLastResultMatch(chatId, matchId);
-    return;
-  }
+  // Sort by member count desc, then oldest first so multiple sessions post in chronological order
+  const sortedMatches = [...matchCounts.entries()]
+    .sort((a, b) => b[1].count - a[1].count || a[1].finished_at - b[1].finished_at);
 
-  const registeredIds = new Map(members.map(m => [m.faceit_player_id, { level: m.faceit_level }]));
-  const mapId = stats.rounds?.[0]?.round_stats?.Map;
-  const imageUrl = getMapImageUrl(matchDetails, mapId);
-
-  const factions = Object.values(matchDetails.teams ?? {});
-  const ourFaction = factions.find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
-  const theirFaction = factions.find(f => f !== ourFaction);
-  const elo = ourFaction?.stats?.rating && theirFaction?.stats?.rating
-    ? { ours: ourFaction.stats.rating, theirs: theirFaction.stats.rating }
-    : null;
-
-  const text = formatMatchResult(stats, registeredIds, elo, matchId);
-  if (!text) {
-    setLastResultMatch(chatId, matchId);
-    return;
-  }
-
-  let sent = false;
-  try {
-    if (imageUrl) {
-      await api.sendPhoto(chatId, imageUrl, { caption: text, parse_mode: "HTML" });
-    } else {
-      await api.sendMessage(chatId, text, { parse_mode: "HTML" });
+  for (const [matchId, meta] of sortedMatches) {
+    let stats, matchDetails;
+    try {
+      [stats, matchDetails] = await Promise.all([getMatchStats(matchId), getMatchDetails(matchId)]);
+    } catch (err) {
+      console.error("[faceit] poll stats fetch failed:", err.message);
+      continue;
     }
-    sent = true;
-  } catch {
-    await api.sendMessage(chatId, text, { parse_mode: "HTML" })
-      .then(() => { sent = true; })
-      .catch(err => console.error("[faceit] poll send failed:", err.message));
+    if (!stats || !matchDetails) {
+      // Skip permanently if: voided/cancelled, stats missing >30 min, or match details unavailable >30 min
+      if (!matchDetails || matchDetails.status !== "FINISHED" || now - meta.finished_at > 30 * 60) {
+        markMatchPosted(chatId, matchId);
+      }
+      // else: FINISHED but stats not ready yet — retry next poll
+      continue;
+    }
+
+    const mapId = stats.rounds?.[0]?.round_stats?.Map;
+    const imageUrl = getMapImageUrl(matchDetails, mapId);
+
+    const factions = Object.values(matchDetails.teams ?? {});
+    const ourFaction = factions.find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
+    const theirFaction = factions.find(f => f !== ourFaction);
+    const elo = ourFaction?.stats?.rating && theirFaction?.stats?.rating
+      ? { ours: ourFaction.stats.rating, theirs: theirFaction.stats.rating }
+      : null;
+
+    const text = formatMatchResult(stats, registeredIds, elo, matchId);
+    if (!text) {
+      markMatchPosted(chatId, matchId);
+      continue;
+    }
+
+    let sent = false;
+    try {
+      if (imageUrl) {
+        await api.sendPhoto(chatId, imageUrl, { caption: text, parse_mode: "HTML" });
+      } else {
+        await api.sendMessage(chatId, text, { parse_mode: "HTML" });
+      }
+      sent = true;
+    } catch (err) {
+      if (!imageUrl) {
+        console.error("[faceit] poll send failed:", err.message);
+      } else {
+        await api.sendMessage(chatId, text, { parse_mode: "HTML" })
+          .then(() => { sent = true; })
+          .catch(e => console.error("[faceit] poll send failed:", e.message));
+      }
+    }
+    if (!sent) continue;
+    markMatchPosted(chatId, matchId);
+    console.log("[faceit] auto-posted result");
   }
-  if (!sent) return;
-  setLastResultMatch(chatId, matchId);
-  console.log("[faceit] auto-posted result");
 }
 
 export async function sendReminder(api, chatId, messageId) {

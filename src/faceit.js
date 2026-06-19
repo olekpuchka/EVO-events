@@ -14,6 +14,13 @@ export async function getPlayer(nickname) {
   return res.json();
 }
 
+export async function getPlayerById(playerId) {
+  const res = await fetch(`${BASE}/players/${playerId}`, { headers: authHeader() });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`FACEIT ${res.status}`);
+  return res.json();
+}
+
 export async function getRecentMatches(playerId, limit = 5) {
   const res = await fetch(
     `${BASE}/players/${playerId}/history?game=cs2&limit=${limit}`,
