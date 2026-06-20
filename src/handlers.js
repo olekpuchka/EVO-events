@@ -433,7 +433,7 @@ function formatMatchResult(stats, registeredIds, elo = null, matchId = null) {
     : "";
 
   return (
-    `${won ? "🍌" : "❌"} ${ourScore}:${theirScore}${eloStr}\n\n` +
+    `${won ? "🍌" : "❌"} <b>${ourScore}:${theirScore}</b>${eloStr}\n\n` +
     rows.join("\n") +
     `\n\n<i>${phrase}</i>` +
     matchLink
