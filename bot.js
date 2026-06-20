@@ -1,5 +1,5 @@
 import { Bot } from "grammy";
-import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearReminderPhrase, registerFaceit, autoPostResult } from "./src/handlers.js";
+import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearReminderPhrase, registerFaceit, autoPostResult, pendingPinDeletion } from "./src/handlers.js";
 import { getDueUnpins, getDueReminders, deleteScheduledReminder, deleteEventData, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/db.js";
 
 if (!process.env.BOT_TOKEN) {
@@ -90,9 +90,12 @@ const schedulerInterval = setInterval(async () => {
   await Promise.allSettled(unpinJobs);
 }, 60_000);
 
-// ─── Delete "pinned a message" service notifications ─────────────────────────
+// ─── Delete "pinned a message" service notifications (only for @all pins) ────
 
 bot.on("message:pinned_message", async (ctx) => {
+  const expected = pendingPinDeletion.get(ctx.chat.id);
+  if (expected !== ctx.message.pinned_message?.message_id) return;
+  pendingPinDeletion.delete(ctx.chat.id);
   try { await ctx.deleteMessage(); } catch {}
 });
 

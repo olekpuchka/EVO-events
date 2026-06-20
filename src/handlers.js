@@ -73,6 +73,9 @@ function pickHypePhrase() {
 // Keyed by `${chatId}:${messageId}` — frozen when reminder fires, reused on RSVP edits.
 const reminderPhraseCache = new Map();
 
+// chatId → messageId for pins triggered by @all — lets bot.js delete only those service messages.
+export const pendingPinDeletion = new Map();
+
 export function clearReminderPhrase(chatId, messageId) {
   reminderPhraseCache.delete(`${chatId}:${messageId}`);
 }
@@ -175,6 +178,7 @@ export async function mentionAll(ctx, message = "") {
     saveRsvp(ctx.chat.id, lastSent.message_id, ctx.from, "join");
 
     try {
+      pendingPinDeletion.set(ctx.chat.id, lastSent.message_id);
       await ctx.pinChatMessage(lastSent.message_id, { disable_notification: true });
       scheduleUnpin(ctx.chat.id, lastSent.message_id, eventTime);
       const reminderAt = eventTime - 10 * 60;
@@ -183,6 +187,7 @@ export async function mentionAll(ctx, message = "") {
       }
       console.log(`[event] created "${message}"`);
     } catch (err) {
+      pendingPinDeletion.delete(ctx.chat.id);
       console.error("[event] pin failed:", err.message);
     }
   } else {
