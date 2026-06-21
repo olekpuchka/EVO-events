@@ -9,7 +9,8 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 - Mention all group members with `@all`
 - Attach an event name and time: `@all CS 22:00` or `@all CS 22-00`
 - **RSVP buttons** — 🍌 Joining / 🚫 Not joining, live-updated on the pinned message (only for timed events); tapping the same button twice is a no-op — message is only edited when the status actually changes
-- **Poster auto-joins** — the person who posts the event is automatically RSVPed as joining
+- **Poster auto-joins** — the person who posts the event is automatically RSVPed as joining; they are excluded from the "Mentioned:" list since they're already the sender
+- **Priority notifications** — both the `@all` message and the 10-minute reminder use `text_mention` entities, so they trigger iOS priority notifications even when the group is muted
 - **Squad cap at 5** — buttons hidden and event locked with a random hype message when 5 people join; the cap is enforced server-side, so a tap on a stale (not-yet-synced) join button can't push the squad past 5
 - **Random hype phrases** — shared pool used both when the squad fills up and at the reminder; phrase is frozen when the reminder fires so it doesn't change on subsequent RSVP edits
 - **Auto-pin** the event message (silently — no "pinned" push notification), **auto-unpin** exactly at event start time

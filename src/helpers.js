@@ -11,8 +11,9 @@ export function autoDelete(ctx, reply) {
 }
 
 export function buildMention(user) {
-  if (user.username) return `@${user.username}`;
-  const name = [user.first_name, user.last_name].filter(Boolean).join(" ");
+  const name = user.username
+    ? `@${user.username}`
+    : [user.first_name, user.last_name].filter(Boolean).join(" ");
   return `<a href="tg://user?id=${user.id}">${escapeHtml(name)}</a>`;
 }
 

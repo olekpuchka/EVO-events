@@ -131,7 +131,7 @@ export async function mentionAll(ctx, message = "") {
     return;
   }
 
-  const mentions = rows.map(buildMention);
+  const mentions = rows.filter(r => r.id !== ctx.from.id).map(buildMention);
   const mentionBlock = `<b>Mentioned:</b> ${mentions.join(", ")}`;
   const poster = buildMention(ctx.from);
   const fullText = `${poster}: ${escapeHtml(message)}\n\n${mentionBlock}`;
@@ -164,7 +164,7 @@ export async function mentionAll(ctx, message = "") {
 
     const chunks = splitIntoChunks(initialText);
     for (let i = 0; i < chunks.length; i++) {
-      lastSent = await ctx.reply(chunks[i], {
+      lastSent = await ctx.api.sendMessage(ctx.chat.id, chunks[i], {
         parse_mode: "HTML",
         ...(i === chunks.length - 1 ? { reply_markup: keyboard } : {})
       });
@@ -193,7 +193,7 @@ export async function mentionAll(ctx, message = "") {
   } else {
     const chunks = splitIntoChunks(fullText);
     for (const chunk of chunks) {
-      lastSent = await ctx.reply(chunk, { parse_mode: "HTML" });
+      lastSent = await ctx.api.sendMessage(ctx.chat.id, chunk, { parse_mode: "HTML" });
     }
     console.log(`[mention] "${message}"`);
   }
