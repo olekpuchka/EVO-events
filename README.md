@@ -8,7 +8,7 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 
 - Mention all group members with `@all`
 - Attach an event name and time: `@all CS 22:00` or `@all CS 22-00`
-- **RSVP buttons** — 🍌 Joining / 🚫 Not joining, live-updated on the pinned message (only for timed events); tapping the same button twice is a no-op — message is only edited when the status actually changes
+- **RSVP buttons** — 🍌 Joining / ❌ Not joining, live-updated on the pinned message (only for timed events); tapping the same button twice is a no-op — message is only edited when the status actually changes
 - **Poster auto-joins** — the person who posts the event is automatically RSVPed as joining; they are excluded from the "Mentioned:" list since they're already the sender
 - **Priority notifications** — both the `@all` message and the 10-minute reminder use `text_mention` entities, so they trigger iOS priority notifications even when the group is muted
 - **Squad cap at 5** — buttons hidden and event locked with a random hype message when 5 people join; the cap is enforced server-side, so a tap on a stale (not-yet-synced) join button can't push the squad past 5
@@ -39,7 +39,7 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 ## Event lifecycle
 
 1. `@all CS 22:00` → bot posts pinned message with RSVP buttons, auto-RSVPs poster as 🍌 joining, deletes trigger message
-2. Members tap 🍌 / 🚫 — message updates live with names and counts
+2. Members tap 🍌 / ❌ — message updates live with names and counts
 3. At 5 joiners → buttons hidden, squad locked 🔒 with a random hype message (further joins from stale clients are rejected)
 4. **21:50 Kyiv** → reminder sent with joining list and a random hype phrase (skipped if fewer than 2 joined); any RSVP after this point also updates the reminder message (phrase stays frozen)
 5. **22:00 Kyiv** → reminder deleted, message unpinned, buttons removed, DB cleaned up

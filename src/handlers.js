@@ -85,7 +85,7 @@ function buildKeyboard() {
   return {
     inline_keyboard: [[
       { text: "🍌 Joining", callback_data: "join", style: "success" },
-      { text: "🚫 Not joining", callback_data: "not_join", style: "danger" }
+      { text: "❌ Not joining", callback_data: "not_join", style: "danger" }
     ]]
   };
 }
@@ -101,7 +101,7 @@ function buildRsvpSection(rsvps) {
   if (joining.length > 0)
     section += `\n\n🍌 <b>Joining (${joining.length}):</b>\n${joining.map(buildMention).join(", ")}`;
   if (notJoining.length > 0)
-    section += `\n\n🚫 <b>Not joining (${notJoining.length}):</b>\n${notJoining.map(buildMention).join(", ")}`;
+    section += `\n\n❌ <b>Not joining (${notJoining.length}):</b>\n${notJoining.map(buildMention).join(", ")}`;
   return section;
 }
 
@@ -280,7 +280,7 @@ export async function handleRsvp(ctx) {
 
   const currentStatus = getUserRsvpStatus(chatId, messageId, ctx.from.id);
   if (currentStatus === status) {
-    const toastText = status === "join" ? "🍌 You're already joining!" : "🚫 You're already not joining!";
+    const toastText = status === "join" ? "🍌 You're already joining!" : "❌ You're already not joining!";
     await ctx.answerCallbackQuery({ text: toastText });
     return;
   }
@@ -303,7 +303,7 @@ export async function handleRsvp(ctx) {
   const notJoining = rsvps.filter(r => r.status === "not_join");
   const isFull = joining.length >= MAX_PLAYERS;
   const fullPhrase = isFull ? pickHypePhrase() : "";
-  console.log(`[rsvp] ${status === "join" ? "joined" : "not joining"} (🍌 ${joining.length}/${MAX_PLAYERS}, 🚫 ${notJoining.length})${isFull ? " — squad full" : ""}`);
+  console.log(`[rsvp] ${status === "join" ? "joined" : "not joining"} (🍌 ${joining.length}/${MAX_PLAYERS}, ❌ ${notJoining.length})${isFull ? " — squad full" : ""}`);
   const newText = row.base_text + buildRsvpSection(rsvps) + (isFull ? `\n\n🔥 <b>${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS})</b> 🔒` : "");
   const keyboard = isFull ? { inline_keyboard: [] } : buildKeyboard();
 
@@ -333,7 +333,7 @@ export async function handleRsvp(ctx) {
 
   const toastText = status === "join"
     ? (isFull ? `🔥 You're in! ${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS}) 🔒` : "🍌 You're joining!")
-    : "🚫 You aren't joining!";
+    : "❌ You aren't joining!";
   await ctx.answerCallbackQuery({ text: toastText });
 }
 
