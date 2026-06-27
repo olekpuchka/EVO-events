@@ -4,21 +4,19 @@ function authHeader() {
   return { Authorization: `Bearer ${process.env.FACEIT_API_KEY}` };
 }
 
-export async function getPlayer(nickname) {
-  const res = await fetch(
-    `${BASE}/players?nickname=${encodeURIComponent(nickname)}`,
-    { headers: authHeader() }
-  );
+async function faceitGet(url) {
+  const res = await fetch(url, { headers: authHeader() });
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`FACEIT ${res.status}`);
   return res.json();
 }
 
-export async function getPlayerById(playerId) {
-  const res = await fetch(`${BASE}/players/${playerId}`, { headers: authHeader() });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`FACEIT ${res.status}`);
-  return res.json();
+export function getPlayer(nickname) {
+  return faceitGet(`${BASE}/players?nickname=${encodeURIComponent(nickname)}`);
+}
+
+export function getPlayerById(playerId) {
+  return faceitGet(`${BASE}/players/${playerId}`);
 }
 
 export async function getRecentMatches(playerId, limit = 5) {
@@ -30,18 +28,12 @@ export async function getRecentMatches(playerId, limit = 5) {
   return (await res.json()).items ?? [];
 }
 
-export async function getMatchStats(matchId) {
-  const res = await fetch(`${BASE}/matches/${matchId}/stats`, { headers: authHeader() });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`FACEIT ${res.status}`);
-  return res.json();
+export function getMatchStats(matchId) {
+  return faceitGet(`${BASE}/matches/${matchId}/stats`);
 }
 
-export async function getMatchDetails(matchId) {
-  const res = await fetch(`${BASE}/matches/${matchId}`, { headers: authHeader() });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`FACEIT ${res.status}`);
-  return res.json();
+export function getMatchDetails(matchId) {
+  return faceitGet(`${BASE}/matches/${matchId}`);
 }
 
 export function getMapImageUrl(matchDetails, mapId) {

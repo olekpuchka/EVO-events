@@ -1,6 +1,7 @@
 import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvent, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, hasPostedMatch, markMatchPosted } from "./db.js";
 import { buildMention, escapeHtml, splitIntoChunks, autoDelete } from "./helpers.js";
 import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapImageUrl } from "./faceit.js";
+import { generateHypePhrase, generateMatchPhrase } from "./ai.js";
 
 // Parse HH:MM from a message string. Interprets the time as Kyiv (Europe/Kyiv) timezone.
 // Returns Unix timestamp (today or tomorrow Kyiv time) or null.
@@ -26,47 +27,10 @@ function parseEventTime(text) {
 
 const MAX_PLAYERS = 5;
 
-const WIN_PHRASES = [
-  "WE ARE SO BACK 🍌🍌🍌",
-  "Banana squad NEVER loses 👑",
-  "Certified elite performance right there 🔥",
-  "They never stood a chance. Not even close. 😤",
-  "Different breed, different level, different game 🚀",
-  "ELO incoming, boys. ELO INCOMING. 📈",
-  "That's what peak CS looks like. Bow down. 🏆",
-  "Opponents just got cooked, seasoned and served 🍳",
-  "We don't lose, we just occasionally don't win 💅",
-  "Another day, another domination. Routine. 😎",
-];
-
-const LOSS_PHRASES = [
-  "At least one of them definitely had a spinbot 🌀",
-  "FACEIT anticheat was clearly on vacation ✈️",
-  "Their crosshair placement was suspiciously perfect 👁️",
-  "We lost to highly skilled legitimate players 😤",
-  "That one guy's 97% HS rate was totally normal 🎯",
-  "Enemy team: 2-hour-old accounts, god-tier aim 🆕",
-  "We wuz robbed. By technology. 💀",
-  "Nothing to see here. Just pure skill. Against us. 😶",
-  "FACEIT points donated to the community 🫳",
-  "Their VAC-clean accounts played suspiciously well 🤔",
-];
-
-const HYPE_PHRASES = [
-  "Squad locked in! Let's GOOOOOOO! 🚀",
-  "Lock and load, legends! 🎮",
-  "Let's run it! No excuses! 🏃💨",
-  "Time to lock in! 🔒",
-  "GG already incoming! 🏆",
-  "They don't know what's coming! 😤",
-  "Banana squad, rise up! 🍌",
-  "It's go time! Let's get this W! 🔥",
-  "No mercy! Let's dominate! 💪",
-  "Game on! Let's make it count! 🎯"
-];
-
-function pickHypePhrase() {
-  return HYPE_PHRASES[Math.floor(Math.random() * HYPE_PHRASES.length)];
+function extractEventName(baseText) {
+  const firstLine = baseText.split("\n")[0];
+  const colonIdx = firstLine.indexOf(": ");
+  return colonIdx !== -1 ? firstLine.slice(colonIdx + 2).trim() : null;
 }
 
 
@@ -302,7 +266,8 @@ export async function handleRsvp(ctx) {
   const joining = rsvps.filter(r => r.status === "join");
   const notJoining = rsvps.filter(r => r.status === "not_join");
   const isFull = joining.length >= MAX_PLAYERS;
-  const fullPhrase = isFull ? pickHypePhrase() : "";
+  const eventName = extractEventName(row.base_text);
+  const fullPhrase = isFull ? await generateHypePhrase(eventName) : "";
   console.log(`[rsvp] ${status === "join" ? "joined" : "not joining"} (🍌 ${joining.length}/${MAX_PLAYERS}, ❌ ${notJoining.length})${isFull ? " — squad full" : ""}`);
   const newText = row.base_text + buildRsvpSection(rsvps) + (isFull ? `\n\n🔥 <b>${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS})</b> 🔒` : "");
   const keyboard = isFull ? { inline_keyboard: [] } : buildKeyboard();
@@ -318,10 +283,16 @@ export async function handleRsvp(ctx) {
     }
   }
 
+  const toastText = status === "join"
+    ? (isFull ? `🔥 You're in! ${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS}) 🔒` : "🍌 You're joining!")
+    : "❌ You aren't joining!";
+  await ctx.answerCallbackQuery({ text: toastText });
+
   // If the reminder has already been sent, update its joining list too.
+  // Done after answerCallbackQuery so a cache-miss AI call doesn't block the response.
   const reminderMessageId = getReminderMessageId(chatId, messageId);
   if (reminderMessageId) {
-    const phrase = reminderPhraseCache.get(`${chatId}:${messageId}`) ?? pickHypePhrase();
+    const phrase = reminderPhraseCache.get(`${chatId}:${messageId}`) ?? await generateHypePhrase(eventName);
     const updatedReminderText = buildReminderText(row, joining, phrase);
     await ctx.api.editMessageText(chatId, reminderMessageId, updatedReminderText, { parse_mode: "HTML" })
       .catch(err => {
@@ -330,20 +301,13 @@ export async function handleRsvp(ctx) {
         }
       });
   }
-
-  const toastText = status === "join"
-    ? (isFull ? `🔥 You're in! ${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS}) 🔒` : "🍌 You're joining!")
-    : "❌ You aren't joining!";
-  await ctx.answerCallbackQuery({ text: toastText });
 }
 
 function buildReminderText(row, joining, phrase) {
   const timeStr = row.event_time
     ? new Date(row.event_time * 1000).toLocaleTimeString("uk-UA", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit" })
     : "soon";
-  const firstLine = row.base_text.split("\n")[0];
-  const colonIdx = firstLine.indexOf(": ");
-  const eventName = colonIdx !== -1 ? firstLine.slice(colonIdx + 2).trim() : null;
+  const eventName = extractEventName(row.base_text);
   return (
     `🔔 <b>Reminder!</b> Event starts in <b>10 minutes</b> (at ${timeStr}) 🎮` +
     (eventName ? `\n\n${eventName}` : "") +
@@ -396,7 +360,7 @@ export async function registerFaceit(ctx) {
   try { await ctx.deleteMessage(); } catch {}
 }
 
-function formatMatchResult(stats, registeredIds, elo = null, matchId = null) {
+async function formatMatchResult(stats, registeredIds, elo = null, matchId = null) {
   const round = stats.rounds?.[0];
   if (!round) return null;
   let ourTeam = null, theirScore = "?";
@@ -422,9 +386,13 @@ function formatMatchResult(stats, registeredIds, elo = null, matchId = null) {
 
   if (!rows.length) return null;
 
-  const phrase = won
-    ? WIN_PHRASES[Math.floor(Math.random() * WIN_PHRASES.length)]
-    : LOSS_PHRASES[Math.floor(Math.random() * LOSS_PHRASES.length)];
+  const rawMap = round.round_stats?.Map ?? "";
+  const map = rawMap.replace(/^de_/, "").replace(/^cs_/, "").replace(/^\w/, c => c.toUpperCase()) || null;
+  const players = registered.map(p => {
+    const adr = Number(p.player_stats?.ADR);
+    return { nickname: p.nickname, adr: adr >= 80 ? adr : null };
+  });
+  const phrase = await generateMatchPhrase(won, `${ourScore}:${theirScore}`, { map, elo, players });
 
   const eloStr = elo ? ` (${elo.ours} Elo vs ${elo.theirs} Elo)` : "";
 
@@ -474,7 +442,7 @@ export async function autoPostResult(api, chatId) {
 
   // Refresh Elo for all members once before posting any results
   const registeredIds = new Map(members.map(m => [m.faceit_player_id, { elo: m.faceit_elo }]));
-  await Promise.all(members.map(async m => {
+  await Promise.allSettled(members.map(async m => {
     const profile = await getPlayerById(m.faceit_player_id).catch(() => null);
     if (!profile) return;
     const elo = profile.games?.cs2?.faceit_elo ?? null;
@@ -513,7 +481,7 @@ export async function autoPostResult(api, chatId) {
       ? { ours: ourFaction.stats.rating, theirs: theirFaction.stats.rating }
       : null;
 
-    const text = formatMatchResult(stats, registeredIds, elo, matchId);
+    const text = await formatMatchResult(stats, registeredIds, elo, matchId);
     if (!text) {
       markMatchPosted(chatId, matchId);
       continue;
@@ -550,7 +518,7 @@ export async function sendReminder(api, chatId, messageId) {
   const joining = rsvps.filter(r => r.status === "join");
   if (joining.length <= 1) return;
 
-  const phrase = pickHypePhrase();
+  const phrase = await generateHypePhrase(extractEventName(row.base_text));
   reminderPhraseCache.set(`${chatId}:${messageId}`, phrase);
   const text = buildReminderText(row, joining, phrase);
   const sent = await api.sendMessage(chatId, text, { parse_mode: "HTML" });
