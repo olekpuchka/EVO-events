@@ -12,7 +12,7 @@ async function generate(prompt, fallback) {
   if (!groq) return fallback();
   try {
     const chat = await groq.chat.completions.create({
-      model: "llama-3.1-8b-instant",
+      model: "meta-llama/llama-4-scout-17b-16e-instruct",
       messages: [{ role: "user", content: prompt }],
       max_tokens: 150,
       temperature: 0.9,
