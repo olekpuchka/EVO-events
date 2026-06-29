@@ -12,7 +12,7 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 - **Poster auto-joins** — the person who posts the event is automatically RSVPed as joining; they are excluded from the "Mentioned:" list since they're already the sender
 - **Priority notifications** — both the `@all` message and the 10-minute reminder use `text_mention` entities, so they trigger iOS priority notifications even when the group is muted
 - **Squad cap at 5** — buttons hidden and event locked with a random hype message when 5 people join; the cap is enforced server-side, so a tap on a stale (not-yet-synced) join button can't push the squad past 5
-- **Random hype phrases** — shared pool used both when the squad fills up and at the reminder; phrase is frozen when the reminder fires so it doesn't change on subsequent RSVP edits
+- **AI-generated hype phrases** — generated via Groq (`llama-3.1-8b-instant`) using the event name as context; used when the squad fills up and in the 10-minute reminder; phrase is frozen when the reminder fires so it doesn't change on subsequent RSVP edits; falls back to a built-in pool if `GROQ_API_KEY` is not set
 - **Auto-pin** the event message (silently — no "pinned" push notification), **auto-unpin** exactly at event start time
 - **One active event at a time** — posting while an event is active shows a temporary notice linking to it
 - **Reminder** sent 10 minutes before the event (skipped if fewer than 2 people joined)
@@ -34,7 +34,7 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 | `/mute` | Opt out of @all mentions |
 | `/unmute` | Opt into @all mentions |
 | `/faceit <nickname>` | Link your FACEIT account — validates against the API and saves your Elo |
-| *(auto)* | Match results are posted automatically — the bot polls FACEIT every 15 minutes and posts any new finished match showing all registered group members who played, sorted by ADR, with K/D/A, ADR and team Elo; deduplication records are pruned after 30 days |
+| *(auto)* | Match results are posted automatically — the bot polls FACEIT every 15 minutes and posts any new finished match showing all registered group members who played, sorted by ADR, with K/D/A, ADR, per-player Elo with ↑/↓ delta, and team Elo; each result includes an AI-generated win/loss phrase (context-aware: map, Elo gap, standout ADR players); deduplication records are pruned after 30 days |
 
 ## Event lifecycle
 
@@ -71,6 +71,7 @@ If no time is given (`@all CS`), the bot mentions everyone but does not pin, tra
    - `DATA_DIR` = `/app/data`
    - `FACEIT_API_KEY` = your FACEIT API key (get one free at [developers.faceit.com](https://developers.faceit.com))
    - `FACEIT_POLL_MINUTES` = how often to auto-check for new matches (default: `15`, minimum: `5`)
+   - `GROQ_API_KEY` = *(optional)* Groq API key for AI-generated hype and match phrases — bot works without it, falling back to built-in phrases (get one free at [console.groq.com](https://console.groq.com))
 3. Mount a persistent volume at `/app/data`
 
 ### Automated deploy via GitHub Actions

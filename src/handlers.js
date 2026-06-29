@@ -184,6 +184,7 @@ export async function cancelEvent(ctx) {
   }
   deleteEventData(ctx.chat.id, message_id);
   clearReminderPhrase(ctx.chat.id, message_id);
+  console.log("[cancel] event cancelled");
   try { await ctx.deleteMessage(); } catch {}
 }
 
@@ -197,6 +198,7 @@ export async function muteNotifications(ctx) {
   }
   trackMember(ctx.chat.id, ctx.from);
   setNotifications(ctx.chat.id, ctx.from.id, false);
+  console.log("[mute] muted");
   const reply = await ctx.reply("You've been muted. You won't be mentioned by @all in this group.\nUse /unmute to re-enable.");
   autoDelete(ctx, reply);
 }
@@ -211,6 +213,7 @@ export async function unmuteNotifications(ctx) {
   }
   trackMember(ctx.chat.id, ctx.from);
   setNotifications(ctx.chat.id, ctx.from.id, true);
+  console.log("[unmute] unmuted");
   const reply = await ctx.reply("You've been added to the mention list. You'll be mentioned by @all in this group.");
   autoDelete(ctx, reply);
 }
