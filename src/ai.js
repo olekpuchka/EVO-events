@@ -58,8 +58,8 @@ export async function generateMatchPhrase(won, score, { map, elo, players } = {}
     ? topPlayers.map(p => `${p.nickname} (${p.adr} ADR)`).join(", ")
     : null;
 
-  const upsetWin = elo && elo.theirs > elo.ours;
-  const upsetLoss = elo && elo.theirs < elo.ours;
+  const upsetWin = elo && elo.theirs - elo.ours >= 75;
+  const upsetLoss = elo && elo.ours - elo.theirs >= 75;
 
   const context = [
     score,

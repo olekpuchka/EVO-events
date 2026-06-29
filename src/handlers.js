@@ -380,8 +380,11 @@ async function formatMatchResult(stats, registeredIds, elo = null, matchId = nul
     .sort((a, b) => Number(b.player_stats?.ADR ?? 0) - Number(a.player_stats?.ADR ?? 0))
     .map(p => {
       const s = p.player_stats ?? {};
-      const playerElo = registeredIds.get(p.player_id)?.elo;
-      return `· <b>${escapeHtml(p.nickname)}</b> (${playerElo ? `${playerElo} Elo` : "? Elo"}) — ${s.Kills ?? "?"}/${s.Deaths ?? "?"}/${s.Assists ?? "?"} · ${s.ADR ?? "?"} ADR`;
+      const { preElo, postElo } = registeredIds.get(p.player_id) ?? {};
+      const delta = preElo && postElo ? postElo - preElo : null;
+      const deltaStr = delta !== null ? `, ${delta >= 0 ? "↑" : "↓"}${Math.abs(delta)}` : "";
+      const eloStr = postElo ? `${postElo} Elo${deltaStr}` : "? Elo";
+      return `· <b>${escapeHtml(p.nickname)}</b> (${eloStr}) — ${s.Kills ?? "?"}/${s.Deaths ?? "?"}/${s.Assists ?? "?"} · ${s.ADR ?? "?"} ADR`;
     });
 
   if (!rows.length) return null;
@@ -440,13 +443,13 @@ export async function autoPostResult(api, chatId) {
   if (historyErrors) console.error(`[faceit] poll: ${historyErrors}/${members.length} history calls failed`);
   if (!matchCounts.size) return;
 
-  // Refresh Elo for all members once before posting any results
-  const registeredIds = new Map(members.map(m => [m.faceit_player_id, { elo: m.faceit_elo }]));
+  // Fetch post-match Elo for all members; keep pre-match Elo from DB to calculate delta
+  const registeredIds = new Map(members.map(m => [m.faceit_player_id, { preElo: m.faceit_elo, postElo: null }]));
   await Promise.allSettled(members.map(async m => {
     const profile = await getPlayerById(m.faceit_player_id).catch(() => null);
     if (!profile) return;
     const elo = profile.games?.cs2?.faceit_elo ?? null;
-    registeredIds.get(m.faceit_player_id).elo = elo;
+    registeredIds.get(m.faceit_player_id).postElo = elo;
     setFaceitAccount(chatId, m.user_id, m.faceit_player_id, elo);
   }));
 
