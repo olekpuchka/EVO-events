@@ -72,7 +72,7 @@ export async function generateMatchPhrase(won, score, { map, elo, players } = {}
 
   if (won) {
     const playerInstruction = playerStr
-      ? `Some players had 90+ ADR: ${playerStr} — you may mention any of them, but only use names and ADR numbers from this list.`
+      ? `Exactly these players had 90+ ADR: ${playerStr}. You may mention one or more of them. NEVER invent player names or ADR values — if you mention a player name or ADR number, it must come verbatim from this list and nowhere else.`
       : `Do not mention any player names or statistics.`;
     return generate(
       `You are a hype bot for a casual CS2 gaming group chat.` +
