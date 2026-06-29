@@ -312,7 +312,7 @@ function buildReminderText(row, joining, phrase) {
     `🔔 <b>Reminder!</b> Event starts in <b>10 minutes</b> (at ${timeStr}) 🎮` +
     (eventName ? `\n\n${eventName}` : "") +
     `\n\n🍌 <b>Joining (${joining.length}):</b>\n${joining.map(buildMention).join(", ")}` +
-    `\n\n🔥 <b>${phrase}</b>`
+    `\n\n<i>${phrase}</i>`
   );
 }
 
