@@ -394,10 +394,7 @@ async function formatMatchResult(stats, registeredIds, elo = null, matchId = nul
 
   const rawMap = round.round_stats?.Map ?? "";
   const map = rawMap.replace(/^de_/, "").replace(/^cs_/, "").replace(/^\w/, c => c.toUpperCase()) || null;
-  const players = registered.map(p => {
-    const adr = Number(p.player_stats?.ADR);
-    return { nickname: p.nickname, adr: adr >= 80 ? adr : null };
-  });
+  const players = registered.map(p => ({ nickname: p.nickname, adr: Number(p.player_stats?.ADR) }));
   const phrase = await generateMatchPhrase(won, `${ourScore}:${theirScore}`, { map, elo, players });
 
   const eloStr = elo ? ` (${elo.ours} Elo vs ${elo.theirs} Elo)` : "";

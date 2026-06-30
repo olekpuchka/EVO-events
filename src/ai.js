@@ -23,7 +23,8 @@ async function generate(prompt, fallback) {
       .replace(/["'"']/g, "").replace(/@(?=\w)/g, "")
       .replace(/[*_`#~|]/g, "")
       .replace(/<(?!\/?(?:b|i)>)[^>]*>/g, "")
-      .replace(/\b[A-Z]{2,}\b/g, w => w === "ADR" ? w : w.toLowerCase())
+      .replace(/\b[A-Z]{2,}\b/g, w => w.toLowerCase())
+      .replace(/\badr\b/gi, "ADR")
       .replace(/<\/\d+>/g, "")
       .replace(/^<i>(.*)<\/i>$/, (_, inner) => inner.includes("</i>") ? `<i>${inner}</i>` : inner)
       .replace(/<b>(?![^<]*<\/b>)/g, "").replace(/<i>(?![^<]*<\/i>)/g, "")
@@ -77,7 +78,7 @@ export async function generateMatchPhrase(won, score, { map, elo, players } = {}
     return generate(
       `You are a hype bot for a casual CS2 gaming group chat.` +
       ` The squad just WON ${context}.` +
-      ` Write ONE short funny celebratory message. ${playerInstruction} ${upsetWin ? "Hype the upset angle." : "Do NOT use the word upset."} Mention the map name naturally if it fits. If you mention Elo ratings, always write them as X Elo, never as Xs or shorthand. Rules: max 25 words, exactly 1 emoji placed at the end, positive and triumphant tone, no uppercase words, do NOT mention losing or anything negative, no quotes.` +
+      ` Write ONE short funny celebratory message. ${playerInstruction} ${upsetWin ? "Hype the upset angle." : "Do NOT use the word upset."} Mention the map name naturally if it fits. Only mention Elo ratings if they are explicitly provided in the context — never invent Elo numbers. If you do mention Elo, always write it as X Elo, never as Xs or shorthand. Rules: max 25 words, exactly 1 emoji placed at the end, positive and triumphant tone, no uppercase words, do NOT mention losing or anything negative, no quotes.` +
       ` Use <b>bold</b> or <i>italic</i> Telegram HTML tags sparingly to emphasize specific words only. No other HTML tags. No markdown whatsoever. Output only the message, nothing else.`,
       () => FALLBACK_WIN
     );
