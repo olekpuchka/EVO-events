@@ -72,6 +72,7 @@ If no time is given (`@all CS`), the bot mentions everyone but does not pin, tra
    - `FACEIT_API_KEY` = your FACEIT API key (get one free at [developers.faceit.com](https://developers.faceit.com))
    - `FACEIT_POLL_MINUTES` = how often to auto-check for new matches (default: `15`, minimum: `5`)
    - `GROQ_API_KEY` = *(optional)* Groq API key for AI-generated hype and match phrases — bot works without it, falling back to built-in phrases (get one free at [console.groq.com](https://console.groq.com))
+   - `LANGUAGE` = *(optional)* `EN` or `UA` — sets the language for all bot messages, button labels, and AI-generated phrases (default: `EN`)
 3. Mount a persistent volume at `/app/data`
 
 ### Automated deploy via GitHub Actions
@@ -108,7 +109,8 @@ EVO-events/
 │   ├── db.js          # SQLite — members, events, RSVPs, scheduled jobs
 │   ├── faceit.js      # FACEIT API client — player lookup, match history, stats, map images
 │   ├── handlers.js    # mentionAll, handleRsvp, cancelEvent, mute/unmute, sendReminder, registerFaceit, autoPostResult
-│   └── helpers.js     # buildMention, escapeHtml, splitIntoChunks, autoDelete
+│   ├── helpers.js     # buildMention, escapeHtml, splitIntoChunks, autoDelete
+│   └── i18n.js        # Centralized labels (EN/UA), selected via LANGUAGE env var
 ├── bot.js             # Entry point — commands, scheduler loop, graceful shutdown
 ├── Dockerfile
 ├── .dockerignore

@@ -2,6 +2,7 @@ import { trackMember, getMembers, setNotifications, getNotificationsStatus, save
 import { buildMention, escapeHtml, splitIntoChunks, autoDelete } from "./helpers.js";
 import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapImageUrl } from "./faceit.js";
 import { generateHypePhrase, generateMatchPhrase } from "./ai.js";
+import { t } from "./i18n.js";
 
 // Parse HH:MM from a message string. Interprets the time as Kyiv (Europe/Kyiv) timezone.
 // Returns Unix timestamp (today or tomorrow Kyiv time) or null.
@@ -48,8 +49,8 @@ export function clearReminderPhrase(chatId, messageId) {
 function buildKeyboard() {
   return {
     inline_keyboard: [[
-      { text: "🍌 Joining", callback_data: "join", style: "success" },
-      { text: "❌ Not joining", callback_data: "not_join", style: "danger" }
+      { text: t("joinButton"), callback_data: "join", style: "success" },
+      { text: t("notJoinButton"), callback_data: "not_join", style: "danger" }
     ]]
   };
 }
@@ -63,40 +64,34 @@ function buildRsvpSection(rsvps) {
   }
   let section = "";
   if (joining.length > 0)
-    section += `\n\n🍌 <b>Joining (${joining.length}):</b>\n${joining.map(buildMention).join(", ")}`;
+    section += `\n\n${t("joiningHeader", joining.length)}\n${joining.map(buildMention).join(", ")}`;
   if (notJoining.length > 0)
-    section += `\n\n❌ <b>Not joining (${notJoining.length}):</b>\n${notJoining.map(buildMention).join(", ")}`;
+    section += `\n\n${t("notJoiningHeader", notJoining.length)}\n${notJoining.map(buildMention).join(", ")}`;
   return section;
 }
 
 export async function mentionAll(ctx, message = "") {
   if (ctx.chat.type === "private") {
-    await ctx.reply("This command only works in group chats.");
+    await ctx.reply(t("groupOnly"));
     return;
   }
 
   const rows = getMembers(ctx.chat.id);
 
   if (rows.length === 0) {
-    const reply = await ctx.reply(
-      "No members registered yet.\n\nMembers need to use <code>/mute</code> or <code>/unmute</code> to be added to the mention list.",
-      { parse_mode: "HTML" }
-    );
+    const reply = await ctx.reply(t("noMembers"), { parse_mode: "HTML" });
     autoDelete(ctx, reply);
     return;
   }
 
   if (!message) {
-    const reply = await ctx.reply(
-      "Please include an event name and time, e.g.:\n<code>@all CS 22:00</code>",
-      { parse_mode: "HTML" }
-    );
+    const reply = await ctx.reply(t("usageAll"), { parse_mode: "HTML" });
     autoDelete(ctx, reply);
     return;
   }
 
   const mentions = rows.filter(r => r.id !== ctx.from.id).map(buildMention);
-  const mentionBlock = `<b>Mentioned:</b> ${mentions.join(", ")}`;
+  const mentionBlock = `<b>${t("mentioned")}</b> ${mentions.join(", ")}`;
   const poster = buildMention(ctx.from);
   const fullText = `${poster}: ${escapeHtml(message)}\n\n${mentionBlock}`;
 
@@ -108,10 +103,7 @@ export async function mentionAll(ctx, message = "") {
       const chatIdStr = String(ctx.chat.id);
       const peerId = chatIdStr.startsWith("-100") ? chatIdStr.slice(4) : chatIdStr.replace("-", "");
       const link = `https://t.me/c/${peerId}/${activeEvent.message_id}`;
-      const notice = await ctx.reply(
-        `There is already <a href="${link}">an active event</a>. It will be unpinned automatically when it ends.`,
-        { parse_mode: "HTML" }
-      );
+      const notice = await ctx.reply(t("activeEventExists", link), { parse_mode: "HTML" });
       autoDelete(ctx, notice);
       return;
     }
@@ -170,7 +162,7 @@ export async function cancelEvent(ctx) {
 
   const activeEvent = getActiveEvent(ctx.chat.id);
   if (!activeEvent) {
-    const reply = await ctx.reply("There is no active event to cancel.");
+    const reply = await ctx.reply(t("noActiveEvent"));
     autoDelete(ctx, reply);
     return;
   }
@@ -182,7 +174,7 @@ export async function cancelEvent(ctx) {
 
   await ctx.api.unpinChatMessage(ctx.chat.id, { message_id }).catch(() => {});
 
-  const cancelledText = row.base_text + buildRsvpSection(rsvps) + `\n\n⛔ <b>Cancelled by ${buildMention(ctx.from)}</b>`;
+  const cancelledText = row.base_text + buildRsvpSection(rsvps) + `\n\n⛔ <b>${t("cancelledBy", buildMention(ctx.from))}</b>`;
   try {
     await ctx.api.editMessageText(ctx.chat.id, message_id, cancelledText, {
       parse_mode: "HTML",
@@ -202,32 +194,32 @@ export async function cancelEvent(ctx) {
 }
 
 export async function muteNotifications(ctx) {
-  if (ctx.chat.type === "private") { await ctx.reply("This command only works in group chats."); return; }
+  if (ctx.chat.type === "private") { await ctx.reply(t("groupOnly")); return; }
   const current = getNotificationsStatus(ctx.chat.id, ctx.from.id);
   if (current === false) {
-    const reply = await ctx.reply("You are already muted — @all won't mention you.");
+    const reply = await ctx.reply(t("alreadyMuted"));
     autoDelete(ctx, reply);
     return;
   }
   trackMember(ctx.chat.id, ctx.from);
   setNotifications(ctx.chat.id, ctx.from.id, false);
   console.log("[mute] muted");
-  const reply = await ctx.reply("You've been muted. You won't be mentioned by @all in this group.\nUse /unmute to re-enable.");
+  const reply = await ctx.reply(t("mutedSuccess"));
   autoDelete(ctx, reply);
 }
 
 export async function unmuteNotifications(ctx) {
-  if (ctx.chat.type === "private") { await ctx.reply("This command only works in group chats."); return; }
+  if (ctx.chat.type === "private") { await ctx.reply(t("groupOnly")); return; }
   const current = getNotificationsStatus(ctx.chat.id, ctx.from.id);
   if (current === true) {
-    const reply = await ctx.reply("You are already unmuted and will be mentioned by @all.");
+    const reply = await ctx.reply(t("alreadyUnmuted"));
     autoDelete(ctx, reply);
     return;
   }
   trackMember(ctx.chat.id, ctx.from);
   setNotifications(ctx.chat.id, ctx.from.id, true);
   console.log("[unmute] unmuted");
-  const reply = await ctx.reply("You've been added to the mention list. You'll be mentioned by @all in this group.");
+  const reply = await ctx.reply(t("unmutedSuccess"));
   autoDelete(ctx, reply);
 }
 
@@ -237,7 +229,7 @@ export async function handleRsvp(ctx) {
 
   const activeEvent = getActiveEvent(chatId);
   if (!activeEvent) {
-    await ctx.answerCallbackQuery({ text: "This event has already ended." });
+    await ctx.answerCallbackQuery({ text: t("eventEnded") });
     return;
   }
   const messageId = activeEvent.message_id;
@@ -247,20 +239,20 @@ export async function handleRsvp(ctx) {
   // is actually the current active event.
   const clickedMessageId = ctx.callbackQuery.message?.message_id;
   if (clickedMessageId && clickedMessageId !== messageId) {
-    await ctx.answerCallbackQuery({ text: "This event has already ended." });
+    await ctx.answerCallbackQuery({ text: t("eventEnded") });
     return;
   }
 
   const row = getEventBaseText(chatId, messageId);
   if (!row) {
     console.error("[rsvp] no active event found");
-    await ctx.answerCallbackQuery({ text: "This event has already ended." });
+    await ctx.answerCallbackQuery({ text: t("eventEnded") });
     return;
   }
 
   const currentStatus = getUserRsvpStatus(chatId, messageId, ctx.from.id);
   if (currentStatus === status) {
-    const toastText = status === "join" ? "🍌 You're already joining!" : "❌ You're already not joining!";
+    const toastText = status === "join" ? t("alreadyJoining") : t("alreadyNotJoining");
     await ctx.answerCallbackQuery({ text: toastText });
     return;
   }
@@ -271,7 +263,7 @@ export async function handleRsvp(ctx) {
     const joiningNow = getRsvps(chatId, messageId).filter(r => r.status === "join");
     if (joiningNow.length >= MAX_PLAYERS) {
       console.log("[rsvp] rejected — squad full");
-      await ctx.answerCallbackQuery({ text: `🔒 Squad's already full (${MAX_PLAYERS}/${MAX_PLAYERS})!` });
+      await ctx.answerCallbackQuery({ text: t("squadFull", MAX_PLAYERS) });
       return;
     }
   }
@@ -300,8 +292,8 @@ export async function handleRsvp(ctx) {
   }
 
   const toastText = status === "join"
-    ? (isFull ? `🔥 You're in! ${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS}) 🔒` : "🍌 You're joining!")
-    : "❌ You aren't joining!";
+    ? (isFull ? t("joinedFull", fullPhrase, MAX_PLAYERS) : t("joining"))
+    : t("notJoining");
   await ctx.answerCallbackQuery({ text: toastText });
 
   // If the reminder has already been sent, update its joining list too.
@@ -322,12 +314,12 @@ export async function handleRsvp(ctx) {
 function buildReminderText(row, joining, phrase) {
   const timeStr = row.event_time
     ? new Date(row.event_time * 1000).toLocaleTimeString("uk-UA", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit" })
-    : "soon";
+    : t("soon");
   const eventName = extractEventName(row.base_text);
   return (
-    `🔔 <b>Reminder!</b> Event starts in <b>10 minutes</b> (at ${timeStr}) 🎮` +
+    t("reminderHeader", timeStr) +
     (eventName ? `\n\n${eventName}` : "") +
-    `\n\n🍌 <b>Joining (${joining.length}):</b>\n${joining.map(buildMention).join(", ")}` +
+    `\n\n${t("joiningHeader", joining.length)}\n${joining.map(buildMention).join(", ")}` +
     `\n\n<i>${phrase}</i>`
   );
 }
@@ -336,7 +328,7 @@ export async function registerFaceit(ctx) {
   if (ctx.chat.type === "private") return;
   const nickname = ctx.match?.trim();
   if (!nickname) {
-    const reply = await ctx.reply("Usage: /faceit &lt;your FACEIT nickname&gt;", { parse_mode: "HTML" });
+    const reply = await ctx.reply(t("faceitUsage"), { parse_mode: "HTML" });
     autoDelete(ctx, reply);
     return;
   }
@@ -346,20 +338,20 @@ export async function registerFaceit(ctx) {
     player = await getPlayer(nickname);
   } catch (err) {
     console.error("[faceit] API error:", err.message);
-    const reply = await ctx.reply("FACEIT API is unavailable, try again later.");
+    const reply = await ctx.reply(t("faceitUnavailable"));
     autoDelete(ctx, reply);
     return;
   }
 
   if (!player) {
-    const reply = await ctx.reply(`Player "${escapeHtml(nickname)}" not found on FACEIT.`, { parse_mode: "HTML" });
+    const reply = await ctx.reply(t("faceitNotFound", escapeHtml(nickname)), { parse_mode: "HTML" });
     autoDelete(ctx, reply);
     return;
   }
 
   const cs2 = player.games?.cs2;
   if (!cs2) {
-    const reply = await ctx.reply(`"${escapeHtml(player.nickname)}" has no CS2 stats on FACEIT.`, { parse_mode: "HTML" });
+    const reply = await ctx.reply(t("faceitNoStats", escapeHtml(player.nickname)), { parse_mode: "HTML" });
     autoDelete(ctx, reply);
     return;
   }
@@ -369,7 +361,7 @@ export async function registerFaceit(ctx) {
   console.log(`[faceit] registered "${player.nickname}"`);
 
   const reply = await ctx.reply(
-    `Linked! <b>${escapeHtml(player.nickname)}</b> (${cs2.faceit_elo ? `${cs2.faceit_elo} Elo` : "Unranked"})`,
+    t("faceitLinked", escapeHtml(player.nickname), cs2.faceit_elo ? `${cs2.faceit_elo} Elo` : t("unranked")),
     { parse_mode: "HTML" }
   );
   autoDelete(ctx, reply);
@@ -413,7 +405,7 @@ async function formatMatchResult(stats, registeredIds, elo = null, matchId = nul
   const eloStr = elo ? ` (${elo.ours} Elo vs ${elo.theirs} Elo)` : "";
 
   const matchLink = matchId
-    ? `\n\n🔗 View on <a href="https://www.faceit.com/en/cs2/room/${matchId}/scoreboard">FACEIT</a>`
+    ? `\n\n🔗 ${t("viewOnFaceit")} <a href="https://www.faceit.com/en/cs2/room/${matchId}/scoreboard">FACEIT</a>`
     : "";
 
   return (

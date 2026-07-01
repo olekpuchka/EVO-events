@@ -1,19 +1,22 @@
 import Groq from "groq-sdk";
+import { t, LANG } from "./i18n.js";
 
 const groq = process.env.GROQ_API_KEY
   ? new Groq({ apiKey: process.env.GROQ_API_KEY })
   : null;
 
-const FALLBACK_HYPE = "Banana squad, rise up! 🍌";
-const FALLBACK_WIN = "WE ARE SO BACK 🍌🍌🍌";
-const FALLBACK_LOSS = "Their VAC-clean accounts played suspiciously well 🤔";
+const FALLBACK_HYPE = t("fallbackHype");
+const FALLBACK_WIN = t("fallbackWin");
+const FALLBACK_LOSS = t("fallbackLoss");
+
+const LANGUAGE_INSTRUCTION = LANG === "UA" ? " Respond in Ukrainian." : "";
 
 async function generate(prompt, fallback) {
   if (!groq) return fallback();
   try {
     const chat = await groq.chat.completions.create({
       model: "meta-llama/llama-4-scout-17b-16e-instruct",
-      messages: [{ role: "user", content: prompt }],
+      messages: [{ role: "user", content: prompt + LANGUAGE_INSTRUCTION }],
       max_tokens: 150,
       temperature: 0.9,
     });
@@ -23,7 +26,7 @@ async function generate(prompt, fallback) {
       .replace(/["'"']/g, "").replace(/@(?=\w)/g, "")
       .replace(/[*_`#~|]/g, "")
       .replace(/<(?!\/?(?:b|i)>)[^>]*>/g, "")
-      .replace(/\b[A-Z]{2,}\b/g, w => w.toLowerCase())
+      .replace(/(?<![\p{L}\p{N}])\p{Lu}{2,}(?![\p{L}\p{N}])/gu, w => w.toLowerCase())
       .replace(/\badr\b/gi, "ADR")
       .replace(/<\/\d+>/g, "")
       .replace(/^<i>(.*)<\/i>$/, (_, inner) => inner.includes("</i>") ? `<i>${inner}</i>` : inner)
