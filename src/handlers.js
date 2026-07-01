@@ -177,8 +177,21 @@ export async function cancelEvent(ctx) {
 
   const { message_id } = activeEvent;
   const reminderMessageId = getReminderMessageId(ctx.chat.id, message_id);
+  const row = getEventBaseText(ctx.chat.id, message_id);
+  const rsvps = getRsvps(ctx.chat.id, message_id);
+
   await ctx.api.unpinChatMessage(ctx.chat.id, { message_id }).catch(() => {});
-  await ctx.api.deleteMessage(ctx.chat.id, message_id).catch(() => {});
+
+  const cancelledText = row.base_text + buildRsvpSection(rsvps) + `\n\n⛔ <b>Cancelled by ${buildMention(ctx.from)}</b>`;
+  try {
+    await ctx.api.editMessageText(ctx.chat.id, message_id, cancelledText, {
+      parse_mode: "HTML",
+      reply_markup: { inline_keyboard: [] }
+    });
+  } catch (err) {
+    console.error("[cancel] edit failed:", err.message);
+  }
+
   if (reminderMessageId) {
     await ctx.api.deleteMessage(ctx.chat.id, reminderMessageId).catch(() => {});
   }
