@@ -11,7 +11,9 @@ const FALLBACK_LOSS = t("fallbackLoss");
 
 const LANGUAGE_INSTRUCTION = LANG === "UA" ? " Respond in Ukrainian." : "";
 
-async function generate(prompt, fallback) {
+const ELO_MENTION = /(?<![\p{L}\p{N}])(elo|ело)(?![\p{L}\p{N}])/iu;
+
+async function generate(prompt, fallback, { allowElo = true } = {}) {
   if (!groq) return fallback();
   try {
     const chat = await groq.chat.completions.create({
@@ -28,11 +30,13 @@ async function generate(prompt, fallback) {
       .replace(/<(?!\/?(?:b|i)>)[^>]*>/g, "")
       .replace(/(?<![\p{L}\p{N}])\p{Lu}{2,}(?![\p{L}\p{N}])/gu, w => w.toLowerCase())
       .replace(/\badr\b/gi, "ADR")
+      .replace(/(?<![\p{L}\p{N}])ело(?![\p{L}\p{N}])/giu, "Elo")
       .replace(/<\/\d+>/g, "")
       .replace(/^<i>(.*)<\/i>$/, (_, inner) => inner.includes("</i>") ? `<i>${inner}</i>` : inner)
       .replace(/<b>(?![^<]*<\/b>)/g, "").replace(/<i>(?![^<]*<\/i>)/g, "")
       .replace(/<\/b>/g, (m, off, s) => s.slice(0, off).includes("<b>") ? m : "")
       .replace(/<\/i>/g, (m, off, s) => s.slice(0, off).includes("<i>") ? m : "");
+    if (!allowElo && ELO_MENTION.test(result)) return fallback();
     const emojis = [...(result?.matchAll(/\p{Emoji_Presentation}/gu) ?? [])];
     if (emojis.length > 1) {
       const lastIdx = emojis[emojis.length - 1].index;
@@ -81,16 +85,18 @@ export async function generateMatchPhrase(won, score, { map, elo, players } = {}
     return generate(
       `You are a hype bot for a casual CS2 gaming group chat.` +
       ` The squad just WON ${context}.` +
-      ` Write ONE short funny celebratory message. You MUST end the message with exactly 1 emoji — never omit it. ${playerInstruction} ${upsetWin ? "Hype the upset angle." : "Do NOT use the word upset."} Mention the map name naturally if it fits — keep it in English exactly as given, never translate or transliterate it. Only mention Elo ratings if they are explicitly provided in the context — never invent Elo numbers. If you do mention Elo, always write it as X Elo, never as Xs or shorthand. Rules: max 25 words, positive and triumphant tone, no uppercase words, do NOT mention losing or anything negative, no quotes.` +
+      ` Write ONE short funny celebratory message. You MUST end the message with exactly 1 emoji — never omit it. ${playerInstruction} ${upsetWin ? "Hype the upset angle." : "Do NOT use the word upset."} Mention the map name naturally if it fits — keep it in English exactly as given, never translate or transliterate it. Only mention Elo ratings if they are explicitly provided in the context — never invent Elo numbers. If you do mention Elo, always write it as X Elo, never as Xs or shorthand, and always spell "Elo" in English — never translate or transliterate it (e.g. never write "ело"). Rules: max 25 words, positive and triumphant tone, no uppercase words, do NOT mention losing or anything negative, no quotes.` +
       ` Use <b>bold</b> or <i>italic</i> Telegram HTML tags sparingly to emphasize specific words only. No other HTML tags. No markdown whatsoever. Output only the message, nothing else.`,
-      () => FALLBACK_WIN
+      () => FALLBACK_WIN,
+      { allowElo: Boolean(upsetWin) }
     );
   }
   return generate(
     `You are a hype bot for a casual CS2 gaming group chat.` +
     ` The squad just LOST ${context}.` +
-    ` Write ONE short funny sarcastic message. You MUST end the message with exactly 1 emoji — never omit it. Pick ONE angle: either mock the enemy's suspiciously perfect aim (spinbots, wallhacks, 97% HS rate) OR blame FACEIT anticheat for being asleep on the job. If they lost to a lower-rated team, make the cheater accusation even more dramatic. Mention the map name naturally if it fits — keep it in English exactly as given, never translate or transliterate it. Keep it punchy, never blame the team. Only mention Elo ratings if they are explicitly provided in the context — never invent Elo numbers. If you do mention Elo, always write it as X Elo, never as Xs or shorthand. Rules: max 20 words, no uppercase words, no quotes.` +
+    ` Write ONE short funny sarcastic message. You MUST end the message with exactly 1 emoji — never omit it. Pick ONE angle: either mock the enemy's suspiciously perfect aim (spinbots, wallhacks, 97% HS rate) OR blame FACEIT anticheat for being asleep on the job. If they lost to a lower-rated team, make the cheater accusation even more dramatic. Mention the map name naturally if it fits — keep it in English exactly as given, never translate or transliterate it. Keep it punchy, never blame the team. Only mention Elo ratings if they are explicitly provided in the context — never invent Elo numbers. If you do mention Elo, always write it as X Elo, never as Xs or shorthand, and always spell "Elo" in English — never translate or transliterate it (e.g. never write "ело"). Rules: max 20 words, no uppercase words, no quotes.` +
     ` Use <b>bold</b> or <i>italic</i> Telegram HTML tags sparingly to emphasize specific words only. No other HTML tags. No markdown whatsoever. Output only the message, nothing else.`,
-    () => FALLBACK_LOSS
+    () => FALLBACK_LOSS,
+    { allowElo: Boolean(upsetLoss) }
   );
 }
