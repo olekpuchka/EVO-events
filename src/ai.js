@@ -50,7 +50,7 @@ export async function generateHypePhrase(eventName) {
   return generate(
     `You are a hype bot for a casual CS2 gaming group chat.` +
     ` A squad just filled up ${context}.` +
-    ` Write ONE hype message to fire them up. Rules: max 15 words, exactly 1 emoji placed at the end, funny and energetic, no uppercase words, no quotes.` +
+    ` Write ONE hype message to fire them up. You MUST end the message with exactly 1 emoji — never omit it. Rules: max 15 words, funny and energetic, no uppercase words, no quotes.` +
     ` Use <b>bold</b> or <i>italic</i> Telegram HTML tags sparingly to emphasize specific words only. No other HTML tags. No markdown whatsoever. Output only the message, nothing else.`,
     () => FALLBACK_HYPE
   );
@@ -81,7 +81,7 @@ export async function generateMatchPhrase(won, score, { map, elo, players } = {}
     return generate(
       `You are a hype bot for a casual CS2 gaming group chat.` +
       ` The squad just WON ${context}.` +
-      ` Write ONE short funny celebratory message. ${playerInstruction} ${upsetWin ? "Hype the upset angle." : "Do NOT use the word upset."} Mention the map name naturally if it fits. Only mention Elo ratings if they are explicitly provided in the context — never invent Elo numbers. If you do mention Elo, always write it as X Elo, never as Xs or shorthand. Rules: max 25 words, exactly 1 emoji placed at the end, positive and triumphant tone, no uppercase words, do NOT mention losing or anything negative, no quotes.` +
+      ` Write ONE short funny celebratory message. You MUST end the message with exactly 1 emoji — never omit it. ${playerInstruction} ${upsetWin ? "Hype the upset angle." : "Do NOT use the word upset."} Mention the map name naturally if it fits — keep it in English exactly as given, never translate or transliterate it. Only mention Elo ratings if they are explicitly provided in the context — never invent Elo numbers. If you do mention Elo, always write it as X Elo, never as Xs or shorthand. Rules: max 25 words, positive and triumphant tone, no uppercase words, do NOT mention losing or anything negative, no quotes.` +
       ` Use <b>bold</b> or <i>italic</i> Telegram HTML tags sparingly to emphasize specific words only. No other HTML tags. No markdown whatsoever. Output only the message, nothing else.`,
       () => FALLBACK_WIN
     );
@@ -89,7 +89,7 @@ export async function generateMatchPhrase(won, score, { map, elo, players } = {}
   return generate(
     `You are a hype bot for a casual CS2 gaming group chat.` +
     ` The squad just LOST ${context}.` +
-    ` Write ONE short funny sarcastic message. Pick ONE angle: either mock the enemy's suspiciously perfect aim (spinbots, wallhacks, 97% HS rate) OR blame FACEIT anticheat for being asleep on the job. If they lost to a lower-rated team, make the cheater accusation even more dramatic. Mention the map name naturally if it fits. Keep it punchy, never blame the team. Only mention Elo ratings if they are explicitly provided in the context — never invent Elo numbers. If you do mention Elo, always write it as X Elo, never as Xs or shorthand. Rules: max 20 words, exactly 1 emoji placed at the end, no uppercase words, no quotes.` +
+    ` Write ONE short funny sarcastic message. You MUST end the message with exactly 1 emoji — never omit it. Pick ONE angle: either mock the enemy's suspiciously perfect aim (spinbots, wallhacks, 97% HS rate) OR blame FACEIT anticheat for being asleep on the job. If they lost to a lower-rated team, make the cheater accusation even more dramatic. Mention the map name naturally if it fits — keep it in English exactly as given, never translate or transliterate it. Keep it punchy, never blame the team. Only mention Elo ratings if they are explicitly provided in the context — never invent Elo numbers. If you do mention Elo, always write it as X Elo, never as Xs or shorthand. Rules: max 20 words, no uppercase words, no quotes.` +
     ` Use <b>bold</b> or <i>italic</i> Telegram HTML tags sparingly to emphasize specific words only. No other HTML tags. No markdown whatsoever. Output only the message, nothing else.`,
     () => FALLBACK_LOSS
   );

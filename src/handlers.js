@@ -312,12 +312,9 @@ export async function handleRsvp(ctx) {
 }
 
 function buildReminderText(row, joining, phrase) {
-  const timeStr = row.event_time
-    ? new Date(row.event_time * 1000).toLocaleTimeString("uk-UA", { timeZone: "Europe/Kyiv", hour: "2-digit", minute: "2-digit" })
-    : t("soon");
   const eventName = extractEventName(row.base_text);
   return (
-    t("reminderHeader", timeStr) +
+    t("reminderHeader") +
     (eventName ? `\n\n${eventName}` : "") +
     `\n\n${t("joiningHeader", joining.length)}\n${joining.map(buildMention).join(", ")}` +
     `\n\n<i>${phrase}</i>`
