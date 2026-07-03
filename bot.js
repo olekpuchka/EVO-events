@@ -11,6 +11,18 @@ if (!process.env.FACEIT_API_KEY) {
 
 const bot = new Bot(process.env.BOT_TOKEN);
 
+// ─── Normalize command case (grammy matches /command exactly, case-sensitive) ─
+
+bot.use((ctx, next) => {
+  const msg = ctx.message ?? ctx.channelPost;
+  const entity = msg?.entities?.find(e => e.type === "bot_command" && e.offset === 0);
+  if (entity) {
+    const cmd = msg.text.slice(0, entity.length);
+    msg.text = cmd.toLowerCase() + msg.text.slice(entity.length);
+  }
+  return next();
+});
+
 // ─── Commands: /mute, /unmute, /cancel ───────────────────────────────────────
 
 bot.command("mute", muteNotifications);

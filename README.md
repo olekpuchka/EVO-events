@@ -36,6 +36,8 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 | `/faceit <nickname>` | Link your FACEIT account — validates against the API and saves your Elo |
 | *(auto)* | Match results are posted automatically — the bot polls FACEIT every 15 minutes and posts any new finished match showing all registered group members who played, sorted by ADR, with K/D/A, ADR, per-player Elo with ↑/↓ delta, and team Elo; each result includes an AI-generated win/loss phrase (context-aware: map, Elo gap, standout ADR players); deduplication records are pruned after 30 days |
 
+All slash commands (`/mute`, `/unmute`, `/cancel`, `/faceit`) are **case-insensitive** — e.g. `/FACEIT`, `/Cancel`, and `/MUTE` all work (a middleware lowercases the command before matching; arguments keep their original casing).
+
 ## Event lifecycle
 
 1. `@all CS 22:00` → bot posts pinned message with RSVP buttons, auto-RSVPs poster as 🍌 joining, deletes trigger message
