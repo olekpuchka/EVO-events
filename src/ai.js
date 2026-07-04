@@ -1,24 +1,27 @@
-import Groq from "groq-sdk";
+import OpenAI from "openai";
 import { t, LANG } from "./i18n.js";
 
-const groq = process.env.GROQ_API_KEY
-  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
+const ai = process.env.DEEPSEEK_API_KEY
+  ? new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY, baseURL: "https://api.deepseek.com" })
   : null;
 
 const FALLBACK_HYPE = t("fallbackHype");
 const FALLBACK_WIN = t("fallbackWin");
 const FALLBACK_LOSS = t("fallbackLoss");
 
-const LANGUAGE_INSTRUCTION = LANG === "UA" ? " Respond in Ukrainian." : "";
+const LANGUAGE_INSTRUCTION = LANG === "UA"
+  ? " Write in natural, fluent Ukrainian — NEVER Russian. Use Ukrainian spelling and grammar, never Russian (e.g. що not что, зараз not сейчас, робимо not делаем, вони not они). BUT keep every map name, player nickname, and English gaming term (ADR, Elo, HS) in Latin letters exactly as given — copy those characters verbatim, never transliterate them into Cyrillic. Write Inferno not Інферно, Mirage not Міраж, prox not прокс."
+  : "";
 
 const ELO_MENTION = /(?<![\p{L}\p{N}])(elo|ело)(?![\p{L}\p{N}])/iu;
 
 async function generate(prompt, fallback, { allowElo = true } = {}) {
-  if (!groq) return fallback();
+  if (!ai) return fallback();
   try {
-    const chat = await groq.chat.completions.create({
-      model: "meta-llama/llama-4-scout-17b-16e-instruct",
+    const chat = await ai.chat.completions.create({
+      model: "deepseek-v4-flash",
       messages: [{ role: "user", content: prompt + LANGUAGE_INSTRUCTION }],
+      thinking: { type: "disabled" },
       max_tokens: 150,
       temperature: 0.8,
     });
@@ -30,7 +33,9 @@ async function generate(prompt, fallback, { allowElo = true } = {}) {
       .replace(/<(?!\/?(?:b|i)>)[^>]*>/g, "")
       .replace(/(?<![\p{L}\p{N}])\p{Lu}{2,}(?![\p{L}\p{N}])/gu, w => w.toLowerCase())
       .replace(/\badr\b/gi, "ADR")
+      .replace(/(?<![\p{L}\p{N}])адр(?![\p{L}\p{N}])/giu, "ADR")
       .replace(/(?<![\p{L}\p{N}])ело(?![\p{L}\p{N}])/giu, "Elo")
+      .replace(/(?<![\p{L}\p{N}])elo(?![\p{L}\p{N}])/giu, "Elo")
       .replace(/<\/\d+>/g, "")
       .replace(/^<i>(.*)<\/i>$/, (_, inner) => inner.includes("</i>") ? `<i>${inner}</i>` : inner)
       .replace(/<b>(?![^<]*<\/b>)/g, "").replace(/<i>(?![^<]*<\/i>)/g, "")
@@ -80,7 +85,7 @@ export async function generateMatchPhrase(won, score, { map, elo, players } = {}
 
   if (won) {
     const playerInstruction = playerStr
-      ? `Exactly these players had 90+ ADR: ${playerStr}. You may mention one or more of them. NEVER invent player names or ADR values — if you mention a player name or ADR number, it must come verbatim from this list and nowhere else. Keep every player nickname in English exactly as written — never translate or transliterate it (e.g. never write "Transend" as "Трансенд").`
+      ? `Exactly these players had 90+ ADR: ${playerStr}. You may mention one or more of them. NEVER invent player names or ADR values — if you mention a player name or ADR number, it must come verbatim from this list and nowhere else. Keep every player nickname in English exactly as written — never translate or transliterate it (e.g. never write "prox" as "прокс").`
       : `Do not mention any player names or statistics.`;
     return generate(
       `You are a hype bot for a casual CS2 gaming group chat.` +

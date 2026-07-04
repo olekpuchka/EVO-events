@@ -12,6 +12,6 @@
   },
   "dependencies": {
     "grammy": "^1.44.0",
-    "groq-sdk": "^1.3.0"
+    "openai": "^6.45.0"
   }
 }

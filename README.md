@@ -12,7 +12,7 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 - **Poster auto-joins** — the person who posts the event is automatically RSVPed as joining; they are excluded from the "Mentioned:" list since they're already the sender
 - **Priority notifications** — both the `@all` message and the 10-minute reminder use `text_mention` entities, so they trigger iOS priority notifications even when the group is muted
 - **Squad cap at 5** — buttons hidden and event locked with a random hype message when 5 people join; the cap is enforced server-side, so a tap on a stale (not-yet-synced) join button can't push the squad past 5
-- **AI-generated hype phrases** — generated via Groq (`meta-llama/llama-4-scout-17b-16e-instruct`) using the event name as context; used when the squad fills up and in the 10-minute reminder; phrase is frozen when the reminder fires so it doesn't change on subsequent RSVP edits; falls back to a built-in pool if `GROQ_API_KEY` is not set
+- **AI-generated hype phrases** — generated via DeepSeek (`deepseek-v4-flash`) using the event name as context; used when the squad fills up and in the 10-minute reminder; phrase is frozen when the reminder fires so it doesn't change on subsequent RSVP edits; falls back to a built-in pool if `DEEPSEEK_API_KEY` is not set
 - **Auto-pin** the event message (silently — no "pinned" push notification), **auto-unpin** exactly at event start time
 - **One active event at a time** — posting while an event is active shows a temporary notice linking to it
 - **Reminder** sent 10 minutes before the event (skipped if fewer than 2 people joined)
@@ -73,7 +73,7 @@ If no time is given (`@all CS`), the bot mentions everyone but does not pin, tra
    - `DATA_DIR` = `/app/data`
    - `FACEIT_API_KEY` = your FACEIT API key (get one free at [developers.faceit.com](https://developers.faceit.com))
    - `FACEIT_POLL_MINUTES` = how often to auto-check for new matches (default: `15`, minimum: `5`)
-   - `GROQ_API_KEY` = *(optional)* Groq API key for AI-generated hype and match phrases — bot works without it, falling back to built-in phrases (get one free at [console.groq.com](https://console.groq.com))
+   - `DEEPSEEK_API_KEY` = *(optional)* DeepSeek API key for AI-generated hype and match phrases — bot works without it, falling back to built-in phrases (get one at [platform.deepseek.com](https://platform.deepseek.com))
    - `LANGUAGE` = *(optional)* `EN` or `UA` — sets the language for all bot messages, button labels, and AI-generated phrases (default: `EN`)
 3. Mount a persistent volume at `/app/data`
 
