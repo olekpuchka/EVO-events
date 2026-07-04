@@ -55,6 +55,17 @@ function buildKeyboard() {
   };
 }
 
+// When the squad is full we drop the "Joining" button but keep "Not joining",
+// so a locked-in player who can no longer make it can free up their seat.
+// Dropping out takes the count back below the cap, which restores buildKeyboard().
+function buildLeaveOnlyKeyboard() {
+  return {
+    inline_keyboard: [[
+      { text: t("notJoinButton"), callback_data: "not_join", style: "danger" }
+    ]]
+  };
+}
+
 function buildRsvpSection(rsvps) {
   const joining = [];
   const notJoining = [];
@@ -257,8 +268,8 @@ export async function handleRsvp(ctx) {
     return;
   }
 
-  // Enforce the squad cap server-side: buttons are hidden at 5/5, but a stale
-  // client may still show "Joining". Reject the join instead of going 6/5.
+  // Enforce the squad cap server-side: the "Joining" button is removed at 5/5,
+  // but a stale client may still show it. Reject the join instead of going 6/5.
   if (status === "join") {
     const joiningNow = getRsvps(chatId, messageId).filter(r => r.status === "join");
     if (joiningNow.length >= MAX_PLAYERS) {
@@ -278,7 +289,7 @@ export async function handleRsvp(ctx) {
   const fullPhrase = isFull ? await generateHypePhrase(eventName) : "";
   console.log(`[rsvp] ${status === "join" ? "joined" : "not joining"} (🍌 ${joining.length}/${MAX_PLAYERS}, ❌ ${notJoining.length})${isFull ? " — squad full" : ""}`);
   const newText = row.base_text + buildRsvpSection(rsvps) + (isFull ? `\n\n🔥 <b>${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS})</b> 🔒` : "");
-  const keyboard = isFull ? { inline_keyboard: [] } : buildKeyboard();
+  const keyboard = isFull ? buildLeaveOnlyKeyboard() : buildKeyboard();
 
   try {
     await ctx.api.editMessageText(chatId, messageId, newText, {

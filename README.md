@@ -11,7 +11,8 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 - **RSVP buttons** — 🍌 Joining / ❌ Not joining, live-updated on the pinned message (only for timed events); tapping the same button twice is a no-op — message is only edited when the status actually changes
 - **Poster auto-joins** — the person who posts the event is automatically RSVPed as joining; they are excluded from the "Mentioned:" list since they're already the sender
 - **Priority notifications** — both the `@all` message and the 10-minute reminder use `text_mention` entities, so they trigger iOS priority notifications even when the group is muted
-- **Squad cap at 5** — buttons hidden and event locked with a random hype message when 5 people join; the cap is enforced server-side, so a tap on a stale (not-yet-synced) join button can't push the squad past 5
+- **Squad cap at 5** — the 🍌 Joining button is removed and the event is locked with a random hype message when 5 people join; the cap is enforced server-side, so a tap on a stale (not-yet-synced) join button can't push the squad past 5
+- **Drop out when full** — the ❌ Not joining button stays visible at 5/5 so a locked-in player who can no longer make it can free their seat; dropping out takes the count back below the cap, which removes the lock/hype message and restores the 🍌 Joining button for everyone else
 - **AI-generated hype phrases** — generated via DeepSeek (`deepseek-v4-flash`) using the event name as context; used when the squad fills up and in the 10-minute reminder; phrase is frozen when the reminder fires so it doesn't change on subsequent RSVP edits; falls back to a built-in pool if `DEEPSEEK_API_KEY` is not set
 - **Auto-pin** the event message (silently — no "pinned" push notification), **auto-unpin** exactly at event start time
 - **One active event at a time** — posting while an event is active shows a temporary notice linking to it
@@ -42,7 +43,7 @@ All slash commands (`/mute`, `/unmute`, `/cancel`, `/faceit`) are **case-insensi
 
 1. `@all CS 22:00` → bot posts pinned message with RSVP buttons, auto-RSVPs poster as 🍌 joining, deletes trigger message
 2. Members tap 🍌 / ❌ — message updates live with names and counts
-3. At 5 joiners → buttons hidden, squad locked 🔒 with a random hype message (further joins from stale clients are rejected)
+3. At 5 joiners → 🍌 Joining button removed, squad locked 🔒 with a random hype message (further joins from stale clients are rejected); ❌ Not joining stays available so a joined player can drop out and reopen a seat — doing so clears the lock and restores the join button
 4. **21:50 Kyiv** → reminder sent with joining list and a random hype phrase (skipped if fewer than 2 joined); any RSVP after this point also updates the reminder message (phrase stays frozen)
 5. **22:00 Kyiv** → reminder deleted, message unpinned, buttons removed, DB cleaned up
 
