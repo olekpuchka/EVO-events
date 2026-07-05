@@ -38,11 +38,18 @@ function extractEventName(baseText) {
 // Keyed by `${chatId}:${messageId}` — frozen when reminder fires, reused on RSVP edits.
 const reminderPhraseCache = new Map();
 
+// Keyed by `${chatId}:${messageId}` — the full-squad hype phrase shown in the message body,
+// frozen once the squad first fills so later RSVP edits (e.g. a non-player tapping "not going")
+// don't swap it for a fresh AI line. Cleared if the squad drops below full so a re-fill re-hypes.
+const fullPhraseCache = new Map();
+
 // chatId → messageId for pins triggered by @all — lets bot.js delete only those service messages.
 export const pendingPinDeletion = new Map();
 
 export function clearReminderPhrase(chatId, messageId) {
-  reminderPhraseCache.delete(`${chatId}:${messageId}`);
+  const key = `${chatId}:${messageId}`;
+  reminderPhraseCache.delete(key);
+  fullPhraseCache.delete(key);
 }
 
 
@@ -295,7 +302,16 @@ export async function handleRsvp(ctx) {
   await ctx.answerCallbackQuery({ text: toastText });
 
   // Generate the full-squad hype phrase for the message body only (not the toast).
-  const fullPhrase = isFull ? await generateHypePhrase(eventName) : "";
+  // Freeze it on first fill so later edits (a non-player tapping "not going" while still
+  // 5/5) reuse it instead of generating a new line; drop it if the squad is no longer full.
+  const phraseKey = `${chatId}:${messageId}`;
+  let fullPhrase = "";
+  if (isFull) {
+    fullPhrase = fullPhraseCache.get(phraseKey) ?? await generateHypePhrase(eventName);
+    fullPhraseCache.set(phraseKey, fullPhrase);
+  } else {
+    fullPhraseCache.delete(phraseKey);
+  }
 
   const newText = row.base_text + buildRsvpSection(rsvps) + (isFull ? `\n\n🔥 <b>${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS})</b> 🔒` : "");
   const keyboard = isFull ? buildLeaveOnlyKeyboard() : buildKeyboard();
