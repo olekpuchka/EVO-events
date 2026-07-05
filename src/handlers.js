@@ -288,15 +288,14 @@ export async function handleRsvp(ctx) {
   const eventName = extractEventName(row.base_text);
   console.log(`[rsvp] ${status === "join" ? "joined" : "not joining"} (🍌 ${joining.length}/${MAX_PLAYERS}, ❌ ${notJoining.length})${isFull ? " — squad full" : ""}`);
 
-  // Generate the full-squad hype phrase up front so it can appear in the toast.
-  const fullPhrase = isFull ? await generateHypePhrase(eventName) : "";
-
-  // Answer the callback before the message edit — the phrase is already in hand,
-  // so the button stops spinning without also waiting on the edit round-trip.
-  const toastText = status === "join"
-    ? (isFull ? t("joinedFull", fullPhrase, MAX_PLAYERS) : t("joining"))
-    : t("notJoining");
+  // Answer the callback first — the toast is uniform (same for the 1st or 5th joiner)
+  // and needs no AI, so the button stops spinning immediately instead of waiting on
+  // the hype generation and edit round-trips below.
+  const toastText = status === "join" ? t("joining") : t("notJoining");
   await ctx.answerCallbackQuery({ text: toastText });
+
+  // Generate the full-squad hype phrase for the message body only (not the toast).
+  const fullPhrase = isFull ? await generateHypePhrase(eventName) : "";
 
   const newText = row.base_text + buildRsvpSection(rsvps) + (isFull ? `\n\n🔥 <b>${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS})</b> 🔒` : "");
   const keyboard = isFull ? buildLeaveOnlyKeyboard() : buildKeyboard();
