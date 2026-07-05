@@ -1,5 +1,5 @@
 import { Bot } from "grammy";
-import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearReminderPhrase, registerFaceit, autoPostResult, pendingPinDeletion } from "./src/handlers.js";
+import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearEventPhrases, registerFaceit, autoPostResult, pendingPinDeletion } from "./src/handlers.js";
 import { getDueUnpins, getDueReminders, deleteScheduledReminder, deleteEventData, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/db.js";
 
 if (!process.env.BOT_TOKEN) {
@@ -96,7 +96,7 @@ const schedulerInterval = setInterval(async () => {
             : Promise.resolve()
         ]);
       })
-      .finally(() => { deleteEventData(chat_id, message_id); clearReminderPhrase(chat_id, message_id); });
+      .finally(() => { deleteEventData(chat_id, message_id); clearEventPhrases(chat_id, message_id); });
   });
 
   await Promise.allSettled(unpinJobs);

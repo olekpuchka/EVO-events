@@ -35,19 +35,27 @@ function extractEventName(baseText) {
 }
 
 
-// Keyed by `${chatId}:${messageId}` — frozen when reminder fires, reused on RSVP edits.
+// Both keyed by phraseKey() — hold AI hype phrases frozen per event so RSVP edits reuse them
+// instead of regenerating. reminderPhraseCache is frozen when the reminder fires; fullPhraseCache
+// is frozen once the squad first fills (and cleared if it drops below full, so a re-fill re-hypes).
+// Both are torn down together in clearEventPhrases when the event ends.
 const reminderPhraseCache = new Map();
-
-// Keyed by `${chatId}:${messageId}` — the full-squad hype phrase shown in the message body,
-// frozen once the squad first fills so later RSVP edits (e.g. a non-player tapping "not going")
-// don't swap it for a fresh AI line. Cleared if the squad drops below full so a re-fill re-hypes.
 const fullPhraseCache = new Map();
 
 // chatId → messageId for pins triggered by @all — lets bot.js delete only those service messages.
 export const pendingPinDeletion = new Map();
 
-export function clearReminderPhrase(chatId, messageId) {
-  const key = `${chatId}:${messageId}`;
+const phraseKey = (chatId, messageId) => `${chatId}:${messageId}`;
+
+// Return the cached hype phrase for this key, or generate one and freeze it in the cache.
+async function cachedHypePhrase(cache, key, eventName) {
+  const phrase = cache.get(key) ?? await generateHypePhrase(eventName);
+  cache.set(key, phrase);
+  return phrase;
+}
+
+export function clearEventPhrases(chatId, messageId) {
+  const key = phraseKey(chatId, messageId);
   reminderPhraseCache.delete(key);
   fullPhraseCache.delete(key);
 }
@@ -206,7 +214,7 @@ export async function cancelEvent(ctx) {
     await ctx.api.deleteMessage(ctx.chat.id, reminderMessageId).catch(() => {});
   }
   deleteEventData(ctx.chat.id, message_id);
-  clearReminderPhrase(ctx.chat.id, message_id);
+  clearEventPhrases(ctx.chat.id, message_id);
   console.log("[cancel] event cancelled");
   try { await ctx.deleteMessage(); } catch {}
 }
@@ -304,13 +312,12 @@ export async function handleRsvp(ctx) {
   // Generate the full-squad hype phrase for the message body only (not the toast).
   // Freeze it on first fill so later edits (a non-player tapping "not going" while still
   // 5/5) reuse it instead of generating a new line; drop it if the squad is no longer full.
-  const phraseKey = `${chatId}:${messageId}`;
+  const key = phraseKey(chatId, messageId);
   let fullPhrase = "";
   if (isFull) {
-    fullPhrase = fullPhraseCache.get(phraseKey) ?? await generateHypePhrase(eventName);
-    fullPhraseCache.set(phraseKey, fullPhrase);
+    fullPhrase = await cachedHypePhrase(fullPhraseCache, key, eventName);
   } else {
-    fullPhraseCache.delete(phraseKey);
+    fullPhraseCache.delete(key);
   }
 
   const newText = row.base_text + buildRsvpSection(rsvps) + (isFull ? `\n\n🔥 <b>${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS})</b> 🔒` : "");
@@ -331,7 +338,7 @@ export async function handleRsvp(ctx) {
   // Done after answerCallbackQuery so a cache-miss AI call doesn't block the response.
   const reminderMessageId = getReminderMessageId(chatId, messageId);
   if (reminderMessageId) {
-    const phrase = reminderPhraseCache.get(`${chatId}:${messageId}`) ?? await generateHypePhrase(eventName);
+    const phrase = await cachedHypePhrase(reminderPhraseCache, key, eventName);
     const updatedReminderText = buildReminderText(row, joining, phrase);
     await ctx.api.editMessageText(chatId, reminderMessageId, updatedReminderText, { parse_mode: "HTML" })
       .catch(err => {
@@ -555,7 +562,7 @@ export async function sendReminder(api, chatId, messageId) {
   if (joining.length <= 1) return;
 
   const phrase = await generateHypePhrase(extractEventName(row.base_text));
-  reminderPhraseCache.set(`${chatId}:${messageId}`, phrase);
+  reminderPhraseCache.set(phraseKey(chatId, messageId), phrase);
   const text = buildReminderText(row, joining, phrase);
   const sent = await api.sendMessage(chatId, text, { parse_mode: "HTML" });
   console.log(`[reminder] sent — ${joining.length} joining`);
