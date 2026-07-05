@@ -286,8 +286,18 @@ export async function handleRsvp(ctx) {
   const notJoining = rsvps.filter(r => r.status === "not_join");
   const isFull = joining.length >= MAX_PLAYERS;
   const eventName = extractEventName(row.base_text);
-  const fullPhrase = isFull ? await generateHypePhrase(eventName) : "";
   console.log(`[rsvp] ${status === "join" ? "joined" : "not joining"} (🍌 ${joining.length}/${MAX_PLAYERS}, ❌ ${notJoining.length})${isFull ? " — squad full" : ""}`);
+
+  // Generate the full-squad hype phrase up front so it can appear in the toast.
+  const fullPhrase = isFull ? await generateHypePhrase(eventName) : "";
+
+  // Answer the callback before the message edit — the phrase is already in hand,
+  // so the button stops spinning without also waiting on the edit round-trip.
+  const toastText = status === "join"
+    ? (isFull ? t("joinedFull", fullPhrase, MAX_PLAYERS) : t("joining"))
+    : t("notJoining");
+  await ctx.answerCallbackQuery({ text: toastText });
+
   const newText = row.base_text + buildRsvpSection(rsvps) + (isFull ? `\n\n🔥 <b>${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS})</b> 🔒` : "");
   const keyboard = isFull ? buildLeaveOnlyKeyboard() : buildKeyboard();
 
@@ -301,11 +311,6 @@ export async function handleRsvp(ctx) {
       console.error("[rsvp] edit failed:", err.message);
     }
   }
-
-  const toastText = status === "join"
-    ? (isFull ? t("joinedFull", fullPhrase, MAX_PLAYERS) : t("joining"))
-    : t("notJoining");
-  await ctx.answerCallbackQuery({ text: toastText });
 
   // If the reminder has already been sent, update its joining list too.
   // Done after answerCallbackQuery so a cache-miss AI call doesn't block the response.
