@@ -493,14 +493,14 @@ export async function autoPostResult(api, chatId) {
   if (historyErrors) console.error(`[faceit] poll: ${historyErrors}/${members.length} history calls failed`);
   if (!matchCounts.size) return;
 
-  // Fetch post-match Elo for all members; keep pre-match Elo from DB to calculate delta
-  const registeredIds = new Map(members.map(m => [m.faceit_player_id, { preElo: m.faceit_elo, postElo: null }]));
+  // Fetch post-match Elo for all members; keep pre-match Elo from DB to calculate delta.
+  // Do NOT persist the new Elo yet — if posting fails (e.g. FACEIT 429), the match is retried
+  // next poll and preElo must still be the pre-match value or the delta collapses to 0.
+  const registeredIds = new Map(members.map(m => [m.faceit_player_id, { userId: m.user_id, preElo: m.faceit_elo, postElo: null }]));
   await Promise.allSettled(members.map(async m => {
     const profile = await getPlayerById(m.faceit_player_id).catch(() => null);
     if (!profile) return;
-    const elo = profile.games?.cs2?.faceit_elo ?? null;
-    registeredIds.get(m.faceit_player_id).postElo = elo;
-    setFaceitAccount(chatId, m.user_id, m.faceit_player_id, elo);
+    registeredIds.get(m.faceit_player_id).postElo = profile.games?.cs2?.faceit_elo ?? null;
   }));
 
   // Sort by member count desc, then oldest first so multiple sessions post in chronological order
@@ -559,6 +559,11 @@ export async function autoPostResult(api, chatId) {
     }
     if (!sent) continue;
     markMatchPosted(chatId, matchId);
+    // Lock in the new Elo baseline now that the delta has been posted, so the next match
+    // measures its delta from here. Skip members whose profile fetch failed (postElo null).
+    for (const [playerId, { userId, postElo }] of registeredIds) {
+      if (postElo !== null) setFaceitAccount(chatId, userId, playerId, postElo);
+    }
     console.log("[faceit] auto-posted result");
   }
 }
