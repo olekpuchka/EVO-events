@@ -19,6 +19,25 @@ jobs:
         with:
           node-version: 24
 
+      - name: Deploy to JustRunMy.App
+        run: |
+          set -o pipefail
+          # git push exits 0 even when JustRunMy.App rejects the build/schedule —
+          # the remote accepts the branch at the protocol level and reports failures
+          # only as text (e.g. "No matching nodes"). Capture the output and fail the
+          # step if the remote printed its error banner, so the release below is
+          # skipped and the run goes red.
+          if ! output=$(git push "${{ secrets.JUSTRUNMY_DEPLOY_URL }}" HEAD:refs/heads/deploy 2>&1); then
+            echo "$output"
+            echo "::error::git push to JustRunMy.App failed"
+            exit 1
+          fi
+          echo "$output"
+          if echo "$output" | grep -qiE 'Error processing git push|No matching nodes'; then
+            echo "::error::JustRunMy.App rejected the deploy (see remote output above)"
+            exit 1
+          fi
+
       - name: Create GitHub Release
         run: |
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
@@ -42,6 +61,3 @@ jobs:
           gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --notes-file /tmp/release-notes.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Deploy to JustRunMy.App
-        run: git push "${{ secrets.JUSTRUNMY_DEPLOY_URL }}" HEAD:refs/heads/deploy

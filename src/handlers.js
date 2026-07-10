@@ -81,6 +81,16 @@ function buildLeaveOnlyKeyboard() {
   };
 }
 
+// Lists only members who haven't RSVP'd yet — responders already show in the
+// Joining/Not joining sections. Returns "" when nobody's left, so the block
+// disappears instead of leaving an empty header.
+function buildMentionedBlock(mentionedUsers, rsvps) {
+  const responded = new Set(rsvps.map(r => r.id));
+  const pending = mentionedUsers.filter(u => !responded.has(u.id));
+  if (pending.length === 0) return "";
+  return `\n\n<b>${t("mentioned")}</b> ${pending.map(buildMention).join(", ")}`;
+}
+
 function buildRsvpSection(rsvps) {
   const joining = [];
   const notJoining = [];
@@ -116,10 +126,9 @@ export async function mentionAll(ctx, message = "") {
     return;
   }
 
-  const mentions = rows.filter(r => r.id !== ctx.from.id).map(buildMention);
-  const mentionBlock = `<b>${t("mentioned")}</b> ${mentions.join(", ")}`;
   const poster = buildMention(ctx.from);
-  const fullText = `${poster}: ${escapeHtml(message)}\n\n${mentionBlock}`;
+  const messageLine = `${poster}: ${escapeHtml(message)}`;
+  const mentionedUsers = rows.filter(r => r.id !== ctx.from.id);
 
   const eventTime = parseEventTime(message);
 
@@ -141,7 +150,7 @@ export async function mentionAll(ctx, message = "") {
     // so the message is delivered to all clients with the keyboard already attached —
     // avoiding the send-then-edit race condition that caused buttons to not appear.
     const initialRsvps = [{ ...ctx.from, status: "join" }];
-    const initialText = fullText + buildRsvpSection(initialRsvps);
+    const initialText = messageLine + buildMentionedBlock(mentionedUsers, initialRsvps) + buildRsvpSection(initialRsvps);
     const keyboard = buildKeyboard();
 
     const chunks = splitIntoChunks(initialText);
@@ -153,7 +162,7 @@ export async function mentionAll(ctx, message = "") {
     }
 
     try {
-      saveEvent(ctx.chat.id, lastSent.message_id, fullText, eventTime);
+      saveEvent(ctx.chat.id, lastSent.message_id, messageLine, eventTime);
     } catch (err) {
       console.error("[event] save failed:", err.message);
     }
@@ -173,6 +182,7 @@ export async function mentionAll(ctx, message = "") {
       console.error("[event] pin failed:", err.message);
     }
   } else {
+    const fullText = messageLine + buildMentionedBlock(mentionedUsers, []);
     const chunks = splitIntoChunks(fullText);
     for (const chunk of chunks) {
       lastSent = await ctx.api.sendMessage(ctx.chat.id, chunk, { parse_mode: "HTML" });
@@ -320,7 +330,7 @@ export async function handleRsvp(ctx) {
     fullPhraseCache.delete(key);
   }
 
-  const newText = row.base_text + buildRsvpSection(rsvps) + (isFull ? `\n\n🔥 <b>${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS})</b> 🔒` : "");
+  const newText = row.base_text + buildMentionedBlock(getMembers(chatId), rsvps) + buildRsvpSection(rsvps) + (isFull ? `\n\n🔥 <b>${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS})</b> 🔒` : "");
   const keyboard = isFull ? buildLeaveOnlyKeyboard() : buildKeyboard();
 
   try {
