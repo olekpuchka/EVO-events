@@ -66,7 +66,7 @@ export async function generateHypePhrase(eventName) {
 }
 
 export async function generateMatchPhrase(won, score, { map, elo, players } = {}) {
-  const topPlayers = players?.filter(p => p.adr >= 90) ?? [];
+  const topPlayers = players?.filter(p => p.adr >= 100) ?? [];
   const playerStr = topPlayers.length
     ? topPlayers.map(p => `${p.nickname} (${p.adr} ADR)`).join(", ")
     : null;
@@ -85,7 +85,7 @@ export async function generateMatchPhrase(won, score, { map, elo, players } = {}
 
   if (won) {
     const playerInstruction = playerStr
-      ? `Exactly these players had 90+ ADR: ${playerStr}. You may mention one or more of them. NEVER invent player names or ADR values — if you mention a player name or ADR number, it must come verbatim from this list and nowhere else. Keep every player nickname in English exactly as written — never translate or transliterate it (e.g. never write "prox" as "прокс").`
+      ? `Exactly these players had 100+ ADR: ${playerStr}. You may mention one or more of them. NEVER invent player names or ADR values — if you mention a player name or ADR number, it must come verbatim from this list and nowhere else. Keep every player nickname in English exactly as written — never translate or transliterate it (e.g. never write "prox" as "прокс").`
       : `Do not mention any player names or statistics.`;
     return generate(
       `You are a hype bot for a casual CS2 gaming group chat.` +
