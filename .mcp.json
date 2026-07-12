@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "justrunmy.app": {
+      "url": "https://justrunmy.app/api/mcp",
+      "type": "http",
+      "headers": {
+        "X-User-Identity": ""
+      }
+    }
+  }
+}
