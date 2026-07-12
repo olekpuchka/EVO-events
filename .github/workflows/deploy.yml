@@ -53,11 +53,34 @@ jobs:
           if [ -n "$FIXES" ]; then
             NOTES+="## Fixes"$'\n\n'"$FIXES"$'\n\n'
           fi
+          # No user-facing feat/fix commits — this is a maintenance-only release.
+          # Show a clean one-liner instead of dumping every chore/refactor commit.
           if [ -z "$NOTES" ]; then
-            NOTES=$(git log $RANGE --pretty=format:"- %s")
+            NOTES="Maintenance release — internal improvements, no user-facing changes."
           fi
 
           printf '%s' "$NOTES" > /tmp/release-notes.md
           gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --notes-file /tmp/release-notes.md
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync package.json version to tag
+        run: |
+          # Keep package.json / package-lock.json aligned with the release tag without a
+          # local helper: bump them to the tag version and commit onto master. The tagged
+          # commit itself isn't rewritten (the app never reads its version at runtime), so
+          # this just stops master's version field from drifting behind the tags.
+          VERSION="${GITHUB_REF_NAME#v}"
+          git fetch origin master
+          git checkout master
+          npm version "$VERSION" --no-git-tag-version --allow-same-version
+          if git diff --quiet; then
+            echo "package.json already at $VERSION — nothing to sync."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: sync version to ${GITHUB_REF_NAME}"
+          git push origin master
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}

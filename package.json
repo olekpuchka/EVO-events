@@ -5,8 +5,7 @@
   "type": "module",
   "scripts": {
     "start": "node bot.js",
-    "dev": "node --watch bot.js",
-    "release": "bash scripts/release.sh"
+    "dev": "node --watch bot.js"
   },
   "engines": {
     "node": ">=24.0.0"
