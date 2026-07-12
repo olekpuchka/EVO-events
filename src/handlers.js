@@ -1,5 +1,5 @@
 import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvent, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, hasPostedMatch, markMatchPosted } from "./db.js";
-import { buildMention, escapeHtml, splitIntoChunks, autoDelete } from "./helpers.js";
+import { buildMention, escapeHtml, autoDelete } from "./helpers.js";
 import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapImageUrl } from "./faceit.js";
 import { generateHypePhrase, generateMatchPhrase } from "./ai.js";
 import { t } from "./i18n.js";
@@ -153,13 +153,10 @@ export async function mentionAll(ctx, message = "") {
     const initialText = messageLine + buildMentionedBlock(mentionedUsers, initialRsvps) + buildRsvpSection(initialRsvps);
     const keyboard = buildKeyboard();
 
-    const chunks = splitIntoChunks(initialText);
-    for (let i = 0; i < chunks.length; i++) {
-      lastSent = await ctx.api.sendMessage(ctx.chat.id, chunks[i], {
-        parse_mode: "HTML",
-        ...(i === chunks.length - 1 ? { reply_markup: keyboard } : {})
-      });
-    }
+    lastSent = await ctx.api.sendMessage(ctx.chat.id, initialText, {
+      parse_mode: "HTML",
+      reply_markup: keyboard
+    });
 
     try {
       saveEvent(ctx.chat.id, lastSent.message_id, messageLine, eventTime);
@@ -183,10 +180,7 @@ export async function mentionAll(ctx, message = "") {
     }
   } else {
     const fullText = messageLine + buildMentionedBlock(mentionedUsers, []);
-    const chunks = splitIntoChunks(fullText);
-    for (const chunk of chunks) {
-      lastSent = await ctx.api.sendMessage(ctx.chat.id, chunk, { parse_mode: "HTML" });
-    }
+    lastSent = await ctx.api.sendMessage(ctx.chat.id, fullText, { parse_mode: "HTML" });
     console.log(`[mention] "${message}"`);
   }
 

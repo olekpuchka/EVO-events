@@ -16,19 +16,3 @@ export function buildMention(user) {
     : [user.first_name, user.last_name].filter(Boolean).join(" ");
   return `<a href="tg://user?id=${user.id}">${escapeHtml(name)}</a>`;
 }
-
-export function splitIntoChunks(text, maxLength = 4096) {
-  if (text.length <= maxLength) return [text];
-  const chunks = [];
-  let current = "";
-  for (const word of text.split(" ")) {
-    if (current.length + 1 + word.length > maxLength) {
-      chunks.push(current.trim());
-      current = word;
-    } else {
-      current += (current ? " " : "") + word;
-    }
-  }
-  if (current.trim()) chunks.push(current.trim());
-  return chunks;
-}

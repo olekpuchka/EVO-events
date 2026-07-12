@@ -4,7 +4,7 @@
       "url": "https://justrunmy.app/api/mcp",
       "type": "http",
       "headers": {
-        "X-User-Identity": ""
+        "X-User-Identity": "${JUSTRUNMYAPP_X_USER_IDENTITY}"
       }
     }
   }
