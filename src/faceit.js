@@ -32,12 +32,8 @@ export function getPlayerById(playerId) {
 }
 
 export async function getRecentMatches(playerId, limit = 5) {
-  const res = await fetch(
-    `${BASE}/players/${playerId}/history?game=cs2&limit=${limit}`,
-    { headers: authHeader() }
-  );
-  if (!res.ok) throw new Error(`FACEIT ${res.status}`);
-  return (await res.json()).items ?? [];
+  const data = await faceitGet(`${BASE}/players/${playerId}/history?game=cs2&limit=${limit}`);
+  return data?.items ?? [];
 }
 
 export function getMatchStats(matchId) {
