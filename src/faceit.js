@@ -4,11 +4,23 @@ function authHeader() {
   return { Authorization: `Bearer ${process.env.FACEIT_API_KEY}` };
 }
 
-async function faceitGet(url) {
-  const res = await fetch(url, { headers: authHeader() });
-  if (res.status === 404) return null;
-  if (!res.ok) throw new Error(`FACEIT ${res.status}`);
-  return res.json();
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+async function faceitGet(url, { retries = 2 } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, { headers: authHeader() });
+    if (res.status === 404) return null;
+    if (res.ok) return res.json();
+    // Retry rate-limits and transient server errors with backoff; a single 429 otherwise
+    // silently degrades a player's line to "? Elo" and the match is never retried.
+    if ((res.status === 429 || res.status >= 500) && attempt < retries) {
+      const retryAfter = Number(res.headers.get("Retry-After"));
+      // Cap the honored Retry-After so a large value can't stall the whole poll.
+      await sleep(retryAfter > 0 ? Math.min(retryAfter * 1000, 5000) : 300 * 2 ** attempt);
+      continue;
+    }
+    throw new Error(`FACEIT ${res.status}`);
+  }
 }
 
 export function getPlayer(nickname) {

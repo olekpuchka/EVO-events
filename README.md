@@ -36,7 +36,7 @@ Built with [grammY](https://grammy.dev/) and Node.js (SQLite for persistence).
 | `/mute` | Opt out of @all mentions |
 | `/unmute` | Opt into @all mentions |
 | `/faceit <nickname>` | Link your FACEIT account — validates against the API and saves your Elo |
-| *(auto)* | Match results are posted automatically — the bot polls FACEIT every 15 minutes and posts any new finished match showing all registered group members who played, sorted by ADR, with K/D/A, ADR, per-player Elo with ↑/↓ delta, and team Elo; each result includes an AI-generated win/loss phrase (context-aware: map, Elo gap, standout ADR players); deduplication records are pruned after 30 days |
+| *(auto)* | Match results are posted automatically — the bot polls FACEIT every 20 minutes and posts any new finished match showing all registered group members who played, sorted by ADR, with K/D/A, ADR, per-player Elo with ↑/↓ delta, and team Elo; per-player Elo is fetched only for members who actually played the match; each result includes an AI-generated win/loss phrase (context-aware: map, Elo gap, standout ADR players); deduplication records are pruned after 30 days |
 
 All slash commands (`/mute`, `/unmute`, `/cancel`, `/faceit`) are **case-insensitive** — e.g. `/FACEIT`, `/Cancel`, and `/MUTE` all work (a middleware lowercases the command before matching; arguments keep their original casing).
 
@@ -74,7 +74,7 @@ If no time is given (`@all CS`), the bot mentions everyone but does not pin, tra
    - `BOT_TOKEN` = your Telegram bot token
    - `DATA_DIR` = `/app/data`
    - `FACEIT_API_KEY` = your FACEIT API key (get one free at [developers.faceit.com](https://developers.faceit.com))
-   - `FACEIT_POLL_MINUTES` = how often to auto-check for new matches (default: `15`, minimum: `5`)
+   - `FACEIT_POLL_MINUTES` = how often to auto-check for new matches (default: `20`, minimum: `5`)
    - `DEEPSEEK_API_KEY` = *(optional)* DeepSeek API key for AI-generated hype and match phrases — bot works without it, falling back to built-in phrases (get one at [platform.deepseek.com](https://platform.deepseek.com))
    - `LANGUAGE` = *(optional)* `EN` or `UA` — sets the language for all bot messages, button labels, and AI-generated phrases (default: `EN`)
 3. Mount a persistent volume at `/app/data`
@@ -111,7 +111,7 @@ EVO-events/
 │       └── deploy.yml # Auto-deploy to JustRunMy.App on v* tag push
 ├── src/
 │   ├── db.js          # SQLite — members, events, RSVPs, scheduled jobs
-│   ├── faceit.js      # FACEIT API client — player lookup, match history, stats, map images
+│   ├── faceit.js      # FACEIT API client — player lookup, match history, stats, map images (retries rate-limits/5xx with backoff)
 │   ├── handlers.js    # mentionAll, handleRsvp, cancelEvent, mute/unmute, sendReminder, registerFaceit, autoPostResult
 │   ├── helpers.js     # buildMention, escapeHtml, splitIntoChunks, autoDelete
 │   └── i18n.js        # Centralized labels (EN/UA), selected via LANGUAGE env var

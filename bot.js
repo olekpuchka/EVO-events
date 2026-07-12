@@ -44,7 +44,7 @@ bot.callbackQuery(/^(join|not_join)$/, handleRsvp);
 
 // ─── Unpin + reminder scheduler: check every minute ──────────────────────────
 
-const FACEIT_POLL_INTERVAL = Math.max(5, Number(process.env.FACEIT_POLL_MINUTES) || 15) * 60;
+const FACEIT_POLL_INTERVAL = Math.max(5, Number(process.env.FACEIT_POLL_MINUTES) || 20) * 60;
 const PRUNE_INTERVAL = 24 * 60 * 60;
 let lastFaceitPoll = 0;
 let lastPrune = Math.floor(Date.now() / 1000);

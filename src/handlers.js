@@ -493,15 +493,10 @@ export async function autoPostResult(api, chatId) {
   if (historyErrors) console.error(`[faceit] poll: ${historyErrors}/${members.length} history calls failed`);
   if (!matchCounts.size) return;
 
-  // Fetch post-match Elo for all members; keep pre-match Elo from DB to calculate delta.
-  // Do NOT persist the new Elo yet — if posting fails (e.g. FACEIT 429), the match is retried
-  // next poll and preElo must still be the pre-match value or the delta collapses to 0.
+  // Map our members → { preElo (DB baseline for the delta), postElo (filled in per match below,
+  // only for members who actually played) }. postElo is NOT persisted until the post succeeds:
+  // if sending fails (e.g. FACEIT 429), preElo must stay the pre-match value or the delta collapses.
   const registeredIds = new Map(members.map(m => [m.faceit_player_id, { userId: m.user_id, preElo: m.faceit_elo, postElo: null }]));
-  await Promise.allSettled(members.map(async m => {
-    const profile = await getPlayerById(m.faceit_player_id).catch(() => null);
-    if (!profile) return;
-    registeredIds.get(m.faceit_player_id).postElo = profile.games?.cs2?.faceit_elo ?? null;
-  }));
 
   // Sort by member count desc, then oldest first so multiple sessions post in chronological order
   const sortedMatches = [...matchCounts.entries()]
@@ -523,6 +518,39 @@ export async function autoPostResult(api, chatId) {
       // else: FINISHED but stats not ready yet — retry next poll
       continue;
     }
+
+    // Fetch current Elo only for our members who actually played this match — not the whole
+    // roster. Fetching sit-out members buys nothing for the post and just burns rate limit.
+    const participantIds = new Set();
+    for (const round of stats.rounds ?? []) {
+      for (const team of round.teams ?? []) {
+        for (const p of team.players ?? []) {
+          if (registeredIds.has(p.player_id)) participantIds.add(p.player_id);
+        }
+      }
+    }
+    const transientFail = new Set();
+    await Promise.allSettled(
+      [...participantIds]
+        .filter(pid => registeredIds.get(pid).postElo === null)
+        .map(async pid => {
+          let profile;
+          try {
+            profile = await getPlayerById(pid);
+          } catch {
+            transientFail.add(pid); // 429/5xx/network after retries — worth retrying next poll
+            return;
+          }
+          if (!profile) return; // 404 profile — permanent, accept "? Elo"
+          registeredIds.get(pid).postElo = profile.games?.cs2?.faceit_elo ?? null; // null = unranked
+        })
+    );
+
+    // Hold the whole match back rather than post partial "? Elo" when a fetch failed transiently —
+    // don't markMatchPosted, so the next poll retries with complete info. Only while it's still
+    // fresh: past the 30-min grace window, fall through and post best-effort so it never sticks.
+    // (Unranked players / 404s aren't in transientFail, so they never block the post.)
+    if (transientFail.size && now - meta.finished_at < 30 * 60) continue;
 
     const mapId = stats.rounds?.[0]?.round_stats?.Map;
     const imageUrl = getMapImageUrl(matchDetails, mapId);
@@ -560,9 +588,12 @@ export async function autoPostResult(api, chatId) {
     if (!sent) continue;
     markMatchPosted(chatId, matchId);
     // Lock in the new Elo baseline now that the delta has been posted, so the next match
-    // measures its delta from here. Skip members whose profile fetch failed (postElo null).
-    for (const [playerId, { userId, postElo }] of registeredIds) {
-      if (postElo !== null) setFaceitAccount(chatId, userId, playerId, postElo);
+    // measures its delta from here. Only this match's participants — committing all of
+    // registeredIds would persist Elo fetched for a different (possibly held-back) match.
+    // Skip members whose profile fetch failed (postElo null).
+    for (const pid of participantIds) {
+      const { userId, postElo } = registeredIds.get(pid);
+      if (postElo !== null) setFaceitAccount(chatId, userId, pid, postElo);
     }
     console.log("[faceit] auto-posted result");
   }
