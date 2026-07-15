@@ -7,11 +7,17 @@ import { t } from "./i18n.js";
 // Parse HH:MM from a message string. Interprets the time as Kyiv (Europe/Kyiv) timezone.
 // Returns Unix timestamp (today or tomorrow Kyiv time) or null.
 function parseEventTime(text) {
-  const match = text.match(/(\d{1,2})[:-](\d{2})/);
-  if (!match) return null;
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (hours > 23 || minutes > 59) return null;
+  // Find the first HH:MM / HH-MM that is a real clock time AND not glued to other digits,
+  // so scores ("de_dust2 16:99"), version/phone numbers, and out-of-range values don't spawn
+  // a phantom event — we skip past them to a later valid time instead of bailing on the first
+  // structural match. Bare ranges like "10-30" remain genuinely ambiguous with 10:30.
+  let hours, minutes;
+  for (const m of text.matchAll(/(?<!\d)(\d{1,2})[:-](\d{2})(?!\d)/g)) {
+    const h = Number(m[1]);
+    const mi = Number(m[2]);
+    if (h <= 23 && mi <= 59) { hours = h; minutes = mi; break; }
+  }
+  if (hours === undefined) return null;
 
   const now = new Date();
   // Get current Kyiv wall-clock time (values are correct, JS treats it as system-local)
@@ -23,6 +29,18 @@ function parseEventTime(text) {
   // Convert back to real UTC: offset = (kyivNow - now) is the Kyiv tz offset
   const utcMs = candidate.getTime() + (now.getTime() - kyivNow.getTime());
   return Math.floor(utcMs / 1000);
+}
+
+// Format an event's Unix timestamp as HH:MM wall-clock time in the given IANA zone (DST-aware).
+function formatTimeIn(unixSeconds, timeZone) {
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone,
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).formatToParts(new Date(unixSeconds * 1000));
+  const get = type => parts.find(p => p.type === type)?.value;
+  return `${get('hour')}:${get('minute')}`;
 }
 
 
@@ -127,10 +145,13 @@ export async function mentionAll(ctx, message = "") {
   }
 
   const poster = buildMention(ctx.from);
-  const messageLine = `${poster}: ${escapeHtml(message)}`;
-  const mentionedUsers = rows.filter(r => r.id !== ctx.from.id);
-
   const eventTime = parseEventTime(message);
+  // Show the Central European (CET/CEST) equivalent next to the Kyiv time the poster typed —
+  // a neutral 🇪🇺 label for the group's EU members. Flag + digits, so it reads the same in every
+  // language; Kyiv shares EU DST rules, so this is always Kyiv −1h.
+  const euSuffix = eventTime ? ` (🇪🇺 ${formatTimeIn(eventTime, 'Europe/Amsterdam')})` : "";
+  const messageLine = `${poster}: ${escapeHtml(message)}${euSuffix}`;
+  const mentionedUsers = rows.filter(r => r.id !== ctx.from.id);
 
   if (eventTime) {
     const activeEvent = getActiveEvent(ctx.chat.id);
