@@ -3,6 +3,62 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions match the release tags.
 
+## [2.3.8]
+
+### Changed
+
+- **Richer AI match commentary.** The DeepSeek phrase generator now gets far
+  more of the FACEIT `/matches/{id}/stats` payload as context, so the win/loss
+  line reacts to what actually happened instead of just the score:
+  - **Per-player** — K/D/A, headshot %, aces/quad-kills, 1v2 clutches, AWP
+    kills, entry frags, utility damage and enemies flashed. Only the top
+    fragger gets the full line; situational stats appear only past a "notable"
+    threshold and the list is capped — a curated hook, not a raw dump.
+  - **Match flow** — a code-computed hook for comeback wins and overtime
+    finishes, kept blame-safe on losses so the never-blame-our-team rule holds.
+  - Players stay anonymized as `P1`/`P2` codes, and the "copy every number
+    exactly, never invent stats" guardrails were widened to cover the new
+    fields.
+- **Generated phrases now cap at 25 words** across the board (was 15 for hype,
+  20 for losses), giving the model room to use the richer context.
+
+## [2.3.7]
+
+### Added
+
+- **CET/CEST (🇪🇺) time shown next to Kyiv time on `@all` events**, for
+  teammates in Central-European time zones.
+
+## [2.3.6]
+
+### Changed
+
+- **Deploy workflow auto-syncs `package.json` to the release tag** in CI,
+  replacing the standalone npm release helper.
+
+## [2.3.5]
+
+### Changed
+
+- **`getRecentMatches` now routes through `faceitGet`**, gaining the same
+  retry/backoff on rate-limits and transient errors as the other FACEIT calls.
+
+### Added
+
+- **`npm run release` script** to keep the version bump and git tag in sync.
+
+## [2.3.4]
+
+### Changed
+
+- **Simplified README** and removed dead message-splitting code; the MCP token
+  is now read from the environment.
+
+### Added
+
+- **JustRunMy.App MCP server config template** (`.mcp.json`) for managing the
+  app from an MCP-capable editor.
+
 ## [2.3.3]
 
 ### Fixed

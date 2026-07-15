@@ -12,7 +12,7 @@ Built with [grammY](https://grammy.dev/) and Node.js (built-in SQLite).
 - **"Mentioned:" list** shows who hasn't replied yet, and shrinks as people RSVP.
 - **Auto-pin / auto-unpin** at start time, with a **reminder 10 minutes before**.
 - **AI hype phrases** (DeepSeek, optional) when the squad fills and in the reminder.
-- **Auto match results** — polls FACEIT and posts finished matches with K/D/A, ADR, per-player Elo ↑/↓, team Elo, and an AI win/loss line.
+- **Auto match results** — polls FACEIT and posts finished matches with K/D/A, ADR, per-player Elo ↑/↓ and team Elo, plus an AI win/loss line that reacts to the match stats (top fraggers, aces, clutches, comebacks, overtime).
 - **Timezone** — all event times parsed and shown in `Europe/Kyiv`.
 - **Language** — English or Ukrainian.
 

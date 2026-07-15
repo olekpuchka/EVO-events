@@ -27,9 +27,9 @@ const SYSTEM_PROMPT =
   "You write ONE short message at a time for a casual CS2 squad's private Telegram group chat." +
   " Output only the message text — no preamble, no quotes, no markdown, no emoji (one emoji is appended programmatically later)." +
   " No words in ALL CAPS." +
-  " Map names and gaming terms (ADR, Elo, HS, FACEIT) always stay in Latin letters exactly as given — never translate or transliterate them into Cyrillic." +
+  " Map names and gaming terms (ADR, Elo, HS, AWP, FACEIT) always stay in Latin letters exactly as given — never translate or transliterate them into Cyrillic." +
   " Players are referenced by codes like P1 or P2: if you mention a player, write the code verbatim — it is replaced with the real nickname later." +
-  " Never output a player code you were not given, never invent players or stats, and copy every ADR/Elo number exactly as provided." +
+  " Never output a player code you were not given, never invent players or stats, and copy every number exactly as provided (ADR, Elo, HS%, K/D/A, scores)." +
   " Mention Elo only if Elo numbers are explicitly given, and write them as X Elo." +
   " You may use Telegram HTML <b> or <i> sparingly to stress a word or two; no other tags." +
   (LANG === "UA" ? UA_STYLE : " Write in casual, punchy English.");
@@ -184,6 +184,8 @@ function sanitize(text, map) {
     .replace(/(?<![\p{L}\p{N}])адр(?![\p{L}\p{N}])/giu, "ADR")
     .replace(/(?<![\p{L}\p{N}])(?:ело|elo)(?![\p{L}\p{N}])/giu, "Elo")
     .replace(/(?<![\p{L}\p{N}])hltv(?![\p{L}\p{N}])/giu, "HLTV")
+    .replace(/(?<![\p{L}\p{N}])hs(?![\p{L}\p{N}])/giu, "HS")
+    .replace(/(?<![\p{L}\p{N}])awp(?![\p{L}\p{N}])/giu, "AWP")
     .replace(/<\/\d+>/g, "")
     .replace(/^<i>(.*)<\/i>$/, (_, inner) => (inner.includes("</i>") ? `<i>${inner}</i>` : inner))
     .replace(/<b>(?![^<]*<\/b>)/g, "")
@@ -210,8 +212,47 @@ function sanitize(text, map) {
  * and lets us fall back cleanly if a code we never issued shows up.
  * ------------------------------------------------------------------ */
 
+// Situational highlights the top player can earn, ordered most-impressive
+// first. `min` is the "notable" bar — set so a stat only shows when it stands
+// out, not for a routine game (e.g. utility damage regularly clears 100, so
+// the bar sits higher). NaN (missing stat) never passes `>= min`.
+const HIGHLIGHTS = [
+  { min: 1, get: p => p.clutches, label: n => (n > 1 ? `${n} 1v2 clutches` : "a 1v2 clutch") },
+  { min: 5, get: p => p.awp, label: n => `${n} AWP kills` },
+  { min: 5, get: p => p.entries, label: n => `${n} entry frags` },
+  { min: 200, get: p => p.util, label: n => `${n} utility damage` },
+  { min: 10, get: p => p.flashes, label: n => `${n} enemies flashed` },
+];
+
+// Only the top player (full=true) gets the dense line (K/D/A, ADR, HS%) and the
+// situational HIGHLIGHTS; the rest get ADR plus the rarest highlight (ace/quad)
+// only. The flair list is capped, so the block stays a curated hook rather than
+// a wall of numbers the model can misquote or converge on — see the
+// never-firehose rationale on the angle roulette above.
+function playerFacts(p, full = true) {
+  const parts = [];
+  if (full && [p.kills, p.deaths, p.assists].every(Number.isFinite)) {
+    parts.push(`${p.kills}/${p.deaths}/${p.assists} K/D/A`);
+  }
+  parts.push(`${p.adr} ADR`);
+  if (full && Number.isFinite(p.hs)) parts.push(`${p.hs}% HS`);
+  const flair = [];
+  if (p.aces > 0) flair.push(p.aces > 1 ? `${p.aces} aces` : "an ace");
+  else if (p.quadros > 0) flair.push(p.quadros > 1 ? `${p.quadros} quad-kills` : "a quad-kill");
+  if (full) {
+    for (const h of HIGHLIGHTS) {
+      const v = h.get(p);
+      if (v >= h.min) flair.push(h.label(v));
+    }
+  }
+  const shown = flair.slice(0, 3); // cap: at most the 3 top highlights
+  return parts.join(", ") + (shown.length ? `, ${shown.join(" & ")}` : "");
+}
+
 function buildPlayerBlock(players) {
-  const top = (players ?? []).filter(p => p.adr >= 100).sort((a, b) => b.adr - a.adr);
+  const top = (players ?? [])
+    .filter(p => Number.isFinite(p.adr) && p.adr >= 100)
+    .sort((a, b) => b.adr - a.adr);
   const none = { line: "Do not mention any player names or stats.", codes: new Map() };
   if (!top.length) return none;
 
@@ -219,11 +260,11 @@ function buildPlayerBlock(players) {
   if (roll < 0.25) return none; // sometimes skip players entirely for variety
 
   const codes = new Map(top.map((p, i) => [`P${i + 1}`, p.nickname]));
-  const list = top.map((p, i) => `P${i + 1} (${p.adr} ADR)`).join(", ");
+  const list = top.map((p, i) => `P${i + 1} (${playerFacts(p, i === 0)})`).join("; ");
   const line =
     roll < 0.6
-      ? `Players who dropped 100+ ADR: ${list}. Build the message around a shoutout to P1, quoting the ADR number exactly.`
-      : `Players who dropped 100+ ADR: ${list}. You may mention at most one of them, quoting codes and numbers exactly.`;
+      ? `Standout players — ${list}. Build the message around a shoutout to P1, quoting its numbers exactly.`
+      : `Standout players — ${list}. You may mention at most one of them, quoting codes and numbers exactly.`;
   return { line, codes };
 }
 
@@ -237,6 +278,27 @@ function mapLine(map) {
 function scoreDiff(score) {
   const m = /(\d+)\D+(\d+)/.exec(score ?? "");
   return m ? Math.abs(Number(m[1]) - Number(m[2])) : null;
+}
+
+/* ------------------------------------------------------------------ *
+ * Match-flow narrative. Like the upset/close signals, the story is
+ * computed in code and handed to the model as one ready hook rather
+ * than raw half-scores. Only blame-safe angles are surfaced: a
+ * comeback win, or an overtime finish either way — never a "we led
+ * and threw it" collapse, which would break the never-blame-our-team
+ * rule on losses.
+ * ------------------------------------------------------------------ */
+
+function flowNote(won, flow) {
+  if (!flow) return null;
+  const { ourFirst, theirFirst, ourOt, theirOt } = flow;
+  if (!Number.isFinite(ourFirst) || !Number.isFinite(theirFirst)) return null;
+  const ot = (Number(ourOt) || 0) + (Number(theirOt) || 0) > 0;
+  if (won && theirFirst - ourFirst >= 3) {
+    return `we were down ${ourFirst}:${theirFirst} at the half and still won${ot ? " in overtime" : ""}`;
+  }
+  if (ot) return won ? "we won it in overtime" : "we lost it in overtime";
+  return null;
 }
 
 /* ------------------------------------------------------------------ */
@@ -293,16 +355,17 @@ export async function generateHypePhrase(eventName) {
     `A squad just filled up ${eventName ? `for an event called "${eventName}"` : "for a CS2 session"}.` +
     ` Write ONE funny, energetic hype message to fire them up.` +
     ` Angle — commit to it fully: ${angle}.` +
-    ` Max 15 words. Do not repeat the event name or start time — they are already shown above your message.` +
+    ` Max 25 words. Do not repeat the event name or start time — they are already shown above your message.` +
     recentBlock("hype");
   return generate("hype", prompt, () => FALLBACK_HYPE);
 }
 
-export async function generateMatchPhrase(won, score, { map, elo, players } = {}) {
+export async function generateMatchPhrase(won, score, { map, elo, players, matchFlow } = {}) {
   const upsetWin = won && elo && elo.theirs - elo.ours >= 75;
   const upsetLoss = !won && elo && elo.ours - elo.theirs >= 75;
   const diff = scoreDiff(score);
   const close = diff !== null && diff <= 3;
+  const flow = flowNote(won, matchFlow);
 
   const context = [
     score,
@@ -320,6 +383,7 @@ export async function generateMatchPhrase(won, score, { map, elo, players } = {}
       ` ${playerLine}` +
       ` ${mapLine(map)}` +
       (upsetWin ? " Our team was rated lower and still won — make that part of the joke." : "") +
+      (flow ? ` Extra angle you can lean into: ${flow}.` : "") +
       ` Max 25 words. Triumphant, never mention losing or anything negative.` +
       recentBlock("win");
     return generate("win", prompt, () => FALLBACK_WIN, { allowElo: Boolean(upsetWin), codes, map });
@@ -331,7 +395,8 @@ export async function generateMatchPhrase(won, score, { map, elo, players } = {}
     ` Angle — commit to it fully: ${angle}.` +
     ` ${mapLine(map)}` +
     (upsetLoss ? " They were rated lower than us — squeeze maximum drama out of that." : "") +
-    ` Max 20 words. Punchy; never blame our own team.` +
+    (flow ? ` Extra angle you can lean into: ${flow}.` : "") +
+    ` Max 25 words. Punchy; never blame our own team.` +
     recentBlock("loss");
   return generate("loss", prompt, () => FALLBACK_LOSS, { allowElo: Boolean(upsetLoss), map });
 }

@@ -431,13 +431,15 @@ export async function registerFaceit(ctx) {
 async function formatMatchResult(stats, registeredIds, elo = null, matchId = null) {
   const round = stats.rounds?.[0];
   if (!round) return null;
-  let ourTeam = null, theirScore = "?";
+  let ourTeam = null, theirTeam = null;
 
   for (const team of round.teams ?? []) {
     if (team.players.some(p => registeredIds.has(p.player_id))) ourTeam = team;
-    else theirScore = team.team_stats?.["Final Score"] ?? "?";
+    else theirTeam = team;
   }
   if (!ourTeam) return null;
+
+  const theirScore = theirTeam?.team_stats?.["Final Score"] ?? "?";
 
   const won = ourTeam.team_stats?.["Team Win"] === "1";
   const ourScore = ourTeam.team_stats?.["Final Score"] ?? "?";
@@ -459,8 +461,33 @@ async function formatMatchResult(stats, registeredIds, elo = null, matchId = nul
 
   const rawMap = round.round_stats?.Map ?? "";
   const map = rawMap.replace(/^de_/, "").replace(/^cs_/, "").replace(/^\w/, c => c.toUpperCase()) || null;
-  const players = registered.map(p => ({ nickname: p.nickname, adr: Number(p.player_stats?.ADR) }));
-  const phrase = await generateMatchPhrase(won, `${ourScore}:${theirScore}`, { map, elo, players });
+  const players = registered.map(p => {
+    const s = p.player_stats ?? {};
+    return {
+      nickname: p.nickname,
+      kills: Number(s.Kills),
+      deaths: Number(s.Deaths),
+      assists: Number(s.Assists),
+      adr: Number(s.ADR),
+      hs: Number(s["Headshots %"]),
+      aces: Number(s["Penta Kills"]),
+      quadros: Number(s["Quadro Kills"]),
+      clutches: Number(s["1v2Wins"]),
+      awp: Number(s["Sniper Kills"]),
+      entries: Number(s["Entry Wins"]),
+      util: Number(s["Utility Damage"]),
+      flashes: Number(s["Enemies Flashed"]),
+    };
+  });
+  const matchFlow = theirTeam
+    ? {
+        ourFirst: Number(ourTeam.team_stats?.["First Half Score"]),
+        theirFirst: Number(theirTeam.team_stats?.["First Half Score"]),
+        ourOt: Number(ourTeam.team_stats?.["Overtime score"]),
+        theirOt: Number(theirTeam.team_stats?.["Overtime score"]),
+      }
+    : null;
+  const phrase = await generateMatchPhrase(won, `${ourScore}:${theirScore}`, { map, elo, players, matchFlow });
 
   const eloStr = elo ? ` (${elo.ours} Elo vs ${elo.theirs} Elo)` : "";
 
