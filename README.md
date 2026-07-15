@@ -50,11 +50,15 @@ The bot is configured entirely through environment variables:
 
 Hosted on [JustRunMy.App](https://justrunmy.app/telegram-bots) (always-on containers, free tier). Create an app → **Deploy from Git**, set the env vars above, and mount a persistent volume at `/app/data`.
 
-**Release** by pushing a version tag — a [GitHub Action](.github/workflows/deploy.yml) deploys it:
+**Release** with `npm run release` — it bumps `package.json`, commits, tags, and pushes the tag, which triggers a [GitHub Action](.github/workflows/deploy.yml) that deploys and drafts the release notes:
 
 ```bash
-git tag v1.2.3 && git push origin v1.2.3
+npm run release         # patch: 2.3.7 -> 2.3.8
+npm run release:minor   # 2.3.7 -> 2.4.0
+npm run release:major   # 2.3.7 -> 3.0.0
 ```
+
+The version is bumped in the same commit that gets tagged, so `master` never accumulates a trailing "sync version" commit.
 
 Requires one repo secret `JUSTRUNMY_DEPLOY_URL` = `https://<user>:<token>@justrunmy.app/git/<repo-id>`.
 

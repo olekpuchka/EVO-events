@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "start": "node bot.js",
-    "dev": "node --watch bot.js"
+    "dev": "node --watch bot.js",
+    "release": "npm version patch -m 'chore: release v%s' && git push --follow-tags",
+    "release:minor": "npm version minor -m 'chore: release v%s' && git push --follow-tags",
+    "release:major": "npm version major -m 'chore: release v%s' && git push --follow-tags"
   },
   "engines": {
     "node": ">=24.0.0"
