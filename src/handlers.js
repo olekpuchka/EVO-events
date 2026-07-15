@@ -4,30 +4,59 @@ import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDeta
 import { generateHypePhrase, generateMatchPhrase } from "./ai.js";
 import { t } from "./i18n.js";
 
-// Parse HH:MM from a message string. Interprets the time as Kyiv (Europe/Kyiv) timezone.
-// Returns Unix timestamp (today or tomorrow Kyiv time) or null.
-function parseEventTime(text) {
-  // Find the first HH:MM / HH-MM that is a real clock time AND not glued to other digits,
-  // so scores ("de_dust2 16:99"), version/phone numbers, and out-of-range values don't spawn
-  // a phantom event — we skip past them to a later valid time instead of bailing on the first
-  // structural match. Bare ranges like "10-30" remain genuinely ambiguous with 10:30.
-  let hours, minutes;
+// Poster timezones. Everyone defaults to Kyiv; the members listed in EU_TIMEZONE_MEMBERS
+// (comma-separated Telegram user IDs) type their event times in Central European Time instead.
+const DEFAULT_TZ = 'Europe/Kyiv';
+const EU_TZ = 'CET'; // Central European Time — DST-aware (CET in winter, CEST in summer)
+const euTimezoneMembers = new Set(
+  (process.env.EU_TIMEZONE_MEMBERS ?? "")
+    .split(",")
+    .map(s => s.trim())
+    .filter(Boolean)
+    .filter(id => {
+      // Warn instead of silently dropping — a typo'd or non-numeric entry (e.g. a @username)
+      // never matches a real user ID, so the member would stay on Kyiv with no signal why.
+      if (/^\d+$/.test(id)) return true;
+      console.warn(`[tz] Ignoring invalid EU_TIMEZONE_MEMBERS entry "${id}" — expected a numeric Telegram user ID.`);
+      return false;
+    })
+);
+// The IANA zone a poster's typed time should be interpreted in.
+function timezoneForUser(userId) {
+  return euTimezoneMembers.has(String(userId)) ? EU_TZ : DEFAULT_TZ;
+}
+
+// First HH:MM / HH-MM in `text` that is a valid clock time and not glued to other digits — so
+// scores ("de_dust2 16:99"), version/phone numbers and out-of-range values are skipped rather than
+// spawning a phantom event. Returns { hours, minutes, start, end } (indices into `text`) or null.
+// Shared by parseEventTime and decorateEventTime so both agree on which token is the event time.
+function matchEventTimeToken(text) {
   for (const m of text.matchAll(/(?<!\d)(\d{1,2})[:-](\d{2})(?!\d)/g)) {
-    const h = Number(m[1]);
-    const mi = Number(m[2]);
-    if (h <= 23 && mi <= 59) { hours = h; minutes = mi; break; }
+    const hours = Number(m[1]);
+    const minutes = Number(m[2]);
+    if (hours <= 23 && minutes <= 59) {
+      return { hours, minutes, start: m.index, end: m.index + m[0].length };
+    }
   }
-  if (hours === undefined) return null;
+  return null;
+}
+
+// Parse the event time from a message, interpreting it in the given IANA zone (default Kyiv).
+// Returns Unix timestamp (today or tomorrow in that zone) or null.
+function parseEventTime(text, timeZone = DEFAULT_TZ) {
+  const token = matchEventTimeToken(text);
+  if (!token) return null;
+  const { hours, minutes } = token;
 
   const now = new Date();
-  // Get current Kyiv wall-clock time (values are correct, JS treats it as system-local)
-  const kyivNow = new Date(now.toLocaleString('en-US', { timeZone: 'Europe/Kyiv' }));
-  const candidate = new Date(kyivNow);
+  // Get current wall-clock time in the poster's zone (values are correct, JS treats it as system-local)
+  const zoneNow = new Date(now.toLocaleString('en-US', { timeZone }));
+  const candidate = new Date(zoneNow);
   candidate.setHours(hours, minutes, 0, 0);
-  if (candidate <= kyivNow) candidate.setDate(candidate.getDate() + 1);
+  if (candidate <= zoneNow) candidate.setDate(candidate.getDate() + 1);
 
-  // Convert back to real UTC: offset = (kyivNow - now) is the Kyiv tz offset
-  const utcMs = candidate.getTime() + (now.getTime() - kyivNow.getTime());
+  // Convert back to real UTC: offset = (zoneNow - now) is that zone's tz offset
+  const utcMs = candidate.getTime() + (now.getTime() - zoneNow.getTime());
   return Math.floor(utcMs / 1000);
 }
 
@@ -43,6 +72,17 @@ function formatTimeIn(unixSeconds, timeZone) {
   return `${get('hour')}:${get('minute')}`;
 }
 
+// Rewrite the event-time token in an (HTML-escaped) message to its Kyiv value flagged 🇺🇦 plus the
+// CET/CEST equivalent flagged 🇪🇺 — e.g. "23:30" → "🇺🇦 23:30 (🇪🇺 22:30)". Both come from the
+// resolved timestamp, so an EU poster's typed CET time still shows correctly under each flag.
+// escapeHtml only rewrites & < >, so matchEventTimeToken's indices stay valid on the escaped string.
+function decorateEventTime(escapedMessage, eventTime) {
+  const token = matchEventTimeToken(escapedMessage);
+  if (!token) return escapedMessage;
+  const kyiv = formatTimeIn(eventTime, DEFAULT_TZ);
+  const eu = formatTimeIn(eventTime, EU_TZ);
+  return escapedMessage.slice(0, token.start) + `🇺🇦 ${kyiv} (🇪🇺 ${eu})` + escapedMessage.slice(token.end);
+}
 
 const MAX_PLAYERS = 5;
 
@@ -145,12 +185,11 @@ export async function mentionAll(ctx, message = "") {
   }
 
   const poster = buildMention(ctx.from);
-  const eventTime = parseEventTime(message);
-  // Show the Central European (CET/CEST) equivalent next to the Kyiv time the poster typed —
-  // a neutral 🇪🇺 label for the group's EU members. Flag + digits, so it reads the same in every
-  // language; Kyiv shares EU DST rules, so this is always Kyiv −1h.
-  const euSuffix = eventTime ? ` (🇪🇺 ${formatTimeIn(eventTime, 'Europe/Amsterdam')})` : "";
-  const messageLine = `${poster}: ${escapeHtml(message)}${euSuffix}`;
+  const eventTime = parseEventTime(message, timezoneForUser(ctx.from.id));
+  // Flag the event time inline — 🇺🇦 Kyiv with the 🇪🇺 (CET/CEST) equivalent in parens,
+  // e.g. "CS 🇺🇦 23:30 (🇪🇺 22:30)". No time = message unchanged.
+  const escaped = escapeHtml(message);
+  const messageLine = `${poster}: ${eventTime ? decorateEventTime(escaped, eventTime) : escaped}`;
   const mentionedUsers = rows.filter(r => r.id !== ctx.from.id);
 
   if (eventTime) {

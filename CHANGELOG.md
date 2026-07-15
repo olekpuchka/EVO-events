@@ -3,6 +3,21 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions match the release tags.
 
+## [2.4.0]
+
+### Added
+
+- **Per-poster timezones via `EU_TIMEZONE_MEMBERS`.** Members listed in this env
+  var (comma-separated Telegram user IDs) type their event times in 🇪🇺 CET
+  instead of 🇺🇦 Kyiv. Everyone else stays on Kyiv — no change for existing users.
+
+### Changed
+
+- **`@all` event times now flag both zones inline** — e.g. `CS 🇺🇦 23:30
+  (🇪🇺 22:30)`, where before only the CET equivalent was flagged. Both times are
+  derived from the timestamp, so they stay DST- and midnight-correct, and the
+  reminder inherits the same formatting.
+
 ## [2.3.8]
 
 ### Changed

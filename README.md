@@ -13,7 +13,7 @@ Built with [grammY](https://grammy.dev/) and Node.js (built-in SQLite).
 - **Auto-pin / auto-unpin** at start time, with a **reminder 10 minutes before**.
 - **AI hype phrases** (DeepSeek, optional) when the squad fills and in the reminder.
 - **Auto match results** — polls FACEIT and posts finished matches with K/D/A, ADR, per-player Elo ↑/↓ and team Elo, plus an AI win/loss line that reacts to the match stats (top fraggers, aces, clutches, comebacks, overtime).
-- **Timezone** — all event times parsed and shown in `Europe/Kyiv`.
+- **Timezone** — event times show 🇺🇦 Kyiv and 🇪🇺 CET side by side. Posters default to Kyiv; those listed in `EU_TIMEZONE_MEMBERS` type in CET instead.
 - **Language** — English or Ukrainian.
 
 ## Commands
@@ -41,6 +41,7 @@ The bot is configured entirely through environment variables:
 | `DEEPSEEK_API_KEY` | Optional — AI phrases; falls back to built-ins if unset |
 | `FACEIT_POLL_MINUTES` | How often to check for new matches (default `20`, min `5`) |
 | `LANGUAGE` | `EN` or `UA` (default `EN`) |
+| `EU_TIMEZONE_MEMBERS` | Optional — comma-separated user IDs whose typed times are read as 🇪🇺 CET instead of 🇺🇦 Kyiv (default: all Kyiv) |
 | `DATA_DIR` | SQLite location (`/app/data` in production) |
 
 - **Production:** set these in your JustRunMy.App app's **Settings** tab (see [Deployment](#deployment)).
