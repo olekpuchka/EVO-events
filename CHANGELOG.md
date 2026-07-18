@@ -3,6 +3,13 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions match the release tags.
 
+## [2.6.1]
+
+### Changed
+
+- **Reordered the match-result card.** The header (score and Elo) now shows first,
+  with the map image below it — previously the image sat on top of the header.
+
 ## [2.6.0]
 
 ### Changed

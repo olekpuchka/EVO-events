@@ -592,8 +592,8 @@ async function buildMatchResult(
 }
 
 // Header pieces shared by both renderers so they never drift: win/loss emoji, score, and
-// team Elo when present. The map shows only as the rich card's top image (never a name
-// here); it still feeds the AI phrase, and the HTML fallback shows no map.
+// team Elo when present. The map shows only as the rich card's image below the header
+// (never a name here); it still feeds the AI phrase, and the HTML fallback shows no map.
 function resultHeader({ won, ourScore, theirScore, elo }: MatchResult): { emoji: string; score: string; elo: string | null } {
   return {
     emoji: won ? "🍌" : "❌",
@@ -640,10 +640,10 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
   if (elo) header.push(" ", elo);
 
   const blocks: RichBlocks = [];
-  // Map image on top, above the header.
+  // Header first, with the map image below it.
+  blocks.push({ type: "paragraph", text: header });
   if (mapImage) blocks.push({ type: "photo", photo: { type: "photo", media: mapImage } });
   blocks.push(
-    { type: "paragraph", text: header },
     { type: "table", is_striped: true, is_bordered: true, cells },
     { type: "blockquote", blocks: [{ type: "paragraph", text: { type: "italic", text: phrase } }] },
   );
