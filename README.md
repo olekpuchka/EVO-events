@@ -62,7 +62,7 @@ git tag -a v2.5.0 -m v2.5.0              # annotated — --follow-tags only push
 git push --follow-tags
 ```
 
-Only the tag drives the deploy, so `master` never accumulates a separate "chore: release" commit. See [CLAUDE.md](CLAUDE.md) for the full flow.
+Only the tag drives the deploy, so `main` never accumulates a separate "chore: release" commit. See [CLAUDE.md](CLAUDE.md) for the full flow.
 
 Requires one repo secret `JUSTRUNMY_DEPLOY_URL` = `https://<user>:<token>@justrunmy.app/git/<repo-id>`.
 
