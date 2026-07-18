@@ -58,7 +58,8 @@ Hosted on [JustRunMy.App](https://justrunmy.app/telegram-bots) (always-on contai
 npm version minor --no-git-tag-version   # bump package.json + lock, no commit/tag
 # move CHANGELOG [Unreleased] under the new version, then:
 git commit -am "feat: ..."               # change + bump + changelog in one commit
-git tag v2.5.0 && git push --follow-tags
+git tag -a v2.5.0 -m v2.5.0              # annotated — --follow-tags only pushes annotated tags
+git push --follow-tags
 ```
 
 Only the tag drives the deploy, so `master` never accumulates a separate "chore: release" commit. See [CLAUDE.md](CLAUDE.md) for the full flow.
