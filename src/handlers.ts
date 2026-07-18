@@ -543,12 +543,14 @@ async function buildMatchResult(
       const preElo = entry?.preElo ?? null;
       const postElo = entry?.postElo ?? null;
       const delta = preElo && postElo ? postElo - preElo : null;
-      const deltaStr = delta != null ? ` ${delta >= 0 ? "↑" : "↓"}${Math.abs(delta)}` : "";
+      // Non-breaking spaces keep the whole "1234 Elo ↑0" on one line so the cell
+      // never wraps past two lines (nickname + elo) in the narrow scoreboard column.
+      const deltaStr = delta != null ? ` ${delta >= 0 ? "↑" : "↓"}${Math.abs(delta)}` : "";
       return {
         nickname: p.nickname,
         kda: `${s.Kills ?? "?"}/${s.Deaths ?? "?"}/${s.Assists ?? "?"}`,
         adr: s.ADR ?? "?",
-        elo: postElo ? `${postElo} Elo${deltaStr}` : "? Elo",
+        elo: postElo ? `${postElo} Elo${deltaStr}` : "? Elo",
       };
     });
 

@@ -3,6 +3,14 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions match the release tags.
 
+## [2.6.2]
+
+### Fixed
+
+- **Scoreboard player cells no longer wrap to three lines.** The Elo line
+  (`1234 Elo ↑0`) is now held together with non-breaking spaces, so each cell stays
+  at two lines max (nickname + Elo) in the narrow column.
+
 ## [2.6.1]
 
 ### Changed
