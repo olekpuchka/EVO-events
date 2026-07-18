@@ -13,7 +13,7 @@ ENV NODE_ENV=production
 RUN addgroup -S botgroup && adduser -S botuser -G botgroup
 
 COPY --from=deps /app/node_modules ./node_modules
-COPY bot.js ./
+COPY bot.ts ./
 COPY src/ ./src/
 
 # Create data dir and hand it to the non-root user before switching
@@ -27,4 +27,6 @@ VOLUME ["/app/data"]
 HEALTHCHECK --interval=60s --timeout=10s --retries=3 \
   CMD pgrep -x node || exit 1
 
-CMD ["node", "bot.js"]
+# Node 24 runs the TypeScript entrypoint directly via native type-stripping — no build step,
+# and TypeScript stays a dev-only dependency (never installed in this image).
+CMD ["node", "bot.ts"]

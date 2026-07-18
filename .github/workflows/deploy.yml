@@ -19,6 +19,11 @@ jobs:
         with:
           node-version: 24
 
+      - name: Typecheck
+        run: |
+          npm ci
+          npm run typecheck
+
       - name: Deploy to JustRunMy.App
         run: |
           set -o pipefail

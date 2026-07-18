@@ -2,7 +2,7 @@
 
 A Telegram group bot for organizing gaming events — mention everyone with `@all`, collect RSVPs, send reminders, and auto-post FACEIT match results.
 
-Built with [grammY](https://grammy.dev/) and Node.js (built-in SQLite).
+Built with [grammY](https://grammy.dev/) in TypeScript on Node.js — run directly via native type-stripping (no build step), with built-in SQLite.
 
 ## Features
 
@@ -46,7 +46,7 @@ The bot is configured entirely through environment variables:
 | `DATA_DIR` | SQLite location (`/app/data` in production) |
 
 - **Production:** set these in your JustRunMy.App app's **Settings** tab (see [Deployment](#deployment)).
-- **Local dev:** copy [`.env.example`](.env.example) to `.env`, then run `node --env-file=.env bot.js`.
+- **Local dev:** copy [`.env.example`](.env.example) to `.env`, then run `node --env-file=.env bot.ts`. Node 24 runs the TypeScript directly — no compile step. Use `npm run typecheck` to check types.
 
 ## Deployment
 

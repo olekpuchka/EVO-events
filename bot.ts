@@ -1,6 +1,6 @@
 import { Bot } from "grammy";
-import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearEventPhrases, registerFaceit, autoPostResult, pendingPinDeletion } from "./src/handlers.js";
-import { getDueUnpins, getDueReminders, deleteScheduledReminder, deleteEventData, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/db.js";
+import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearEventPhrases, registerFaceit, autoPostResult, pendingPinDeletion } from "./src/handlers.ts";
+import { getDueUnpins, getDueReminders, deleteScheduledReminder, deleteEventData, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/db.ts";
 
 if (!process.env.BOT_TOKEN) {
   throw new Error("BOT_TOKEN is not set.");
@@ -16,7 +16,7 @@ const bot = new Bot(process.env.BOT_TOKEN);
 bot.use((ctx, next) => {
   const msg = ctx.message ?? ctx.channelPost;
   const entity = msg?.entities?.find(e => e.type === "bot_command" && e.offset === 0);
-  if (entity) {
+  if (entity && msg?.text) {
     const cmd = msg.text.slice(0, entity.length);
     msg.text = cmd.toLowerCase() + msg.text.slice(entity.length);
   }
@@ -62,7 +62,7 @@ const schedulerInterval = setInterval(async () => {
 
   if (now - lastPrune >= PRUNE_INTERVAL) {
     lastPrune = now;
-    try { pruneOldPostedMatches(); } catch (err) { console.error("[prune] failed:", err.message); }
+    try { pruneOldPostedMatches(); } catch (err) { console.error("[prune] failed:", (err as Error).message); }
   }
 
   const reminderJobs = getDueReminders(now).map(({ chat_id, message_id }) =>
@@ -77,7 +77,7 @@ const schedulerInterval = setInterval(async () => {
 
   const unpinJobs = getDueUnpins(now).map(({ chat_id, message_id, reminder_message_id }) => {
     let unpinOk = false;
-    return bot.api.unpinChatMessage(chat_id, { message_id })
+    return bot.api.unpinChatMessage(chat_id, message_id)
       .then(() => { unpinOk = true; })
       .catch(err => {
         if (err.message?.includes("message to unpin not found")) {
@@ -114,7 +114,7 @@ bot.on("message:pinned_message", async (ctx) => {
 // ─── Error handler ────────────────────────────────────────────────────────────
 
 bot.catch((err) => {
-  const { ctx, error } = err;
+  const { error } = err;
   const msg = error instanceof Error ? error.message : String(error);
   console.error("[error]", msg);
 });

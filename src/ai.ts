@@ -1,5 +1,8 @@
 import OpenAI from "openai";
-import { t, LANG } from "./i18n.js";
+import { t, LANG } from "./i18n.ts";
+import type { MatchPlayer, EloPair, MatchFlow } from "./types.ts";
+
+type Kind = "hype" | "win" | "loss";
 
 const ai = process.env.DEEPSEEK_API_KEY
   ? new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY, baseURL: "https://api.deepseek.com" })
@@ -102,9 +105,9 @@ const LOSS_ANGLES = [
   "поскаржся на підозріло ідеальний аім суперників: спінбот, вх, нереальний відсоток хедшотів",
 ];
 
-const recentAngles = { hype: [], win: [], loss: [] };
+const recentAngles: Record<Kind, string[]> = { hype: [], win: [], loss: [] };
 
-function pickAngle(kind, pool) {
+function pickAngle(kind: Kind, pool: string[]): string {
   const recent = recentAngles[kind];
   const fresh = pool.filter(a => !recent.includes(a));
   const src = fresh.length ? fresh : pool;
@@ -120,15 +123,15 @@ function pickAngle(kind, pool) {
  * cold-start caveat as above.
  * ------------------------------------------------------------------ */
 
-const recentPhrases = { hype: [], win: [], loss: [] };
+const recentPhrases: Record<Kind, string[]> = { hype: [], win: [], loss: [] };
 
-function remember(kind, text) {
+function remember(kind: Kind, text: string): void {
   const arr = recentPhrases[kind];
   arr.push(text);
   while (arr.length > 3) arr.shift();
 }
 
-function recentBlock(kind) {
+function recentBlock(kind: Kind): string {
   if (!recentPhrases[kind].length) return "";
   return (
     " Recent messages of this type — yours must differ clearly in wording, structure and opening: " +
@@ -141,13 +144,13 @@ function recentBlock(kind) {
  * rule for the model to fail, and guaranteed variety.
  * ------------------------------------------------------------------ */
 
-const EMOJIS = {
+const EMOJIS: Record<Kind, string[]> = {
   hype: ["🔥", "⚔️", "😈", "🚀", "💣", "👊", "🍿", "🎮", "🫡"],
   win: ["🏆", "👑", "🔥", "😎", "💪", "🥂", "🚀", "📈", "🥇", "🎉"],
   loss: ["🤡", "💀", "🤷", "😴", "🫠", "📉", "🕯️", "🧘", "☕", "😮‍💨"],
 };
 
-const pickEmoji = kind => EMOJIS[kind][Math.floor(Math.random() * EMOJIS[kind].length)];
+const pickEmoji = (kind: Kind): string => EMOJIS[kind][Math.floor(Math.random() * EMOJIS[kind].length)];
 
 /* ------------------------------------------------------------------ *
  * Sanitizing. Mostly the original chain, plus: strip ALL emoji the
@@ -155,9 +158,9 @@ const pickEmoji = kind => EMOJIS[kind][Math.floor(Math.random() * EMOJIS[kind].l
  * names and restore the canonical map casing.
  * ------------------------------------------------------------------ */
 
-const escapeRx = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const escapeRx = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const MAP_FIX = [
+const MAP_FIX: [RegExp, string][] = [
   [/(?<![\p{L}\p{N}])[іи]нферно(?![\p{L}\p{N}])/giu, "Inferno"],
   [/(?<![\p{L}\p{N}])м[іи]раж(?![\p{L}\p{N}])/giu, "Mirage"],
   [/(?<![\p{L}\p{N}])н['ьʼ]?юк(?![\p{L}\p{N}])/giu, "Nuke"],
@@ -169,7 +172,7 @@ const MAP_FIX = [
   [/(?<![\p{L}\p{N}])верт[іи]го(?![\p{L}\p{N}])/giu, "Vertigo"],
 ];
 
-function sanitize(text, map) {
+function sanitize(text: string, map: string | null): string {
   let r = text
     .replace(/["«»„“”‘‚]/g, "")
     // strip apostrophe-like chars only OUTSIDE words, so quoting is gone but
@@ -216,7 +219,7 @@ function sanitize(text, map) {
 // first. `min` is the "notable" bar — set so a stat only shows when it stands
 // out, not for a routine game (e.g. utility damage regularly clears 100, so
 // the bar sits higher). NaN (missing stat) never passes `>= min`.
-const HIGHLIGHTS = [
+const HIGHLIGHTS: { min: number; get: (p: MatchPlayer) => number; label: (n: number) => string }[] = [
   { min: 1, get: p => p.clutches, label: n => (n > 1 ? `${n} 1v2 clutches` : "a 1v2 clutch") },
   { min: 5, get: p => p.awp, label: n => `${n} AWP kills` },
   { min: 5, get: p => p.entries, label: n => `${n} entry frags` },
@@ -229,14 +232,14 @@ const HIGHLIGHTS = [
 // only. The flair list is capped, so the block stays a curated hook rather than
 // a wall of numbers the model can misquote or converge on — see the
 // never-firehose rationale on the angle roulette above.
-function playerFacts(p, full = true) {
-  const parts = [];
+function playerFacts(p: MatchPlayer, full = true): string {
+  const parts: string[] = [];
   if (full && [p.kills, p.deaths, p.assists].every(Number.isFinite)) {
     parts.push(`${p.kills}/${p.deaths}/${p.assists} K/D/A`);
   }
   parts.push(`${p.adr} ADR`);
   if (full && Number.isFinite(p.hs)) parts.push(`${p.hs}% HS`);
-  const flair = [];
+  const flair: string[] = [];
   if (p.aces > 0) flair.push(p.aces > 1 ? `${p.aces} aces` : "an ace");
   else if (p.quadros > 0) flair.push(p.quadros > 1 ? `${p.quadros} quad-kills` : "a quad-kill");
   if (full) {
@@ -249,11 +252,11 @@ function playerFacts(p, full = true) {
   return parts.join(", ") + (shown.length ? `, ${shown.join(" & ")}` : "");
 }
 
-function buildPlayerBlock(players) {
+function buildPlayerBlock(players: MatchPlayer[] | undefined): { line: string; codes: Map<string, string> } {
   const top = (players ?? [])
     .filter(p => Number.isFinite(p.adr) && p.adr >= 100)
     .sort((a, b) => b.adr - a.adr);
-  const none = { line: "Do not mention any player names or stats.", codes: new Map() };
+  const none = { line: "Do not mention any player names or stats.", codes: new Map<string, string>() };
   if (!top.length) return none;
 
   const roll = Math.random();
@@ -268,14 +271,14 @@ function buildPlayerBlock(players) {
   return { line, codes };
 }
 
-function mapLine(map) {
+function mapLine(map: string | null | undefined): string {
   if (!map) return "Do not mention any map.";
   return Math.random() < 0.55
     ? `The map was ${map} — mention it only if it fits the angle naturally, keeping the name exactly as written.`
     : "Do not mention the map name in this message.";
 }
 
-function scoreDiff(score) {
+function scoreDiff(score: string | undefined): number | null {
   const m = /(\d+)\D+(\d+)/.exec(score ?? "");
   return m ? Math.abs(Number(m[1]) - Number(m[2])) : null;
 }
@@ -289,7 +292,7 @@ function scoreDiff(score) {
  * rule on losses.
  * ------------------------------------------------------------------ */
 
-function flowNote(won, flow) {
+function flowNote(won: boolean, flow: MatchFlow | null | undefined): string | null {
   if (!flow) return null;
   const { ourFirst, theirFirst, ourOt, theirOt } = flow;
   if (!Number.isFinite(ourFirst) || !Number.isFinite(theirFirst)) return null;
@@ -306,7 +309,18 @@ function flowNote(won, flow) {
 const ELO_MENTION = /(?<![\p{L}\p{N}])(elo|ело)(?![\p{L}\p{N}])/iu;
 const LEFTOVER_CODE = /(?<![\p{L}\p{N}])[PpРр]\d(?![\p{L}\p{N}])/u;
 
-async function generate(kind, userPrompt, fallback, { allowElo = true, codes = new Map(), map = null } = {}) {
+interface GenerateOptions {
+  allowElo?: boolean;
+  codes?: Map<string, string>;
+  map?: string | null;
+}
+
+async function generate(
+  kind: Kind,
+  userPrompt: string,
+  fallback: () => string,
+  { allowElo = true, codes = new Map<string, string>(), map = null }: GenerateOptions = {}
+): Promise<string> {
   if (!ai) return fallback();
   try {
     const chat = await ai.chat.completions.create({
@@ -315,12 +329,14 @@ async function generate(kind, userPrompt, fallback, { allowElo = true, codes = n
         { role: "system", content: SYSTEM_PROMPT },
         { role: "user", content: userPrompt },
       ],
-      thinking: { type: "enabled" },
       // thinking mode's reasoning_content shares this budget with the final
       // message, so keep enough headroom that a longer reasoning chain can't
       // truncate the reply (the model stops early, so the higher cap is free).
       max_tokens: 2048,
       temperature: 0.8,
+      // `thinking` is a DeepSeek extension absent from the OpenAI SDK types;
+      // spread it in so the request carries it without a type error.
+      ...({ thinking: { type: "enabled" } } as object),
     });
     const text = chat.choices[0]?.message?.content?.trim();
     if (!text) return fallback();
@@ -342,14 +358,14 @@ async function generate(kind, userPrompt, fallback, { allowElo = true, codes = n
     remember(kind, result);
     return result;
   } catch (err) {
-    console.error("[ai] generation failed:", err.message);
+    console.error("[ai] generation failed:", (err as Error).message);
     return fallback();
   }
 }
 
 /* ------------------------------------------------------------------ */
 
-export async function generateHypePhrase(eventName) {
+export async function generateHypePhrase(eventName: string | null): Promise<string> {
   const angle = pickAngle("hype", HYPE_ANGLES);
   const prompt =
     `A squad just filled up ${eventName ? `for an event called "${eventName}"` : "for a CS2 session"}.` +
@@ -360,9 +376,20 @@ export async function generateHypePhrase(eventName) {
   return generate("hype", prompt, () => FALLBACK_HYPE);
 }
 
-export async function generateMatchPhrase(won, score, { map, elo, players, matchFlow } = {}) {
-  const upsetWin = won && elo && elo.theirs - elo.ours >= 75;
-  const upsetLoss = !won && elo && elo.ours - elo.theirs >= 75;
+interface MatchPhraseContext {
+  map?: string | null;
+  elo?: EloPair | null;
+  players?: MatchPlayer[];
+  matchFlow?: MatchFlow | null;
+}
+
+export async function generateMatchPhrase(
+  won: boolean,
+  score: string,
+  { map, elo, players, matchFlow }: MatchPhraseContext = {}
+): Promise<string> {
+  const upsetWin = won && !!elo && Number(elo.theirs) - Number(elo.ours) >= 75;
+  const upsetLoss = !won && !!elo && Number(elo.ours) - Number(elo.theirs) >= 75;
   const diff = scoreDiff(score);
   const close = diff !== null && diff <= 3;
   const flow = flowNote(won, matchFlow);
@@ -370,8 +397,8 @@ export async function generateMatchPhrase(won, score, { map, elo, players, match
   const context = [
     score,
     map ? `on ${map}` : null,
-    upsetWin ? `(upset win: our ${elo.ours} Elo beat their ${elo.theirs} Elo)` : null,
-    upsetLoss ? `(lost to a lower-rated team: our ${elo.ours} Elo vs their ${elo.theirs} Elo)` : null,
+    upsetWin ? `(upset win: our ${elo!.ours} Elo beat their ${elo!.theirs} Elo)` : null,
+    upsetLoss ? `(lost to a lower-rated team: our ${elo!.ours} Elo vs their ${elo!.theirs} Elo)` : null,
   ].filter(Boolean).join(" ");
 
   if (won) {

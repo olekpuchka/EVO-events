@@ -3,6 +3,27 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions match the release tags.
 
+## [2.6.0]
+
+### Changed
+
+- **Migrated the codebase to TypeScript.** Every source file is now `.ts`,
+  type-checked with `tsc --noEmit` (`npm run typecheck`) and run directly on Node 24
+  via native type-stripping — no build step, no bundler, and TypeScript stays a
+  dev-only dependency. The conversion is behaviour-neutral; the deploy workflow
+  type-checks before publishing.
+- **Corrected the `unpinChatMessage` call** to grammY 1.45.1's argument form
+  (a bare `message_id`, not `{ message_id }`), which the type-checker surfaced.
+- **Refreshed the match-result card.** The played map now shows as an image on top
+  of the scoreboard instead of a name in the header; the header is simplified to
+  `SCORE (Elo vs Elo)`, and the divider above the AI commentary is removed. The map
+  name still feeds the AI phrase.
+
+### Fixed
+
+- **Linking an unranked FACEIT account no longer fails.** A CS2 account with no
+  Elo previously threw when saving; it now links cleanly as Unranked.
+
 ## [2.5.0]
 
 ### Added

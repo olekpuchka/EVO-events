@@ -1,6 +1,25 @@
-import { DatabaseSync } from "node:sqlite";
+import { DatabaseSync, type StatementSync, type SQLInputValue } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import type { User } from "@grammyjs/types";
+import type {
+  MemberRow,
+  RsvpRow,
+  EventRow,
+  ActiveEventRow,
+  FaceitMemberRow,
+  DueUnpinRow,
+  DueReminderRow,
+} from "./types.ts";
+
+type ChatId = number | string;
+
+// node:sqlite returns untyped rows; these isolate the one unavoidable cast to a
+// single audited boundary, so callers just name the row type they expect.
+const allRows = <T>(stmt: StatementSync, ...params: SQLInputValue[]): T[] =>
+  stmt.all(...params) as unknown as T[];
+const oneRow = <T>(stmt: StatementSync, ...params: SQLInputValue[]): T | undefined =>
+  stmt.get(...params) as unknown as T | undefined;
 
 const DATA_DIR = process.env.DATA_DIR ?? "./data";
 mkdirSync(DATA_DIR, { recursive: true });
@@ -162,75 +181,75 @@ const stmtDeleteReminder = db.prepare(`
 const stmtDeleteEvent = db.prepare(`DELETE FROM events WHERE chat_id = ? AND message_id = ?`);
 const stmtDeleteRsvps = db.prepare(`DELETE FROM rsvps WHERE chat_id = ? AND message_id = ?`);
 
-export function trackMember(chatId, user) {
+export function trackMember(chatId: ChatId, user: User | undefined): void {
   if (!user || user.is_bot) return;
   stmtUpsert.run(String(chatId), user.id, user.username ?? null, user.first_name, user.last_name ?? null);
 }
 
-export function getMembers(chatId) {
-  return stmtGetMembers.all(String(chatId));
+export function getMembers(chatId: ChatId): MemberRow[] {
+  return allRows<MemberRow>(stmtGetMembers, String(chatId));
 }
 
-export function setNotifications(chatId, userId, enabled) {
+export function setNotifications(chatId: ChatId, userId: number, enabled: boolean): void {
   stmtSetNotifications.run(enabled ? 1 : 0, String(chatId), userId);
 }
 
-export function getNotificationsStatus(chatId, userId) {
-  const row = stmtGetNotifications.get(String(chatId), userId);
+export function getNotificationsStatus(chatId: ChatId, userId: number): boolean | null {
+  const row = oneRow<{ notifications_enabled: number }>(stmtGetNotifications, String(chatId), userId);
   return row ? Boolean(row.notifications_enabled) : null;
 }
 
-export function saveEvent(chatId, messageId, baseText, eventTime = null) {
+export function saveEvent(chatId: ChatId, messageId: number, baseText: string, eventTime: number | null = null): void {
   stmtSaveEvent.run(String(chatId), messageId, baseText, eventTime);
 }
 
-export function getEventBaseText(chatId, messageId) {
-  return stmtGetEventBaseText.get(String(chatId), messageId) ?? null;
+export function getEventBaseText(chatId: ChatId, messageId: number): EventRow | null {
+  return oneRow<EventRow>(stmtGetEventBaseText, String(chatId), messageId) ?? null;
 }
 
-export function saveRsvp(chatId, messageId, user, status) {
+export function saveRsvp(chatId: ChatId, messageId: number, user: User, status: string): void {
   stmtUpsertRsvp.run(String(chatId), messageId, user.id, user.first_name, user.last_name ?? null, user.username ?? null, status);
 }
 
-export function getRsvps(chatId, messageId) {
-  return stmtGetRsvps.all(String(chatId), messageId);
+export function getRsvps(chatId: ChatId, messageId: number): RsvpRow[] {
+  return allRows<RsvpRow>(stmtGetRsvps, String(chatId), messageId);
 }
 
-export function getUserRsvpStatus(chatId, messageId, userId) {
-  return stmtGetUserRsvp.get(String(chatId), messageId, userId)?.status ?? null;
+export function getUserRsvpStatus(chatId: ChatId, messageId: number, userId: number): string | null {
+  return oneRow<{ status: string }>(stmtGetUserRsvp, String(chatId), messageId, userId)?.status ?? null;
 }
 
-export function scheduleUnpin(chatId, messageId, unpinAt) {
+export function scheduleUnpin(chatId: ChatId, messageId: number, unpinAt: number): void {
   stmtInsertUnpin.run(String(chatId), messageId, unpinAt);
 }
 
-export function getDueUnpins(nowTs) {
-  return stmtGetDueUnpins.all(nowTs);
+export function getDueUnpins(nowTs: number): DueUnpinRow[] {
+  return allRows<DueUnpinRow>(stmtGetDueUnpins, nowTs);
 }
 
-export function getReminderMessageId(chatId, messageId) {
-  return stmtGetReminderMessageId.get(String(chatId), messageId)?.reminder_message_id ?? null;
+export function getReminderMessageId(chatId: ChatId, messageId: number): number | null {
+  return oneRow<{ reminder_message_id: number | null }>(stmtGetReminderMessageId, String(chatId), messageId)?.reminder_message_id ?? null;
 }
 
 
-export function saveReminderMessageId(chatId, messageId, reminderMessageId) {
+export function saveReminderMessageId(chatId: ChatId, messageId: number, reminderMessageId: number): void {
   stmtUpdateUnpinReminderId.run(reminderMessageId, String(chatId), messageId);
 }
 
-export function scheduleReminder(chatId, messageId, remindAt) {
+export function scheduleReminder(chatId: ChatId, messageId: number, remindAt: number): void {
   stmtInsertReminder.run(String(chatId), messageId, remindAt);
 }
 
-export function getDueReminders(nowTs) {
-  return stmtGetDueReminders.all(nowTs);
+export function getDueReminders(nowTs: number): DueReminderRow[] {
+  return allRows<DueReminderRow>(stmtGetDueReminders, nowTs);
 }
 
-export function deleteScheduledReminder(chatId, messageId) {
+export function deleteScheduledReminder(chatId: ChatId, messageId: number): void {
   stmtDeleteReminder.run(String(chatId), messageId);
 }
 
-export function getActiveEvent(chatId) {
-  return stmtGetActiveEvent.get(String(chatId)) ?? null;
+export function getActiveEvent(chatId: ChatId): ActiveEventRow | null {
+  return oneRow<ActiveEventRow>(stmtGetActiveEvent, String(chatId)) ?? null;
 }
 
 const stmtSetFaceit = db.prepare(`UPDATE members SET faceit_player_id = ?, faceit_elo = ? WHERE chat_id = ? AND user_id = ?`);
@@ -239,12 +258,12 @@ const stmtGetFaceitMembers = db.prepare(`
   FROM members WHERE chat_id = ? AND faceit_player_id IS NOT NULL
 `);
 
-export function setFaceitAccount(chatId, userId, playerId, elo) {
+export function setFaceitAccount(chatId: ChatId, userId: number, playerId: string, elo: number | null): void {
   stmtSetFaceit.run(playerId, elo, String(chatId), userId);
 }
 
-export function getFaceitMembers(chatId) {
-  return stmtGetFaceitMembers.all(String(chatId));
+export function getFaceitMembers(chatId: ChatId): FaceitMemberRow[] {
+  return allRows<FaceitMemberRow>(stmtGetFaceitMembers, String(chatId));
 }
 
 db.exec(`
@@ -260,25 +279,25 @@ const stmtHasPostedMatch = db.prepare(`SELECT 1 FROM posted_matches WHERE chat_i
 const stmtMarkMatchPosted = db.prepare(`INSERT OR IGNORE INTO posted_matches (chat_id, match_id, posted_at) VALUES (?, ?, datetime('now'))`);
 const stmtPrunePostedMatches = db.prepare(`DELETE FROM posted_matches WHERE posted_at < datetime('now', '-30 days')`);
 
-export function hasPostedMatch(chatId, matchId) {
+export function hasPostedMatch(chatId: ChatId, matchId: string): boolean {
   return !!stmtHasPostedMatch.get(String(chatId), matchId);
 }
 
-export function markMatchPosted(chatId, matchId) {
+export function markMatchPosted(chatId: ChatId, matchId: string): void {
   stmtMarkMatchPosted.run(String(chatId), matchId);
 }
 
-export function pruneOldPostedMatches() {
+export function pruneOldPostedMatches(): void {
   stmtPrunePostedMatches.run();
 }
 
 const stmtGetFaceitChats = db.prepare(`SELECT DISTINCT chat_id FROM members WHERE faceit_player_id IS NOT NULL`);
 
-export function getAllFaceitChats() {
-  return stmtGetFaceitChats.all().map(r => r.chat_id);
+export function getAllFaceitChats(): string[] {
+  return allRows<{ chat_id: string }>(stmtGetFaceitChats).map(r => r.chat_id);
 }
 
-export function deleteEventData(chatId, messageId) {
+export function deleteEventData(chatId: ChatId, messageId: number): void {
   const cid = String(chatId);
   db.exec('BEGIN');
   try {

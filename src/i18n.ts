@@ -1,11 +1,15 @@
-const SUPPORTED = ["EN", "UA"];
+const SUPPORTED = ["EN", "UA"] as const;
+type Lang = (typeof SUPPORTED)[number];
+
 const requested = (process.env.LANGUAGE ?? "EN").toUpperCase();
-if (!SUPPORTED.includes(requested)) {
+if (!SUPPORTED.includes(requested as Lang)) {
   console.warn(`[i18n] Unknown LANGUAGE "${process.env.LANGUAGE}", falling back to EN.`);
 }
-export const LANG = SUPPORTED.includes(requested) ? requested : "EN";
+export const LANG: Lang = SUPPORTED.includes(requested as Lang) ? (requested as Lang) : "EN";
 
-const LABELS = {
+type Label = string | ((...args: any[]) => string);
+
+const LABELS: Record<Lang, Record<string, Label>> = {
   EN: {
     groupOnly: "This command only works in group chats.",
     noMembers: "No members registered yet.\n\nMembers need to use <code>/mute</code> or <code>/unmute</code> to be added to the mention list.",
@@ -78,11 +82,12 @@ const LABELS = {
   },
 };
 
-export function t(key, ...args) {
-  let entry = LABELS[LANG][key];
+export function t(key: string, ...args: any[]): string {
+  let entry: Label | undefined = LABELS[LANG][key];
   if (entry === undefined) {
     console.warn(`[i18n] Missing key "${key}" for language "${LANG}", falling back to EN.`);
-    entry = LABELS.EN[key];
+    entry = LABELS.EN[key] as Label | undefined;
   }
-  return typeof entry === "function" ? entry(...args) : entry;
+  // Missing in every language — return the key itself, so the `: string` return never lies.
+  return typeof entry === "function" ? entry(...args) : entry ?? key;
 }

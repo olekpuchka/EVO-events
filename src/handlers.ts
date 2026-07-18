@@ -1,8 +1,47 @@
-import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvent, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, hasPostedMatch, markMatchPosted } from "./db.js";
-import { buildMention, escapeHtml, sendEphemeral } from "./helpers.js";
-import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapName } from "./faceit.js";
-import { generateHypePhrase, generateMatchPhrase } from "./ai.js";
-import { t } from "./i18n.js";
+import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvent, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, hasPostedMatch, markMatchPosted } from "./db.ts";
+import { buildMention, escapeHtml, sendEphemeral } from "./helpers.ts";
+import type { Mentionable } from "./helpers.ts";
+import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapName, getMapImage, matchRoomUrl } from "./faceit.ts";
+import { generateHypePhrase, generateMatchPhrase } from "./ai.ts";
+import { t } from "./i18n.ts";
+import type {
+  Context,
+  Api,
+  HearsContext,
+  CommandContext,
+  CallbackQueryContext,
+} from "grammy";
+import type {
+  Message,
+  InlineKeyboardMarkup,
+  RichText,
+  RichBlockTableCell,
+} from "@grammyjs/types";
+import type {
+  RsvpRow,
+  EventRow,
+  FaceitMatchStats,
+  FaceitMatchDetails,
+  EloPair,
+  MatchFlow,
+  MatchPlayer,
+  ResultRow,
+  MatchResult,
+} from "./types.ts";
+
+// Anything with a status that can also be mentioned — covers both RSVP rows and
+// the poster's synthetic "auto-join" entry ({ ...ctx.from, status: "join" }).
+type RsvpLike = Mentionable & { status: string };
+
+// Per-member Elo tracking during a poll (see autoPostResult).
+interface RegEntry {
+  userId: number;
+  preElo: number | null;
+  postElo: number | null;
+}
+
+// The exact block-array type sendRichMessage accepts, so buildResultBlocks stays in sync with grammy.
+type RichBlocks = NonNullable<NonNullable<Parameters<Api["sendRichMessage"]>[1]>["blocks"]>;
 
 // Poster timezones. Everyone defaults to Kyiv; the members listed in EU_TIMEZONE_MEMBERS
 // (comma-separated Telegram user IDs) type their event times in Central European Time instead.
@@ -22,20 +61,28 @@ const euTimezoneMembers = new Set(
     })
 );
 // The IANA zone a poster's typed time should be interpreted in.
-function timezoneForUser(userId) {
+function timezoneForUser(userId: number | string): string {
   return euTimezoneMembers.has(String(userId)) ? EU_TZ : DEFAULT_TZ;
+}
+
+interface EventTimeToken {
+  hours: number;
+  minutes: number;
+  start: number;
+  end: number;
 }
 
 // First HH:MM / HH-MM in `text` that is a valid clock time and not glued to other digits — so
 // scores ("de_dust2 16:99"), version/phone numbers and out-of-range values are skipped rather than
 // spawning a phantom event. Returns { hours, minutes, start, end } (indices into `text`) or null.
 // Shared by parseEventTime and decorateEventTime so both agree on which token is the event time.
-function matchEventTimeToken(text) {
+function matchEventTimeToken(text: string): EventTimeToken | null {
   for (const m of text.matchAll(/(?<!\d)(\d{1,2})[:-](\d{2})(?!\d)/g)) {
     const hours = Number(m[1]);
     const minutes = Number(m[2]);
     if (hours <= 23 && minutes <= 59) {
-      return { hours, minutes, start: m.index, end: m.index + m[0].length };
+      const start = m.index ?? 0;
+      return { hours, minutes, start, end: start + m[0].length };
     }
   }
   return null;
@@ -43,7 +90,7 @@ function matchEventTimeToken(text) {
 
 // Parse the event time from a message, interpreting it in the given IANA zone (default Kyiv).
 // Returns Unix timestamp (today or tomorrow in that zone) or null.
-function parseEventTime(text, timeZone = DEFAULT_TZ) {
+function parseEventTime(text: string, timeZone = DEFAULT_TZ): number | null {
   const token = matchEventTimeToken(text);
   if (!token) return null;
   const { hours, minutes } = token;
@@ -61,14 +108,14 @@ function parseEventTime(text, timeZone = DEFAULT_TZ) {
 }
 
 // Format an event's Unix timestamp as HH:MM wall-clock time in the given IANA zone (DST-aware).
-function formatTimeIn(unixSeconds, timeZone) {
+function formatTimeIn(unixSeconds: number, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone,
     hour: '2-digit',
     minute: '2-digit',
     hour12: false
   }).formatToParts(new Date(unixSeconds * 1000));
-  const get = type => parts.find(p => p.type === type)?.value;
+  const get = (type: string) => parts.find(p => p.type === type)?.value;
   return `${get('hour')}:${get('minute')}`;
 }
 
@@ -76,7 +123,7 @@ function formatTimeIn(unixSeconds, timeZone) {
 // CET/CEST equivalent flagged 🇪🇺 — e.g. "23:30" → "🇺🇦 23:30 (🇪🇺 22:30)". Both come from the
 // resolved timestamp, so an EU poster's typed CET time still shows correctly under each flag.
 // escapeHtml only rewrites & < >, so matchEventTimeToken's indices stay valid on the escaped string.
-function decorateEventTime(escapedMessage, eventTime) {
+function decorateEventTime(escapedMessage: string, eventTime: number): string {
   const token = matchEventTimeToken(escapedMessage);
   if (!token) return escapedMessage;
   const kyiv = formatTimeIn(eventTime, DEFAULT_TZ);
@@ -86,7 +133,7 @@ function decorateEventTime(escapedMessage, eventTime) {
 
 const MAX_PLAYERS = 5;
 
-function extractEventName(baseText) {
+function extractEventName(baseText: string): string | null {
   const firstLine = baseText.split("\n")[0];
   const colonIdx = firstLine.indexOf(": ");
   return colonIdx !== -1 ? firstLine.slice(colonIdx + 2).trim() : null;
@@ -97,29 +144,29 @@ function extractEventName(baseText) {
 // instead of regenerating. reminderPhraseCache is frozen when the reminder fires; fullPhraseCache
 // is frozen once the squad first fills (and cleared if it drops below full, so a re-fill re-hypes).
 // Both are torn down together in clearEventPhrases when the event ends.
-const reminderPhraseCache = new Map();
-const fullPhraseCache = new Map();
+const reminderPhraseCache = new Map<string, string>();
+const fullPhraseCache = new Map<string, string>();
 
-// chatId → messageId for pins triggered by @all — lets bot.js delete only those service messages.
-export const pendingPinDeletion = new Map();
+// chatId → messageId for pins triggered by @all — lets bot.ts delete only those service messages.
+export const pendingPinDeletion = new Map<number, number>();
 
-const phraseKey = (chatId, messageId) => `${chatId}:${messageId}`;
+const phraseKey = (chatId: number | string, messageId: number): string => `${chatId}:${messageId}`;
 
 // Return the cached hype phrase for this key, or generate one and freeze it in the cache.
-async function cachedHypePhrase(cache, key, eventName) {
+async function cachedHypePhrase(cache: Map<string, string>, key: string, eventName: string | null): Promise<string> {
   const phrase = cache.get(key) ?? await generateHypePhrase(eventName);
   cache.set(key, phrase);
   return phrase;
 }
 
-export function clearEventPhrases(chatId, messageId) {
+export function clearEventPhrases(chatId: number | string, messageId: number): void {
   const key = phraseKey(chatId, messageId);
   reminderPhraseCache.delete(key);
   fullPhraseCache.delete(key);
 }
 
 
-function buildKeyboard() {
+function buildKeyboard(): InlineKeyboardMarkup {
   return {
     inline_keyboard: [[
       { text: t("joinButton"), callback_data: "join", style: "success" },
@@ -131,7 +178,7 @@ function buildKeyboard() {
 // When the squad is full we drop the "Joining" button but keep "Not joining",
 // so a locked-in player who can no longer make it can free up their seat.
 // Dropping out takes the count back below the cap, which restores buildKeyboard().
-function buildLeaveOnlyKeyboard() {
+function buildLeaveOnlyKeyboard(): InlineKeyboardMarkup {
   return {
     inline_keyboard: [[
       { text: t("notJoinButton"), callback_data: "not_join", style: "danger" }
@@ -142,16 +189,16 @@ function buildLeaveOnlyKeyboard() {
 // Lists only members who haven't RSVP'd yet — responders already show in the
 // Joining/Not joining sections. Returns "" when nobody's left, so the block
 // disappears instead of leaving an empty header.
-function buildMentionedBlock(mentionedUsers, rsvps) {
+function buildMentionedBlock(mentionedUsers: Mentionable[], rsvps: { id: number }[]): string {
   const responded = new Set(rsvps.map(r => r.id));
   const pending = mentionedUsers.filter(u => !responded.has(u.id));
   if (pending.length === 0) return "";
   return `\n\n<b>${t("mentioned")}</b> ${pending.map(buildMention).join(", ")}`;
 }
 
-function buildRsvpSection(rsvps) {
-  const joining = [];
-  const notJoining = [];
+function buildRsvpSection(rsvps: RsvpLike[]): string {
+  const joining: RsvpLike[] = [];
+  const notJoining: RsvpLike[] = [];
   for (const r of rsvps) {
     if (r.status === "join") joining.push(r);
     else notJoining.push(r);
@@ -164,7 +211,7 @@ function buildRsvpSection(rsvps) {
   return section;
 }
 
-export async function mentionAll(ctx, message = "") {
+export async function mentionAll(ctx: HearsContext<Context>, message = ""): Promise<void> {
   if (ctx.chat.type === "private") {
     await ctx.reply(t("groupOnly"));
     return;
@@ -182,13 +229,16 @@ export async function mentionAll(ctx, message = "") {
     return;
   }
 
-  const poster = buildMention(ctx.from);
-  const eventTime = parseEventTime(message, timezoneForUser(ctx.from.id));
+  const from = ctx.from;
+  if (!from) return; // anonymous admins / channel posts have no sender
+
+  const poster = buildMention(from);
+  const eventTime = parseEventTime(message, timezoneForUser(from.id));
   // Flag the event time inline — 🇺🇦 Kyiv with the 🇪🇺 (CET/CEST) equivalent in parens,
   // e.g. "CS 🇺🇦 23:30 (🇪🇺 22:30)". No time = message unchanged.
   const escaped = escapeHtml(message);
   const messageLine = `${poster}: ${eventTime ? decorateEventTime(escaped, eventTime) : escaped}`;
-  const mentionedUsers = rows.filter(r => r.id !== ctx.from.id);
+  const mentionedUsers = rows.filter(r => r.id !== from.id);
 
   if (eventTime) {
     const activeEvent = getActiveEvent(ctx.chat.id);
@@ -200,13 +250,13 @@ export async function mentionAll(ctx, message = "") {
       return;
     }
   }
-  let lastSent = null;
+  let lastSent: Message | null = null;
 
   if (eventTime) {
     // Build the full initial text with RSVP section (poster auto-joined) before sending,
     // so the message is delivered to all clients with the keyboard already attached —
     // avoiding the send-then-edit race condition that caused buttons to not appear.
-    const initialRsvps = [{ ...ctx.from, status: "join" }];
+    const initialRsvps: RsvpLike[] = [{ ...from, status: "join" }];
     const initialText = messageLine + buildMentionedBlock(mentionedUsers, initialRsvps) + buildRsvpSection(initialRsvps);
     const keyboard = buildKeyboard();
 
@@ -218,9 +268,9 @@ export async function mentionAll(ctx, message = "") {
     try {
       saveEvent(ctx.chat.id, lastSent.message_id, messageLine, eventTime);
     } catch (err) {
-      console.error("[event] save failed:", err.message);
+      console.error("[event] save failed:", (err as Error).message);
     }
-    saveRsvp(ctx.chat.id, lastSent.message_id, ctx.from, "join");
+    saveRsvp(ctx.chat.id, lastSent.message_id, from, "join");
 
     try {
       pendingPinDeletion.set(ctx.chat.id, lastSent.message_id);
@@ -233,7 +283,7 @@ export async function mentionAll(ctx, message = "") {
       console.log(`[event] created "${message}"`);
     } catch (err) {
       pendingPinDeletion.delete(ctx.chat.id);
-      console.error("[event] pin failed:", err.message);
+      console.error("[event] pin failed:", (err as Error).message);
     }
   } else {
     const fullText = messageLine + buildMentionedBlock(mentionedUsers, []);
@@ -244,8 +294,9 @@ export async function mentionAll(ctx, message = "") {
   try { await ctx.deleteMessage(); } catch {}
 }
 
-export async function cancelEvent(ctx) {
+export async function cancelEvent(ctx: CommandContext<Context>): Promise<void> {
   if (ctx.chat.type === "private") return;
+  if (!ctx.from) return; // anonymous admins / channel posts have no sender
 
   const activeEvent = getActiveEvent(ctx.chat.id);
   if (!activeEvent) {
@@ -258,16 +309,16 @@ export async function cancelEvent(ctx) {
   const row = getEventBaseText(ctx.chat.id, message_id);
   const rsvps = getRsvps(ctx.chat.id, message_id);
 
-  await ctx.api.unpinChatMessage(ctx.chat.id, { message_id }).catch(() => {});
+  await ctx.api.unpinChatMessage(ctx.chat.id, message_id).catch(() => {});
 
-  const cancelledText = row.base_text + buildRsvpSection(rsvps) + `\n\n⛔ <b>${t("cancelledBy", buildMention(ctx.from))}</b>`;
+  const cancelledText = (row?.base_text ?? "") + buildRsvpSection(rsvps) + `\n\n⛔ <b>${t("cancelledBy", buildMention(ctx.from))}</b>`;
   try {
     await ctx.api.editMessageText(ctx.chat.id, message_id, cancelledText, {
       parse_mode: "HTML",
       reply_markup: { inline_keyboard: [] }
     });
   } catch (err) {
-    console.error("[cancel] edit failed:", err.message);
+    console.error("[cancel] edit failed:", (err as Error).message);
   }
 
   if (reminderMessageId) {
@@ -279,8 +330,9 @@ export async function cancelEvent(ctx) {
   try { await ctx.deleteMessage(); } catch {}
 }
 
-export async function muteNotifications(ctx) {
+export async function muteNotifications(ctx: CommandContext<Context>): Promise<void> {
   if (ctx.chat.type === "private") { await ctx.reply(t("groupOnly")); return; }
+  if (!ctx.from) return; // anonymous admins / channel posts have no sender
   const current = getNotificationsStatus(ctx.chat.id, ctx.from.id);
   if (current === false) {
     await sendEphemeral(ctx, t("alreadyMuted"));
@@ -292,8 +344,9 @@ export async function muteNotifications(ctx) {
   await sendEphemeral(ctx, t("mutedSuccess"));
 }
 
-export async function unmuteNotifications(ctx) {
+export async function unmuteNotifications(ctx: CommandContext<Context>): Promise<void> {
   if (ctx.chat.type === "private") { await ctx.reply(t("groupOnly")); return; }
+  if (!ctx.from) return; // anonymous admins / channel posts have no sender
   const current = getNotificationsStatus(ctx.chat.id, ctx.from.id);
   if (current === true) {
     await sendEphemeral(ctx, t("alreadyUnmuted"));
@@ -305,9 +358,11 @@ export async function unmuteNotifications(ctx) {
   await sendEphemeral(ctx, t("unmutedSuccess"));
 }
 
-export async function handleRsvp(ctx) {
+export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<void> {
   const status = ctx.callbackQuery.data; // "join" or "not_join"
-  const chatId = ctx.chat.id;
+  // A callback query always originates from a message in a chat here (our inline keyboards).
+  const chatId = ctx.chat!.id;
+  if (!ctx.from) return; // every callback query carries a sender, but the type allows undefined
 
   const activeEvent = getActiveEvent(chatId);
   if (!activeEvent) {
@@ -385,8 +440,8 @@ export async function handleRsvp(ctx) {
       reply_markup: keyboard
     });
   } catch (err) {
-    if (!err.message?.includes("message is not modified")) {
-      console.error("[rsvp] edit failed:", err.message);
+    if (!(err as Error).message?.includes("message is not modified")) {
+      console.error("[rsvp] edit failed:", (err as Error).message);
     }
   }
 
@@ -405,7 +460,7 @@ export async function handleRsvp(ctx) {
   }
 }
 
-function buildReminderText(row, joining, phrase) {
+function buildReminderText(row: EventRow, joining: RsvpRow[], phrase: string): string {
   const eventName = extractEventName(row.base_text);
   return (
     t("reminderHeader") +
@@ -415,8 +470,9 @@ function buildReminderText(row, joining, phrase) {
   );
 }
 
-export async function registerFaceit(ctx) {
+export async function registerFaceit(ctx: CommandContext<Context>): Promise<void> {
   if (ctx.chat.type === "private") return;
+  if (!ctx.from) return; // anonymous admins / channel posts have no sender
   const nickname = ctx.match?.trim();
   if (!nickname) {
     await sendEphemeral(ctx, t("faceitUsage"), { parse_mode: "HTML" });
@@ -427,7 +483,7 @@ export async function registerFaceit(ctx) {
   try {
     player = await getPlayer(nickname);
   } catch (err) {
-    console.error("[faceit] API error:", err.message);
+    console.error("[faceit] API error:", (err as Error).message);
     await sendEphemeral(ctx, t("faceitUnavailable"));
     return;
   }
@@ -444,7 +500,7 @@ export async function registerFaceit(ctx) {
   }
 
   trackMember(ctx.chat.id, ctx.from);
-  setFaceitAccount(ctx.chat.id, ctx.from.id, player.player_id, cs2.faceit_elo);
+  setFaceitAccount(ctx.chat.id, ctx.from.id, player.player_id, cs2.faceit_elo ?? null);
   console.log(`[faceit] registered "${player.nickname}"`);
 
   await sendEphemeral(
@@ -454,7 +510,13 @@ export async function registerFaceit(ctx) {
   );
 }
 
-async function buildMatchResult(stats, registeredIds, elo = null, matchId = null, matchDetails = null) {
+async function buildMatchResult(
+  stats: FaceitMatchStats,
+  registeredIds: Map<string, RegEntry>,
+  elo: EloPair | null = null,
+  matchId: string | null = null,
+  matchDetails: FaceitMatchDetails | null = null
+): Promise<MatchResult | null> {
   const round = stats.rounds?.[0];
   if (!round) return null;
   let ourTeam = null, theirTeam = null;
@@ -473,11 +535,13 @@ async function buildMatchResult(stats, registeredIds, elo = null, matchId = null
   const registered = ourTeam.players.filter(p => registeredIds.has(p.player_id));
 
   // Display rows (sorted by ADR desc), structured so the table and HTML fallback share one source.
-  const resultRows = registered
+  const resultRows: ResultRow[] = registered
     .sort((a, b) => Number(b.player_stats?.ADR ?? 0) - Number(a.player_stats?.ADR ?? 0))
     .map(p => {
       const s = p.player_stats ?? {};
-      const { preElo, postElo } = registeredIds.get(p.player_id) ?? {};
+      const entry = registeredIds.get(p.player_id);
+      const preElo = entry?.preElo ?? null;
+      const postElo = entry?.postElo ?? null;
       const delta = preElo && postElo ? postElo - preElo : null;
       const deltaStr = delta != null ? ` ${delta >= 0 ? "↑" : "↓"}${Math.abs(delta)}` : "";
       return {
@@ -495,7 +559,8 @@ async function buildMatchResult(stats, registeredIds, elo = null, matchId = null
   const map = getMapName(matchDetails, rawMap)
     || rawMap.replace(/^de_/, "").replace(/^cs_/, "").replace(/^\w/, c => c.toUpperCase())
     || null;
-  const players = registered.map(p => {
+  const mapImage = getMapImage(matchDetails, rawMap);
+  const players: MatchPlayer[] = registered.map(p => {
     const s = p.player_stats ?? {};
     return {
       nickname: p.nickname,
@@ -513,7 +578,7 @@ async function buildMatchResult(stats, registeredIds, elo = null, matchId = null
       flashes: Number(s["Enemies Flashed"]),
     };
   });
-  const matchFlow = theirTeam
+  const matchFlow: MatchFlow | null = theirTeam
     ? {
         ourFirst: Number(ourTeam.team_stats?.["First Half Score"]),
         theirFirst: Number(theirTeam.team_stats?.["First Half Score"]),
@@ -523,30 +588,30 @@ async function buildMatchResult(stats, registeredIds, elo = null, matchId = null
     : null;
   const phrase = await generateMatchPhrase(won, `${ourScore}:${theirScore}`, { map, elo, players, matchFlow });
 
-  return { won, ourScore, theirScore, elo, map, matchId, rows: resultRows, phrase };
+  return { won, ourScore, theirScore, elo, mapImage, matchId, rows: resultRows, phrase };
 }
 
-// Header segments shared by both renderers so they never drift: the win/loss emoji plus
-// { text, bold } parts (score, then map and Elo when present). Each renderer formats them itself.
-function resultHeaderSegments({ won, ourScore, theirScore, elo, map }) {
-  const segs = [{ text: `${ourScore}:${theirScore}`, bold: true }];
-  if (map) segs.push({ text: map, bold: true });
-  if (elo) segs.push({ text: `(${elo.ours} Elo vs ${elo.theirs} Elo)`, bold: false });
-  return { emoji: won ? "🍌" : "❌", segs };
+// Header pieces shared by both renderers so they never drift: win/loss emoji, score, and
+// team Elo when present. The map shows only as the rich card's top image (never a name
+// here); it still feeds the AI phrase, and the HTML fallback shows no map.
+function resultHeader({ won, ourScore, theirScore, elo }: MatchResult): { emoji: string; score: string; elo: string | null } {
+  return {
+    emoji: won ? "🍌" : "❌",
+    score: `${ourScore}:${theirScore}`,
+    elo: elo ? `(${elo.ours} Elo vs ${elo.theirs} Elo)` : null,
+  };
 }
 
 // HTML rendering of a match result — the fallback when a rich message can't be sent.
-function renderResultHtml(result) {
+function renderResultHtml(result: MatchResult): string {
   const { matchId, rows, phrase } = result;
   const htmlRows = rows.map(p =>
     `· <b>${escapeHtml(p.nickname)}</b> (${p.elo}) — ${p.kda} · ${p.adr} ADR`
   );
-  const { emoji, segs } = resultHeaderSegments(result);
-  const header = `${emoji} ` + segs
-    .map(s => (s.bold ? `<b>${escapeHtml(s.text)}</b>` : escapeHtml(s.text)))
-    .join(" · ");
+  const { emoji, score, elo } = resultHeader(result);
+  const header = `${emoji} <b>${escapeHtml(score)}</b>` + (elo ? ` ${escapeHtml(elo)}` : "");
   const matchLink = matchId
-    ? `\n\n🔗 ${t("viewOnFaceit")} <a href="https://www.faceit.com/en/cs2/room/${matchId}/scoreboard">FACEIT</a>`
+    ? `\n\n🔗 ${t("viewOnFaceit")} <a href="${matchRoomUrl(matchId)}">FACEIT</a>`
     : "";
   return (
     header + "\n\n" +
@@ -557,40 +622,38 @@ function renderResultHtml(result) {
 }
 
 // Rich rendering of a match result: header, scoreboard table, AI-commentary blockquote, FACEIT footer.
-function buildResultBlocks(result) {
-  const { matchId, rows, phrase } = result;
-  const H = (text, align = "center") => ({ text, is_header: true, align, valign: "middle" });
-  const C = (text, align = "center") => ({ text, align, valign: "middle" });
-  const cells = [
+function buildResultBlocks(result: MatchResult): RichBlocks {
+  const { matchId, rows, phrase, mapImage } = result;
+  const H = (text: RichText, align: RichBlockTableCell["align"] = "center"): RichBlockTableCell => ({ text, is_header: true, align, valign: "middle" });
+  const C = (text: RichText, align: RichBlockTableCell["align"] = "center"): RichBlockTableCell => ({ text, align, valign: "middle" });
+  const cells: RichBlockTableCell[][] = [
     [H(t("scorePlayer")), H("K/D/A"), H("ADR")],
     ...rows.map(p => [
       C([{ type: "bold", text: p.nickname }, `\n${p.elo}`], "left"),
       C({ type: "code", text: p.kda }),
-      C({ type: "code", text: String(p.adr) }),
+      C({ type: "code", text: p.adr }),
     ]),
   ];
 
-  const { emoji, segs } = resultHeaderSegments(result);
-  const header = [`${emoji} `];
-  segs.forEach((s, i) => {
-    if (i) header.push(" · ");
-    header.push(s.bold ? { type: "bold", text: s.text } : s.text);
-  });
+  const { emoji, score, elo } = resultHeader(result);
+  const header: RichText[] = [`${emoji} `, { type: "bold", text: score }];
+  if (elo) header.push(" ", elo);
 
-  const blocks = [
+  const blocks: RichBlocks = [];
+  // Map image on top, above the header.
+  if (mapImage) blocks.push({ type: "photo", photo: { type: "photo", media: mapImage } });
+  blocks.push(
     { type: "paragraph", text: header },
     { type: "table", is_striped: true, is_bordered: true, cells },
-    { type: "divider" },
     { type: "blockquote", blocks: [{ type: "paragraph", text: { type: "italic", text: phrase } }] },
-  ];
+  );
   if (matchId) {
-    const room = `https://www.faceit.com/en/cs2/room/${matchId}/scoreboard`;
-    blocks.push({ type: "footer", text: [`🔗 ${t("viewOnFaceit")} `, { type: "url", text: "FACEIT", url: room }] });
+    blocks.push({ type: "footer", text: [`🔗 ${t("viewOnFaceit")} `, { type: "url", text: "FACEIT", url: matchRoomUrl(matchId) }] });
   }
   return blocks;
 }
 
-export async function autoPostResult(api, chatId) {
+export async function autoPostResult(api: Api, chatId: number | string): Promise<void> {
   const members = getFaceitMembers(chatId);
   if (!members.length) return;
 
@@ -602,7 +665,7 @@ export async function autoPostResult(api, chatId) {
   );
 
   // Collect candidates: finished, within 24h, not already posted
-  const matchCounts = new Map();
+  const matchCounts = new Map<string, { count: number; finished_at: number }>();
   let historyErrors = 0;
   for (const result of results) {
     if (result.status !== "fulfilled") {
@@ -625,18 +688,21 @@ export async function autoPostResult(api, chatId) {
   // Map our members → { preElo (DB baseline for the delta), postElo (filled in per match below,
   // only for members who actually played) }. postElo is NOT persisted until the post succeeds:
   // if sending fails (e.g. FACEIT 429), preElo must stay the pre-match value or the delta collapses.
-  const registeredIds = new Map(members.map(m => [m.faceit_player_id, { userId: m.user_id, preElo: m.faceit_elo, postElo: null }]));
+  const registeredIds = new Map<string, RegEntry>(
+    members.map(m => [m.faceit_player_id, { userId: m.user_id, preElo: m.faceit_elo, postElo: null }])
+  );
 
   // Sort by member count desc, then oldest first so multiple sessions post in chronological order
   const sortedMatches = [...matchCounts.entries()]
     .sort((a, b) => b[1].count - a[1].count || a[1].finished_at - b[1].finished_at);
 
   for (const [matchId, meta] of sortedMatches) {
-    let stats, matchDetails;
+    let stats: FaceitMatchStats | null = null;
+    let matchDetails: FaceitMatchDetails | null = null;
     try {
       [stats, matchDetails] = await Promise.all([getMatchStats(matchId), getMatchDetails(matchId)]);
     } catch (err) {
-      console.error("[faceit] poll stats fetch failed:", err.message);
+      console.error("[faceit] poll stats fetch failed:", (err as Error).message);
       continue;
     }
     if (!stats || !matchDetails) {
@@ -650,7 +716,7 @@ export async function autoPostResult(api, chatId) {
 
     // Fetch current Elo only for our members who actually played this match — not the whole
     // roster. Fetching sit-out members buys nothing for the post and just burns rate limit.
-    const participantIds = new Set();
+    const participantIds = new Set<string>();
     for (const round of stats.rounds ?? []) {
       for (const team of round.teams ?? []) {
         for (const p of team.players ?? []) {
@@ -658,10 +724,10 @@ export async function autoPostResult(api, chatId) {
         }
       }
     }
-    const transientFail = new Set();
+    const transientFail = new Set<string>();
     await Promise.allSettled(
       [...participantIds]
-        .filter(pid => registeredIds.get(pid).postElo === null)
+        .filter(pid => registeredIds.get(pid)!.postElo === null)
         .map(async pid => {
           let profile;
           try {
@@ -671,7 +737,7 @@ export async function autoPostResult(api, chatId) {
             return;
           }
           if (!profile) return; // 404 profile — permanent, accept "? Elo"
-          registeredIds.get(pid).postElo = profile.games?.cs2?.faceit_elo ?? null; // null = unranked
+          registeredIds.get(pid)!.postElo = profile.games?.cs2?.faceit_elo ?? null; // null = unranked
         })
     );
 
@@ -684,8 +750,10 @@ export async function autoPostResult(api, chatId) {
     const factions = Object.values(matchDetails.teams ?? {});
     const ourFaction = factions.find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
     const theirFaction = factions.find(f => f !== ourFaction);
-    const elo = ourFaction?.stats?.rating && theirFaction?.stats?.rating
-      ? { ours: ourFaction.stats.rating, theirs: theirFaction.stats.rating }
+    const ourRating = ourFaction?.stats?.rating;
+    const theirRating = theirFaction?.stats?.rating;
+    const elo: EloPair | null = ourRating && theirRating
+      ? { ours: ourRating, theirs: theirRating }
       : null;
 
     const result = await buildMatchResult(stats, registeredIds, elo, matchId, matchDetails);
@@ -698,11 +766,11 @@ export async function autoPostResult(api, chatId) {
     try {
       await api.sendRichMessage(chatId, { blocks: buildResultBlocks(result) });
     } catch (err) {
-      console.warn("[faceit] rich post failed, falling back to HTML:", err.message);
+      console.warn("[faceit] rich post failed, falling back to HTML:", (err as Error).message);
       try {
         await api.sendMessage(chatId, renderResultHtml(result), { parse_mode: "HTML" });
       } catch (e) {
-        console.error("[faceit] poll send failed:", e.message);
+        console.error("[faceit] poll send failed:", (e as Error).message);
         continue;
       }
     }
@@ -712,14 +780,14 @@ export async function autoPostResult(api, chatId) {
     // registeredIds would persist Elo fetched for a different (possibly held-back) match.
     // Skip members whose profile fetch failed (postElo null).
     for (const pid of participantIds) {
-      const { userId, postElo } = registeredIds.get(pid);
+      const { userId, postElo } = registeredIds.get(pid)!;
       if (postElo !== null) setFaceitAccount(chatId, userId, pid, postElo);
     }
     console.log("[faceit] auto-posted result");
   }
 }
 
-export async function sendReminder(api, chatId, messageId) {
+export async function sendReminder(api: Api, chatId: number | string, messageId: number): Promise<Message | undefined> {
   const row = getEventBaseText(chatId, messageId);
   if (!row) return;
 
