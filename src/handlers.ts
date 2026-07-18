@@ -545,7 +545,7 @@ async function buildMatchResult(
       const delta = preElo && postElo ? postElo - preElo : null;
       // Non-breaking spaces keep the whole "1234 Elo ↑0" on one line so the cell
       // never wraps past two lines (nickname + elo) in the narrow scoreboard column.
-      const deltaStr = delta != null ? ` ${delta >= 0 ? "↑" : "↓"}${Math.abs(delta)}` : "";
+      const deltaStr = delta ? ` ${delta >= 0 ? "↑" : "↓"}${Math.abs(delta)}` : "";
       return {
         nickname: p.nickname,
         kda: `${s.Kills ?? "?"}/${s.Deaths ?? "?"}/${s.Assists ?? "?"}`,
@@ -632,8 +632,8 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
     [H(t("scorePlayer")), H("K/D/A"), H("ADR")],
     ...rows.map(p => [
       C([{ type: "bold", text: p.nickname }, `\n${p.elo}`], "left"),
-      C({ type: "code", text: p.kda }),
-      C({ type: "code", text: p.adr }),
+      C(p.kda),
+      C(p.adr),
     ]),
   ];
 

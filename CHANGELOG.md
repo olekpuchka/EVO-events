@@ -3,6 +3,15 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions match the release tags.
 
+## [2.6.3]
+
+### Changed
+
+- **Slimmed the match-result scoreboard.** Dropped the monospace styling from the
+  K/D/A and ADR cells so the whole table uses one font, and the Elo line now hides a
+  zero delta (`2327 Elo` instead of `2327 Elo ↑0`) — both free up width in the
+  player column so cells stay compact.
+
 ## [2.6.2]
 
 ### Fixed
