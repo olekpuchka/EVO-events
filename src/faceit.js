@@ -44,7 +44,8 @@ export function getMatchDetails(matchId) {
   return faceitGet(`${BASE}/matches/${matchId}`);
 }
 
-export function getMapImageUrl(matchDetails, mapId) {
-  const entities = matchDetails.voting?.map?.entities ?? [];
-  return entities.find(e => e.game_map_id === mapId)?.image_lg ?? null;
+// FACEIT's official display name for a played map (e.g. "Cache"), or null if not in the pool.
+export function getMapName(matchDetails, mapId) {
+  const entities = matchDetails?.voting?.map?.entities ?? [];
+  return entities.find(e => e.game_map_id === mapId)?.name ?? null;
 }

@@ -14,6 +14,7 @@ Built with [grammY](https://grammy.dev/) and Node.js (built-in SQLite).
 - **AI hype phrases** (DeepSeek, optional) when the squad fills and in the reminder.
 - **Auto match results** — polls FACEIT and posts finished matches with K/D/A, ADR, per-player Elo ↑/↓ and team Elo, plus an AI win/loss line that reacts to the match stats (top fraggers, aces, clutches, comebacks, overtime).
 - **Timezone** — event times show 🇺🇦 Kyiv and 🇪🇺 CET side by side. Posters default to Kyiv; those listed in `EU_TIMEZONE_MEMBERS` type in CET instead.
+- **Quiet feedback** — usage hints, errors, and confirmations reply only to you and clear themselves, so they never clutter the group.
 - **Language** — English or Ukrainian.
 
 ## Commands
@@ -51,15 +52,16 @@ The bot is configured entirely through environment variables:
 
 Hosted on [JustRunMy.App](https://justrunmy.app/telegram-bots) (always-on containers, free tier). Create an app → **Deploy from Git**, set the env vars above, and mount a persistent volume at `/app/data`.
 
-**Release** with `npm run release` — it bumps `package.json`, commits, tags, and pushes the tag, which triggers a [GitHub Action](.github/workflows/deploy.yml) that deploys and drafts the release notes:
+**Release** by pushing a `v*` tag — that triggers a [GitHub Action](.github/workflows/deploy.yml) that deploys and drafts the release notes. Fold the version bump into the change's own commit (no separate release commit):
 
 ```bash
-npm run release         # patch: 2.3.7 -> 2.3.8
-npm run release:minor   # 2.3.7 -> 2.4.0
-npm run release:major   # 2.3.7 -> 3.0.0
+npm version minor --no-git-tag-version   # bump package.json + lock, no commit/tag
+# move CHANGELOG [Unreleased] under the new version, then:
+git commit -am "feat: ..."               # change + bump + changelog in one commit
+git tag v2.5.0 && git push --follow-tags
 ```
 
-The version is bumped in the same commit that gets tagged, so `master` never accumulates a trailing "sync version" commit.
+Only the tag drives the deploy, so `master` never accumulates a separate "chore: release" commit. See [CLAUDE.md](CLAUDE.md) for the full flow.
 
 Requires one repo secret `JUSTRUNMY_DEPLOY_URL` = `https://<user>:<token>@justrunmy.app/git/<repo-id>`.
 

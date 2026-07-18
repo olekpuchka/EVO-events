@@ -3,6 +3,25 @@
 All notable changes to this project are documented here. Format loosely follows
 [Keep a Changelog](https://keepachangelog.com/); versions match the release tags.
 
+## [2.5.0]
+
+### Added
+
+- **Quiet feedback.** Usage hints, errors, and mute/FACEIT confirmations now reply
+  only to the person who triggered them and clear themselves, instead of being posted
+  to the group and deleted after 10s. Falls back to the old auto-delete behaviour
+  where private replies aren't supported.
+- **Scoreboard match results.** FACEIT results now post as a formatted scoreboard —
+  a score · map · Elo header, an aligned table (player with Elo, K/D/A, ADR), the AI
+  commentary as a quote, and a FACEIT link. The map name comes from FACEIT's official
+  name field. Falls back to the previous text layout when needed.
+
+### Changed
+
+- **AI phrases as quotes.** The full-squad hype (`@all`), the reminder line, and the
+  match-result commentary now render as italic quote blocks for a consistent voice.
+- **Dependencies:** `grammy` 1.44.0 → 1.45.1, `openai` 6.45.0 → 6.48.0.
+
 ## [2.4.0]
 
 ### Added

@@ -1,6 +1,6 @@
 import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvent, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, hasPostedMatch, markMatchPosted } from "./db.js";
-import { buildMention, escapeHtml, autoDelete } from "./helpers.js";
-import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapImageUrl } from "./faceit.js";
+import { buildMention, escapeHtml, sendEphemeral } from "./helpers.js";
+import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapName } from "./faceit.js";
 import { generateHypePhrase, generateMatchPhrase } from "./ai.js";
 import { t } from "./i18n.js";
 
@@ -173,14 +173,12 @@ export async function mentionAll(ctx, message = "") {
   const rows = getMembers(ctx.chat.id);
 
   if (rows.length === 0) {
-    const reply = await ctx.reply(t("noMembers"), { parse_mode: "HTML" });
-    autoDelete(ctx, reply);
+    await sendEphemeral(ctx, t("noMembers"), { parse_mode: "HTML" });
     return;
   }
 
   if (!message) {
-    const reply = await ctx.reply(t("usageAll"), { parse_mode: "HTML" });
-    autoDelete(ctx, reply);
+    await sendEphemeral(ctx, t("usageAll"), { parse_mode: "HTML" });
     return;
   }
 
@@ -198,8 +196,7 @@ export async function mentionAll(ctx, message = "") {
       const chatIdStr = String(ctx.chat.id);
       const peerId = chatIdStr.startsWith("-100") ? chatIdStr.slice(4) : chatIdStr.replace("-", "");
       const link = `https://t.me/c/${peerId}/${activeEvent.message_id}`;
-      const notice = await ctx.reply(t("activeEventExists", link), { parse_mode: "HTML" });
-      autoDelete(ctx, notice);
+      await sendEphemeral(ctx, t("activeEventExists", link), { parse_mode: "HTML" });
       return;
     }
   }
@@ -252,8 +249,7 @@ export async function cancelEvent(ctx) {
 
   const activeEvent = getActiveEvent(ctx.chat.id);
   if (!activeEvent) {
-    const reply = await ctx.reply(t("noActiveEvent"));
-    autoDelete(ctx, reply);
+    await sendEphemeral(ctx, t("noActiveEvent"));
     return;
   }
 
@@ -287,30 +283,26 @@ export async function muteNotifications(ctx) {
   if (ctx.chat.type === "private") { await ctx.reply(t("groupOnly")); return; }
   const current = getNotificationsStatus(ctx.chat.id, ctx.from.id);
   if (current === false) {
-    const reply = await ctx.reply(t("alreadyMuted"));
-    autoDelete(ctx, reply);
+    await sendEphemeral(ctx, t("alreadyMuted"));
     return;
   }
   trackMember(ctx.chat.id, ctx.from);
   setNotifications(ctx.chat.id, ctx.from.id, false);
   console.log("[mute] muted");
-  const reply = await ctx.reply(t("mutedSuccess"));
-  autoDelete(ctx, reply);
+  await sendEphemeral(ctx, t("mutedSuccess"));
 }
 
 export async function unmuteNotifications(ctx) {
   if (ctx.chat.type === "private") { await ctx.reply(t("groupOnly")); return; }
   const current = getNotificationsStatus(ctx.chat.id, ctx.from.id);
   if (current === true) {
-    const reply = await ctx.reply(t("alreadyUnmuted"));
-    autoDelete(ctx, reply);
+    await sendEphemeral(ctx, t("alreadyUnmuted"));
     return;
   }
   trackMember(ctx.chat.id, ctx.from);
   setNotifications(ctx.chat.id, ctx.from.id, true);
   console.log("[unmute] unmuted");
-  const reply = await ctx.reply(t("unmutedSuccess"));
-  autoDelete(ctx, reply);
+  await sendEphemeral(ctx, t("unmutedSuccess"));
 }
 
 export async function handleRsvp(ctx) {
@@ -384,7 +376,7 @@ export async function handleRsvp(ctx) {
     fullPhraseCache.delete(key);
   }
 
-  const newText = row.base_text + buildMentionedBlock(getMembers(chatId), rsvps) + buildRsvpSection(rsvps) + (isFull ? `\n\n🔥 <b>${fullPhrase} (${MAX_PLAYERS}/${MAX_PLAYERS})</b> 🔒` : "");
+  const newText = row.base_text + buildMentionedBlock(getMembers(chatId), rsvps) + buildRsvpSection(rsvps) + (isFull ? `\n\n<blockquote>🔥 <i>${escapeHtml(fullPhrase)}</i> (${MAX_PLAYERS}/${MAX_PLAYERS}) 🔒</blockquote>` : "");
   const keyboard = isFull ? buildLeaveOnlyKeyboard() : buildKeyboard();
 
   try {
@@ -419,7 +411,7 @@ function buildReminderText(row, joining, phrase) {
     t("reminderHeader") +
     (eventName ? `\n\n${eventName}` : "") +
     `\n\n${t("joiningHeader", joining.length)}\n${joining.map(buildMention).join(", ")}` +
-    `\n\n<i>${phrase}</i>`
+    `\n\n<blockquote><i>${escapeHtml(phrase)}</i></blockquote>`
   );
 }
 
@@ -427,8 +419,7 @@ export async function registerFaceit(ctx) {
   if (ctx.chat.type === "private") return;
   const nickname = ctx.match?.trim();
   if (!nickname) {
-    const reply = await ctx.reply(t("faceitUsage"), { parse_mode: "HTML" });
-    autoDelete(ctx, reply);
+    await sendEphemeral(ctx, t("faceitUsage"), { parse_mode: "HTML" });
     return;
   }
 
@@ -437,21 +428,18 @@ export async function registerFaceit(ctx) {
     player = await getPlayer(nickname);
   } catch (err) {
     console.error("[faceit] API error:", err.message);
-    const reply = await ctx.reply(t("faceitUnavailable"));
-    autoDelete(ctx, reply);
+    await sendEphemeral(ctx, t("faceitUnavailable"));
     return;
   }
 
   if (!player) {
-    const reply = await ctx.reply(t("faceitNotFound", escapeHtml(nickname)), { parse_mode: "HTML" });
-    autoDelete(ctx, reply);
+    await sendEphemeral(ctx, t("faceitNotFound", escapeHtml(nickname)), { parse_mode: "HTML" });
     return;
   }
 
   const cs2 = player.games?.cs2;
   if (!cs2) {
-    const reply = await ctx.reply(t("faceitNoStats", escapeHtml(player.nickname)), { parse_mode: "HTML" });
-    autoDelete(ctx, reply);
+    await sendEphemeral(ctx, t("faceitNoStats", escapeHtml(player.nickname)), { parse_mode: "HTML" });
     return;
   }
 
@@ -459,15 +447,14 @@ export async function registerFaceit(ctx) {
   setFaceitAccount(ctx.chat.id, ctx.from.id, player.player_id, cs2.faceit_elo);
   console.log(`[faceit] registered "${player.nickname}"`);
 
-  const reply = await ctx.reply(
+  await sendEphemeral(
+    ctx,
     t("faceitLinked", escapeHtml(player.nickname), cs2.faceit_elo ? `${cs2.faceit_elo} Elo` : t("unranked")),
     { parse_mode: "HTML" }
   );
-  autoDelete(ctx, reply);
-  try { await ctx.deleteMessage(); } catch {}
 }
 
-async function formatMatchResult(stats, registeredIds, elo = null, matchId = null) {
+async function buildMatchResult(stats, registeredIds, elo = null, matchId = null, matchDetails = null) {
   const round = stats.rounds?.[0];
   if (!round) return null;
   let ourTeam = null, theirTeam = null;
@@ -485,21 +472,29 @@ async function formatMatchResult(stats, registeredIds, elo = null, matchId = nul
 
   const registered = ourTeam.players.filter(p => registeredIds.has(p.player_id));
 
-  const rows = registered
+  // Display rows (sorted by ADR desc), structured so the table and HTML fallback share one source.
+  const resultRows = registered
     .sort((a, b) => Number(b.player_stats?.ADR ?? 0) - Number(a.player_stats?.ADR ?? 0))
     .map(p => {
       const s = p.player_stats ?? {};
       const { preElo, postElo } = registeredIds.get(p.player_id) ?? {};
       const delta = preElo && postElo ? postElo - preElo : null;
-      const deltaStr = delta !== null ? `, ${delta >= 0 ? "↑" : "↓"}${Math.abs(delta)}` : "";
-      const eloStr = postElo ? `${postElo} Elo${deltaStr}` : "? Elo";
-      return `· <b>${escapeHtml(p.nickname)}</b> (${eloStr}) — ${s.Kills ?? "?"}/${s.Deaths ?? "?"}/${s.Assists ?? "?"} · ${s.ADR ?? "?"} ADR`;
+      const deltaStr = delta != null ? ` ${delta >= 0 ? "↑" : "↓"}${Math.abs(delta)}` : "";
+      return {
+        nickname: p.nickname,
+        kda: `${s.Kills ?? "?"}/${s.Deaths ?? "?"}/${s.Assists ?? "?"}`,
+        adr: s.ADR ?? "?",
+        elo: postElo ? `${postElo} Elo${deltaStr}` : "? Elo",
+      };
     });
 
-  if (!rows.length) return null;
+  if (!resultRows.length) return null;
 
   const rawMap = round.round_stats?.Map ?? "";
-  const map = rawMap.replace(/^de_/, "").replace(/^cs_/, "").replace(/^\w/, c => c.toUpperCase()) || null;
+  // Prefer FACEIT's official map name; fall back to cleaning the raw id if it's not in the pool.
+  const map = getMapName(matchDetails, rawMap)
+    || rawMap.replace(/^de_/, "").replace(/^cs_/, "").replace(/^\w/, c => c.toUpperCase())
+    || null;
   const players = registered.map(p => {
     const s = p.player_stats ?? {};
     return {
@@ -528,18 +523,71 @@ async function formatMatchResult(stats, registeredIds, elo = null, matchId = nul
     : null;
   const phrase = await generateMatchPhrase(won, `${ourScore}:${theirScore}`, { map, elo, players, matchFlow });
 
-  const eloStr = elo ? ` (${elo.ours} Elo vs ${elo.theirs} Elo)` : "";
+  return { won, ourScore, theirScore, elo, map, matchId, rows: resultRows, phrase };
+}
 
+// Header segments shared by both renderers so they never drift: the win/loss emoji plus
+// { text, bold } parts (score, then map and Elo when present). Each renderer formats them itself.
+function resultHeaderSegments({ won, ourScore, theirScore, elo, map }) {
+  const segs = [{ text: `${ourScore}:${theirScore}`, bold: true }];
+  if (map) segs.push({ text: map, bold: true });
+  if (elo) segs.push({ text: `(${elo.ours} Elo vs ${elo.theirs} Elo)`, bold: false });
+  return { emoji: won ? "🍌" : "❌", segs };
+}
+
+// HTML rendering of a match result — the fallback when a rich message can't be sent.
+function renderResultHtml(result) {
+  const { matchId, rows, phrase } = result;
+  const htmlRows = rows.map(p =>
+    `· <b>${escapeHtml(p.nickname)}</b> (${p.elo}) — ${p.kda} · ${p.adr} ADR`
+  );
+  const { emoji, segs } = resultHeaderSegments(result);
+  const header = `${emoji} ` + segs
+    .map(s => (s.bold ? `<b>${escapeHtml(s.text)}</b>` : escapeHtml(s.text)))
+    .join(" · ");
   const matchLink = matchId
     ? `\n\n🔗 ${t("viewOnFaceit")} <a href="https://www.faceit.com/en/cs2/room/${matchId}/scoreboard">FACEIT</a>`
     : "";
-
   return (
-    `${won ? "🍌" : "❌"} <b>${ourScore}:${theirScore}</b>${eloStr}\n\n` +
-    rows.join("\n") +
-    `\n\n<i>${phrase}</i>` +
+    header + "\n\n" +
+    htmlRows.join("\n") +
+    `\n\n<blockquote><i>${escapeHtml(phrase)}</i></blockquote>` +
     matchLink
   );
+}
+
+// Rich rendering of a match result: header, scoreboard table, AI-commentary blockquote, FACEIT footer.
+function buildResultBlocks(result) {
+  const { matchId, rows, phrase } = result;
+  const H = (text, align = "center") => ({ text, is_header: true, align, valign: "middle" });
+  const C = (text, align = "center") => ({ text, align, valign: "middle" });
+  const cells = [
+    [H(t("scorePlayer")), H("K/D/A"), H("ADR")],
+    ...rows.map(p => [
+      C([{ type: "bold", text: p.nickname }, `\n${p.elo}`], "left"),
+      C({ type: "code", text: p.kda }),
+      C({ type: "code", text: String(p.adr) }),
+    ]),
+  ];
+
+  const { emoji, segs } = resultHeaderSegments(result);
+  const header = [`${emoji} `];
+  segs.forEach((s, i) => {
+    if (i) header.push(" · ");
+    header.push(s.bold ? { type: "bold", text: s.text } : s.text);
+  });
+
+  const blocks = [
+    { type: "paragraph", text: header },
+    { type: "table", is_striped: true, is_bordered: true, cells },
+    { type: "divider" },
+    { type: "blockquote", blocks: [{ type: "paragraph", text: { type: "italic", text: phrase } }] },
+  ];
+  if (matchId) {
+    const room = `https://www.faceit.com/en/cs2/room/${matchId}/scoreboard`;
+    blocks.push({ type: "footer", text: [`🔗 ${t("viewOnFaceit")} `, { type: "url", text: "FACEIT", url: room }] });
+  }
+  return blocks;
 }
 
 export async function autoPostResult(api, chatId) {
@@ -633,9 +681,6 @@ export async function autoPostResult(api, chatId) {
     // (Unranked players / 404s aren't in transientFail, so they never block the post.)
     if (transientFail.size && now - meta.finished_at < 30 * 60) continue;
 
-    const mapId = stats.rounds?.[0]?.round_stats?.Map;
-    const imageUrl = getMapImageUrl(matchDetails, mapId);
-
     const factions = Object.values(matchDetails.teams ?? {});
     const ourFaction = factions.find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
     const theirFaction = factions.find(f => f !== ourFaction);
@@ -643,30 +688,24 @@ export async function autoPostResult(api, chatId) {
       ? { ours: ourFaction.stats.rating, theirs: theirFaction.stats.rating }
       : null;
 
-    const text = await formatMatchResult(stats, registeredIds, elo, matchId);
-    if (!text) {
+    const result = await buildMatchResult(stats, registeredIds, elo, matchId, matchDetails);
+    if (!result) {
       markMatchPosted(chatId, matchId);
       continue;
     }
 
-    let sent = false;
+    // Prefer the rich scoreboard; fall back to plain HTML if the rich send is rejected.
     try {
-      if (imageUrl) {
-        await api.sendPhoto(chatId, imageUrl, { caption: text, parse_mode: "HTML" });
-      } else {
-        await api.sendMessage(chatId, text, { parse_mode: "HTML" });
-      }
-      sent = true;
+      await api.sendRichMessage(chatId, { blocks: buildResultBlocks(result) });
     } catch (err) {
-      if (!imageUrl) {
-        console.error("[faceit] poll send failed:", err.message);
-      } else {
-        await api.sendMessage(chatId, text, { parse_mode: "HTML" })
-          .then(() => { sent = true; })
-          .catch(e => console.error("[faceit] poll send failed:", e.message));
+      console.warn("[faceit] rich post failed, falling back to HTML:", err.message);
+      try {
+        await api.sendMessage(chatId, renderResultHtml(result), { parse_mode: "HTML" });
+      } catch (e) {
+        console.error("[faceit] poll send failed:", e.message);
+        continue;
       }
     }
-    if (!sent) continue;
     markMatchPosted(chatId, matchId);
     // Lock in the new Elo baseline now that the delta has been posted, so the next match
     // measures its delta from here. Only this match's participants — committing all of
