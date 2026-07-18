@@ -782,8 +782,13 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
     // registeredIds would persist Elo fetched for a different (possibly held-back) match.
     // Skip members whose profile fetch failed (postElo null).
     for (const pid of participantIds) {
-      const { userId, postElo } = registeredIds.get(pid)!;
-      if (postElo !== null) setFaceitAccount(chatId, userId, pid, postElo);
+      const entry = registeredIds.get(pid)!;
+      if (entry.postElo !== null) {
+        setFaceitAccount(chatId, entry.userId, pid, entry.postElo);
+        // Advance the baseline so a member's next match this poll shows delta 0
+        // instead of repeating the same swing — postElo is live Elo, one value per batch.
+        entry.preElo = entry.postElo;
+      }
     }
     console.log("[faceit] auto-posted result");
   }
