@@ -52,12 +52,11 @@ The bot is configured entirely through environment variables:
 
 Hosted on [JustRunMy.App](https://justrunmy.app/telegram-bots) (always-on containers, free tier). Create an app → **Deploy from Git**, set the env vars above, and mount a persistent volume at `/app/data`.
 
-**Release** by pushing a `v*` tag — that triggers a [GitHub Action](.github/workflows/deploy.yml) that deploys and drafts the release notes. Fold the version bump into the change's own commit (no separate release commit):
+**Release** by pushing a `v*` tag — that triggers a [GitHub Action](.github/workflows/deploy.yml) that deploys. Fold the version bump into the change's own commit (no separate release commit):
 
 ```bash
 npm version minor --no-git-tag-version   # bump package.json + lock, no commit/tag
-# move CHANGELOG [Unreleased] under the new version, then:
-git commit -am "feat: ..."               # change + bump + changelog in one commit
+git commit -am "feat: ..."               # change + bump in one commit
 git tag -a v2.5.0 -m v2.5.0              # annotated — --follow-tags only pushes annotated tags
 git push --follow-tags
 ```
@@ -65,13 +64,6 @@ git push --follow-tags
 Only the tag drives the deploy, so `main` never accumulates a separate "chore: release" commit. See [CLAUDE.md](CLAUDE.md) for the full flow.
 
 Requires one repo secret `JUSTRUNMY_DEPLOY_URL` = `https://<user>:<token>@justrunmy.app/git/<repo-id>`.
-
-### Manage from your editor (MCP, optional)
-
-[`.mcp.json`](.mcp.json) connects the [JustRunMy.App MCP server](https://justrunmy.app/mcp) for managing the app (logs, env vars, deploy) from an MCP-capable editor.
-
-1. Get your token from the [MCP tool config panel](https://justrunmy.app/panel/mcp-tool-config) and add it to `.env` as `JUSTRUNMYAPP_X_USER_IDENTITY`.
-2. Load `.env` before launching your editor (MCP reads the shell environment, not `.env`): `set -a && source .env && set +a`.
 
 ## License
 

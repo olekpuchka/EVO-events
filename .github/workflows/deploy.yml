@@ -8,8 +8,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - uses: actions/checkout@v6
         with:
@@ -30,8 +28,7 @@ jobs:
           # git push exits 0 even when JustRunMy.App rejects the build/schedule —
           # the remote accepts the branch at the protocol level and reports failures
           # only as text (e.g. "No matching nodes"). Capture the output and fail the
-          # step if the remote printed its error banner, so the release below is
-          # skipped and the run goes red.
+          # step if the remote printed its error banner, so the run goes red.
           if ! output=$(git push "${{ secrets.JUSTRUNMY_DEPLOY_URL }}" HEAD:refs/heads/deploy 2>&1); then
             echo "$output"
             echo "::error::git push to JustRunMy.App failed"
@@ -42,29 +39,3 @@ jobs:
             echo "::error::JustRunMy.App rejected the deploy (see remote output above)"
             exit 1
           fi
-
-      - name: Create GitHub Release
-        run: |
-          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || true)
-          RANGE="${PREV_TAG:+${PREV_TAG}..}HEAD"
-
-          FEATS=$(git log $RANGE --pretty=format:"%s" | grep "^feat:" | sed 's/^feat: /- /' || true)
-          FIXES=$(git log $RANGE --pretty=format:"%s" | grep "^fix:"  | sed 's/^fix: /- /'  || true)
-
-          NOTES=""
-          if [ -n "$FEATS" ]; then
-            NOTES+="## What's new"$'\n\n'"$FEATS"$'\n\n'
-          fi
-          if [ -n "$FIXES" ]; then
-            NOTES+="## Fixes"$'\n\n'"$FIXES"$'\n\n'
-          fi
-          # No user-facing feat/fix commits — this is a maintenance-only release.
-          # Show a clean one-liner instead of dumping every chore/refactor commit.
-          if [ -z "$NOTES" ]; then
-            NOTES="Maintenance release — internal improvements, no user-facing changes."
-          fi
-
-          printf '%s' "$NOTES" > /tmp/release-notes.md
-          gh release create "${{ github.ref_name }}" --title "${{ github.ref_name }}" --notes-file /tmp/release-notes.md
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
