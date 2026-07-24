@@ -5,6 +5,20 @@ export function escapeHtml(text: string): string {
   return text.replace(/[&<>]/g, c => HTML_ESCAPES[c]);
 }
 
+// AI phrases are generated as Telegram HTML: the prompt and sanitize() together
+// guarantee the only tags present are balanced <b>/<i>. Fully escaping them would
+// show the tags as literal text, so escape everything then restore just those two.
+export function escapeAiHtml(text: string): string {
+  return escapeHtml(text).replace(/&lt;(\/?[bi])&gt;/g, "<$1>");
+}
+
+// Rich-message blocks take literal text, not HTML, so the <b>/<i> tags an AI phrase
+// carries would render as visible tags. The blockquote is already styled italic, so
+// drop the tags entirely rather than leave them showing.
+export function stripAiHtml(text: string): string {
+  return text.replace(/<\/?[bi]>/g, "");
+}
+
 // The minimal shape buildMention needs — satisfied by both a grammy `User`
 // (ctx.from) and the member/RSVP rows read from SQLite.
 export interface Mentionable {

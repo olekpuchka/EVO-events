@@ -1,5 +1,5 @@
 import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvent, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, hasPostedMatch, markMatchPosted } from "./db.ts";
-import { buildMention, escapeHtml, sendEphemeral } from "./helpers.ts";
+import { buildMention, escapeHtml, escapeAiHtml, stripAiHtml, sendEphemeral } from "./helpers.ts";
 import type { Mentionable } from "./helpers.ts";
 import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapName, getMapImage, matchRoomUrl } from "./faceit.ts";
 import { generateHypePhrase, generateMatchPhrase } from "./ai.ts";
@@ -431,7 +431,7 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
     fullPhraseCache.delete(key);
   }
 
-  const newText = row.base_text + buildMentionedBlock(getMembers(chatId), rsvps) + buildRsvpSection(rsvps) + (isFull ? `\n\n<blockquote>🔥 <i>${escapeHtml(fullPhrase)}</i> (${MAX_PLAYERS}/${MAX_PLAYERS}) 🔒</blockquote>` : "");
+  const newText = row.base_text + buildMentionedBlock(getMembers(chatId), rsvps) + buildRsvpSection(rsvps) + (isFull ? `\n\n<blockquote>🔥 <i>${escapeAiHtml(fullPhrase)}</i> (${MAX_PLAYERS}/${MAX_PLAYERS}) 🔒</blockquote>` : "");
   const keyboard = isFull ? buildLeaveOnlyKeyboard() : buildKeyboard();
 
   try {
@@ -466,7 +466,7 @@ function buildReminderText(row: EventRow, joining: RsvpRow[], phrase: string): s
     t("reminderHeader") +
     (eventName ? `\n\n${eventName}` : "") +
     `\n\n${t("joiningHeader", joining.length)}\n${joining.map(buildMention).join(", ")}` +
-    `\n\n<blockquote><i>${escapeHtml(phrase)}</i></blockquote>`
+    `\n\n<blockquote><i>${escapeAiHtml(phrase)}</i></blockquote>`
   );
 }
 
@@ -618,7 +618,7 @@ function renderResultHtml(result: MatchResult): string {
   return (
     header + "\n\n" +
     htmlRows.join("\n") +
-    `\n\n<blockquote><i>${escapeHtml(phrase)}</i></blockquote>` +
+    `\n\n<blockquote><i>${escapeAiHtml(phrase)}</i></blockquote>` +
     matchLink
   );
 }
@@ -647,7 +647,7 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
   if (mapImage) blocks.push({ type: "photo", photo: { type: "photo", media: mapImage } });
   blocks.push(
     { type: "table", is_striped: true, is_bordered: true, cells },
-    { type: "blockquote", blocks: [{ type: "paragraph", text: { type: "italic", text: phrase } }] },
+    { type: "blockquote", blocks: [{ type: "paragraph", text: { type: "italic", text: stripAiHtml(phrase) } }] },
   );
   if (matchId) {
     blocks.push({ type: "footer", text: [`🔗 ${t("viewOnFaceit")} `, { type: "url", text: "FACEIT", url: matchRoomUrl(matchId) }] });
