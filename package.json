@@ -1,6 +1,6 @@
 {
   "name": "evo-events-telegram-bot",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Telegram bot for organizing gaming events — @all mentions, RSVP, auto-pin/unpin, reminders, and squad management",
   "type": "module",
   "scripts": {

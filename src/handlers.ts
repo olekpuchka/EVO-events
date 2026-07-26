@@ -294,6 +294,20 @@ export async function mentionAll(ctx: HearsContext<Context>, message = ""): Prom
   try { await ctx.deleteMessage(); } catch {}
 }
 
+// Unpin an event that is over, whether it ended or was cancelled. "not found" just means someone
+// unpinned it by hand, so only anything else is logged. Never throws: callers have cleanup to run
+// after this (buttons, reminder, rows) and nothing retries once the scheduled row is gone.
+export async function unpinEventMessage(api: Api, chatId: number | string, messageId: number): Promise<void> {
+  try {
+    await api.unpinChatMessage(chatId, messageId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!message.includes("message to unpin not found")) {
+      console.error("[unpin] failed:", message);
+    }
+  }
+}
+
 export async function cancelEvent(ctx: CommandContext<Context>): Promise<void> {
   if (ctx.chat.type === "private") return;
   if (!ctx.from) return; // anonymous admins / channel posts have no sender
@@ -309,7 +323,7 @@ export async function cancelEvent(ctx: CommandContext<Context>): Promise<void> {
   const row = getEventBaseText(ctx.chat.id, message_id);
   const rsvps = getRsvps(ctx.chat.id, message_id);
 
-  await ctx.api.unpinChatMessage(ctx.chat.id, message_id).catch(() => {});
+  await unpinEventMessage(ctx.api, ctx.chat.id, message_id);
 
   const cancelledText = (row?.base_text ?? "") + buildRsvpSection(rsvps) + `\n\n⛔ <b>${t("cancelledBy", buildMention(ctx.from))}</b>`;
   try {
@@ -358,6 +372,16 @@ export async function unmuteNotifications(ctx: CommandContext<Context>): Promise
   await sendEphemeral(ctx, t("unmutedSuccess"));
 }
 
+// A callback query ID expires (~15s), so a tap replayed after a restart can no longer be
+// answered. Losing the toast is fine; losing the bookkeeping that follows it is not.
+async function ack(ctx: CallbackQueryContext<Context>, text: string): Promise<void> {
+  try {
+    await ctx.answerCallbackQuery({ text });
+  } catch (err) {
+    console.warn("[rsvp] ack failed:", (err as Error).message);
+  }
+}
+
 export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<void> {
   const status = ctx.callbackQuery.data; // "join" or "not_join"
   // A callback query always originates from a message in a chat here (our inline keyboards).
@@ -366,7 +390,7 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
 
   const activeEvent = getActiveEvent(chatId);
   if (!activeEvent) {
-    await ctx.answerCallbackQuery({ text: t("eventEnded") });
+    await ack(ctx, t("eventEnded"));
     return;
   }
   const messageId = activeEvent.message_id;
@@ -376,21 +400,20 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
   // is actually the current active event.
   const clickedMessageId = ctx.callbackQuery.message?.message_id;
   if (clickedMessageId && clickedMessageId !== messageId) {
-    await ctx.answerCallbackQuery({ text: t("eventEnded") });
+    await ack(ctx, t("eventEnded"));
     return;
   }
 
   const row = getEventBaseText(chatId, messageId);
   if (!row) {
     console.error("[rsvp] no active event found");
-    await ctx.answerCallbackQuery({ text: t("eventEnded") });
+    await ack(ctx, t("eventEnded"));
     return;
   }
 
   const currentStatus = getUserRsvpStatus(chatId, messageId, ctx.from.id);
   if (currentStatus === status) {
-    const toastText = status === "join" ? t("alreadyJoining") : t("alreadyNotJoining");
-    await ctx.answerCallbackQuery({ text: toastText });
+    await ack(ctx, status === "join" ? t("alreadyJoining") : t("alreadyNotJoining"));
     return;
   }
 
@@ -400,7 +423,7 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
     const joiningNow = getRsvps(chatId, messageId).filter(r => r.status === "join");
     if (joiningNow.length >= MAX_PLAYERS) {
       console.log("[rsvp] rejected — squad full");
-      await ctx.answerCallbackQuery({ text: t("squadFull", MAX_PLAYERS) });
+      await ack(ctx, t("squadFull", MAX_PLAYERS));
       return;
     }
   }
@@ -417,8 +440,7 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
   // Answer the callback first — the toast is uniform (same for the 1st or 5th joiner)
   // and needs no AI, so the button stops spinning immediately instead of waiting on
   // the hype generation and edit round-trips below.
-  const toastText = status === "join" ? t("joining") : t("notJoining");
-  await ctx.answerCallbackQuery({ text: toastText });
+  await ack(ctx, status === "join" ? t("joining") : t("notJoining"));
 
   // Generate the full-squad hype phrase for the message body only (not the toast).
   // Freeze it on first fill so later edits (a non-player tapping "not going" while still
@@ -446,7 +468,7 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
   }
 
   // If the reminder has already been sent, update its joining list too.
-  // Done after answerCallbackQuery so a cache-miss AI call doesn't block the response.
+  // Done after the ack so a cache-miss AI call doesn't block the response.
   const reminderMessageId = getReminderMessageId(chatId, messageId);
   if (reminderMessageId) {
     const phrase = await cachedHypePhrase(reminderPhraseCache, key, eventName);

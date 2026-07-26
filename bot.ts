@@ -1,5 +1,5 @@
 import { Bot } from "grammy";
-import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearEventPhrases, registerFaceit, autoPostResult, pendingPinDeletion } from "./src/handlers.ts";
+import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearEventPhrases, registerFaceit, autoPostResult, pendingPinDeletion, unpinEventMessage } from "./src/handlers.ts";
 import { getDueUnpins, getDueReminders, deleteScheduledReminder, deleteEventData, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/db.ts";
 
 if (!process.env.BOT_TOKEN) {
@@ -47,17 +47,65 @@ bot.callbackQuery(/^(join|not_join)$/, handleRsvp);
 const FACEIT_POLL_INTERVAL = Math.max(5, Number(process.env.FACEIT_POLL_MINUTES) || 20) * 60;
 const PRUNE_INTERVAL = 24 * 60 * 60;
 let lastFaceitPoll = 0;
-let lastPrune = Math.floor(Date.now() / 1000);
+// Seeded with the boot time, a prune needed 24h of unbroken uptime — with regular redeploys
+// it never ran at all.
+let lastPrune = 0;
 
+async function pollFaceit(): Promise<void> {
+  try {
+    await Promise.allSettled(
+      getAllFaceitChats().map(chatId =>
+        autoPostResult(bot.api, chatId).catch(err => console.error("[faceit] chat failed:", err.message)))
+    );
+  } catch (err) {
+    console.error("[faceit] poll failed:", (err as Error).message);
+  }
+}
+
+async function processSchedules(now: number): Promise<void> {
+  const reminderJobs = getDueReminders(now).map(async ({ chat_id, message_id }) => {
+    // Claim the row before the send, not after: sending awaits an AI phrase, and a tick that
+    // starts meanwhile must not find the same row and send the reminder twice. Claiming early
+    // loses nothing — a failed send was never retried either.
+    deleteScheduledReminder(chat_id, message_id);
+    try {
+      const sent = await sendReminder(bot.api, chat_id, message_id);
+      if (sent) saveReminderMessageId(chat_id, message_id, sent.message_id);
+    } catch (err) {
+      console.error("[reminder] send failed:", (err as Error).message);
+    }
+  });
+
+  await Promise.allSettled(reminderJobs);
+
+  const unpinJobs = getDueUnpins(now).map(async ({ chat_id, message_id, reminder_message_id }) => {
+    try {
+      await unpinEventMessage(bot.api, chat_id, message_id);
+      await bot.api.editMessageReplyMarkup(chat_id, message_id, { reply_markup: { inline_keyboard: [] } })
+        .catch(() => {});
+      if (reminder_message_id) {
+        await bot.api.deleteMessage(chat_id, reminder_message_id).catch(() => {});
+      }
+    } finally {
+      deleteEventData(chat_id, message_id);
+      clearEventPhrases(chat_id, message_id);
+    }
+  });
+
+  await Promise.allSettled(unpinJobs);
+}
+
+// A poll is guarded because it is not idempotent: autoPostResult marks a match posted only after
+// sending it, so two overlapping polls can post the same result twice. Left unawaited so no
+// reminder or unpin waits on it — safe to skip a turn, since fetch bounds a stuck poll at ~5 min.
+let pollingFaceit = false;
 const schedulerInterval = setInterval(async () => {
   const now = Math.floor(Date.now() / 1000);
 
-  if (now - lastFaceitPoll >= FACEIT_POLL_INTERVAL) {
+  if (now - lastFaceitPoll >= FACEIT_POLL_INTERVAL && !pollingFaceit) {
     lastFaceitPoll = now;
-    const chats = getAllFaceitChats();
-    await Promise.allSettled(
-      chats.map(chatId => autoPostResult(bot.api, chatId).catch(err => console.error("[faceit] poll failed:", err.message)))
-    );
+    pollingFaceit = true;
+    void pollFaceit().finally(() => { pollingFaceit = false; });
   }
 
   if (now - lastPrune >= PRUNE_INTERVAL) {
@@ -65,41 +113,9 @@ const schedulerInterval = setInterval(async () => {
     try { pruneOldPostedMatches(); } catch (err) { console.error("[prune] failed:", (err as Error).message); }
   }
 
-  const reminderJobs = getDueReminders(now).map(({ chat_id, message_id }) =>
-    sendReminder(bot.api, chat_id, message_id)
-      .then(sent => {
-        if (sent) saveReminderMessageId(chat_id, message_id, sent.message_id);
-      }, err => console.error("[reminder] send failed:", err.message))
-      .finally(() => deleteScheduledReminder(chat_id, message_id))
-  );
-
-  await Promise.allSettled(reminderJobs);
-
-  const unpinJobs = getDueUnpins(now).map(({ chat_id, message_id, reminder_message_id }) => {
-    let unpinOk = false;
-    return bot.api.unpinChatMessage(chat_id, message_id)
-      .then(() => { unpinOk = true; })
-      .catch(err => {
-        if (err.message?.includes("message to unpin not found")) {
-          unpinOk = true; // already unpinned manually — still clean up buttons
-        } else {
-          console.error("[unpin] failed:", err.message);
-        }
-      })
-      .then(() => {
-        if (!unpinOk) return;
-        return Promise.all([
-          bot.api.editMessageReplyMarkup(chat_id, message_id, { reply_markup: { inline_keyboard: [] } })
-            .catch(() => {}),
-          reminder_message_id
-            ? bot.api.deleteMessage(chat_id, reminder_message_id).catch(() => {})
-            : Promise.resolve()
-        ]);
-      })
-      .finally(() => { deleteEventData(chat_id, message_id); clearEventPhrases(chat_id, message_id); });
-  });
-
-  await Promise.allSettled(unpinJobs);
+  // Not serialized: reminder jobs claim their row before the slow send, and repeating an unpin is
+  // idempotent. A lock here would let one stalled AI phrase hold up every other chat's reminder.
+  await processSchedules(now).catch(err => console.error("[scheduler] failed:", (err as Error).message));
 }, 60_000);
 
 // ─── Delete "pinned a message" service notifications (only for @all pins) ────
