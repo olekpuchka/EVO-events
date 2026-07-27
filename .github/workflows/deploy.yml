@@ -2,8 +2,20 @@ name: Deploy
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+
+# `git push --follow-tags` fires both triggers at once, and a merge can land while an
+# earlier deploy is still running. Serialize instead of cancelling: pushing the same
+# (or a newer) HEAD twice is a no-op, but a half-finished deploy is not.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   deploy:

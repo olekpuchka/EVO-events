@@ -54,7 +54,9 @@ The bot is configured entirely through environment variables:
 
 Hosted on [JustRunMy.App](https://justrunmy.app/telegram-bots) (always-on containers, free tier). Create an app → **Deploy from Git**, set the env vars above, and mount a persistent volume at `/app/data`.
 
-**Release** by pushing a `v*` tag — that triggers a [GitHub Action](.github/workflows/deploy.yml) that deploys. Fold the version bump into the change's own commit (no separate release commit):
+The [Deploy Action](.github/workflows/deploy.yml) ships on **either** trigger: a push to `main` (so every PR merge deploys) or a `v*` tag (to re-deploy a known version). `main` is always what's live. Both triggers typecheck first and share a `concurrency: deploy` group, so pushing a commit and its tag together can't start two racing deploys.
+
+Fold the version bump into the change's own commit — `main` never accumulates a separate "chore: release" commit:
 
 ```bash
 npm version minor --no-git-tag-version   # bump package.json + lock, no commit/tag
@@ -63,9 +65,13 @@ git tag -a v2.5.0 -m v2.5.0              # annotated — --follow-tags only push
 git push --follow-tags
 ```
 
-Only the tag drives the deploy, so `main` never accumulates a separate "chore: release" commit. See [CLAUDE.md](CLAUDE.md) for the full flow.
+See [CLAUDE.md](CLAUDE.md) for the full flow.
 
 Requires one repo secret `JUSTRUNMY_DEPLOY_URL` = `https://<user>:<token>@justrunmy.app/git/<repo-id>`.
+
+## Contributing
+
+Branch, open a PR against `main`, and let [CI](.github/workflows/ci.yml) typecheck it. Merging deploys to production, so keep `main` green — run `npm run typecheck` before pushing, and preview any AI prompt change with `npm run ai:preview`.
 
 ## License
 
