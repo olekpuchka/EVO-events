@@ -10,6 +10,7 @@ import type {
   FaceitMemberRow,
   DueUnpinRow,
   DueReminderRow,
+  AiHistoryRow,
 } from "./types.ts";
 
 type ChatId = number | string;
@@ -289,6 +290,54 @@ export function markMatchPosted(chatId: ChatId, matchId: string): void {
 
 export function pruneOldPostedMatches(): void {
   stmtPrunePostedMatches.run();
+}
+
+/* ── AI phrase history ──────────────────────────────────────────────────────
+ * The generator rolls a premise and a register in code and needs to know what
+ * it used recently, or it repeats a joke the chat has just seen. This lived in
+ * module-level arrays, which reset on every container restart — and the bot
+ * restarts on every deploy, so in practice the memory was usually empty. Kept
+ * here instead, it survives restarts. Deliberately not keyed by chat: the
+ * squad is one chat, and a joke reused across chats is not the problem. */
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ai_history (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind        TEXT    NOT NULL,
+    premise_id  TEXT    NOT NULL,
+    register_id TEXT    NOT NULL,
+    phrase      TEXT    NOT NULL,
+    created_at  INTEGER NOT NULL
+  )
+`);
+db.exec(`CREATE INDEX IF NOT EXISTS idx_ai_history_kind ON ai_history(kind, id DESC)`);
+
+// Rows kept per kind. Only the newest handful is ever read; the rest is kept
+// as a small cushion so pruning does not run against the read window.
+const AI_HISTORY_KEEP = 40;
+
+const stmtGetAiHistory = db.prepare(`
+  SELECT premise_id, register_id, phrase
+  FROM ai_history WHERE kind = ? ORDER BY id DESC LIMIT ?
+`);
+const stmtInsertAiHistory = db.prepare(`
+  INSERT INTO ai_history (kind, premise_id, register_id, phrase, created_at)
+  VALUES (?, ?, ?, ?, unixepoch())
+`);
+const stmtPruneAiHistory = db.prepare(`
+  DELETE FROM ai_history
+  WHERE kind = ?
+    AND id NOT IN (SELECT id FROM ai_history WHERE kind = ? ORDER BY id DESC LIMIT ?)
+`);
+
+/** Most recent first. `limit` bounds the read; callers slice narrower windows. */
+export function getAiHistory(kind: string, limit: number): AiHistoryRow[] {
+  return allRows<AiHistoryRow>(stmtGetAiHistory, kind, limit);
+}
+
+export function recordAiPhrase(kind: string, premiseId: string, registerId: string, phrase: string): void {
+  stmtInsertAiHistory.run(kind, premiseId, registerId, phrase);
+  stmtPruneAiHistory.run(kind, kind, AI_HISTORY_KEEP);
 }
 
 const stmtGetFaceitChats = db.prepare(`SELECT DISTINCT chat_id FROM members WHERE faceit_player_id IS NOT NULL`);

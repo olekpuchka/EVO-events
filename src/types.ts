@@ -47,6 +47,32 @@ export interface DueReminderRow {
   message_id: number;
 }
 
+export interface AiHistoryRow {
+  premise_id: string;
+  register_id: string;
+  phrase: string;
+}
+
+/* ── AI voice: the pools the generator composes a message from ─────────────── */
+
+export type PhraseKind = "hype" | "win" | "loss";
+
+/** What the joke is about. English on purpose — see the header of voice.ts.
+ *  `emoji` is the one appended to the finished message: chosen per premise so
+ *  it comments on the joke rather than landing at random. */
+export interface Premise {
+  id: string;
+  emoji: string;
+  text: string;
+}
+
+/** How it is said. Voice only, never subject matter — that is the premise's job. */
+export interface Register {
+  id: string;
+  text: string;
+  fits: PhraseKind[];
+}
+
 /* ── FACEIT API responses (only the fields this bot reads) ─────────────────── */
 
 export interface FaceitPlayer {
