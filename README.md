@@ -54,18 +54,24 @@ The bot is configured entirely through environment variables:
 
 Hosted on [JustRunMy.App](https://justrunmy.app/telegram-bots) (always-on containers, free tier). Create an app → **Deploy from Git**, set the env vars above, and mount a persistent volume at `/app/data`.
 
-The [Deploy Action](.github/workflows/deploy.yml) ships on **either** trigger: a push to `main` (so every PR merge deploys) or a `v*` tag (to re-deploy a known version). `main` is always what's live. Both triggers typecheck first and share a `concurrency: deploy` group, so pushing a commit and its tag together can't start two racing deploys.
+Any push to `main` deploys via the [Deploy Action](.github/workflows/deploy.yml), which typechecks first — so merging a PR is a release, and `main` is always what's live. Tags deliberately don't trigger it (the host rebuilds on every push, so a tag trigger deployed each release twice).
 
 Fold the version bump into the change's own commit — `main` never accumulates a separate "chore: release" commit:
 
 ```bash
 npm version minor --no-git-tag-version   # bump package.json + lock, no commit/tag
 git commit -am "feat: ..."               # change + bump in one commit
+# open a PR, let CI pass, merge — the merge deploys
+```
+
+Tagging is optional, for versions worth naming as rollback points:
+
+```bash
 git tag -a v2.5.0 -m v2.5.0              # annotated — --follow-tags only pushes annotated tags
 git push --follow-tags
 ```
 
-See [CLAUDE.md](CLAUDE.md) for the full flow.
+To roll back or re-deploy an old version, run Deploy manually from the **Actions** tab against that tag or SHA. See [CLAUDE.md](CLAUDE.md) for the full flow.
 
 Requires one repo secret `JUSTRUNMY_DEPLOY_URL` = `https://<user>:<token>@justrunmy.app/git/<repo-id>`.
 

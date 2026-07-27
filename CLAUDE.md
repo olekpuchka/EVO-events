@@ -7,25 +7,25 @@ shipping, so a red CI means the merge would fail to deploy too.
 
 ## Releasing
 
-`.github/workflows/deploy.yml` deploys on **either** trigger:
+**Any push to `main` deploys** (`.github/workflows/deploy.yml`) — that's the only automatic
+trigger, so `main` is always exactly what's live. Merging a PR is a release.
 
-- a push to `main` (i.e. any PR merge) — this is the normal path;
-- a `v*` tag — kept so a known version can be re-deployed on demand.
+Tags do **not** trigger anything. JustRunMy.App rebuilds and restarts on every push to its
+remote and never fast-forwards, so a `v*` trigger meant `git push --follow-tags` deployed
+the same commit twice and restarted the bot twice. Don't add one back.
 
-`main` is therefore always what's live. Tags are the version record, not the deploy gate.
-
-Still **never create a separate `chore: release` commit**; fold the version bump into the
-same commit as the change it ships.
-
-To release:
+To release: fold the version bump into the change's own commit (**never** a separate
+`chore: release` commit), open a PR, let CI pass, merge. The merge deploys.
 
 1. `npm version <patch|minor|major> --no-git-tag-version` — bumps `package.json` +
    `package-lock.json` without committing or tagging.
 2. Commit the change + bump together, with a descriptive message, on a branch.
 3. Open a PR, let CI pass, merge — the merge deploys.
-4. Tag the merge commit: `git tag -a v<new-version> -m v<new-version> && git push --follow-tags`.
-   The tag must be **annotated** (`-a`); `--follow-tags` only pushes annotated tags.
 
-Pushing a version bump straight to `main` works too (commit + `--follow-tags` in one go) —
-the two triggers are serialized by a `concurrency: deploy` group, so the duplicate run is a
-harmless no-op rather than a racing second deploy.
+Tagging is **optional** and purely a marker: `git tag -a v<x.y.z> -m v<x.y.z> && git push
+--follow-tags` (annotated — `--follow-tags` only pushes annotated tags). Worth doing for
+versions you might want to roll back to, not for every merge. Since merges happen on GitHub
+and tagging is local, don't rely on every release being tagged.
+
+**To roll back or re-deploy an old version:** run the Deploy workflow manually from the
+Actions tab (`workflow_dispatch`) against the tag or SHA you want.
