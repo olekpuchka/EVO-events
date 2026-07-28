@@ -22,6 +22,3 @@ data/
 *.db
 *.db-shm
 *.db-wal
-
-# Throwaway history written by `npm run ai:preview`
-.preview-data/

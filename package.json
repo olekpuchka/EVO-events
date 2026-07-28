@@ -1,12 +1,11 @@
 {
   "name": "evo-events-telegram-bot",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "description": "Telegram bot for organizing gaming events — @all mentions, RSVP, auto-pin/unpin, reminders, and squad management",
   "type": "module",
   "scripts": {
     "start": "node bot.ts",
     "dev": "node --watch bot.ts",
-    "ai:preview": "node --env-file=.env scripts/ai-preview.ts",
     "typecheck": "tsc --noEmit"
   },
   "engines": {

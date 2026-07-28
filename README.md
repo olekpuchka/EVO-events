@@ -13,7 +13,6 @@ Built with [grammY](https://grammy.dev/) in TypeScript on Node.js — run direct
 - **Auto-pin / auto-unpin** at start time, with a **reminder 10 minutes before**.
 - **AI hype phrases** (DeepSeek, optional) when the squad fills and in the reminder.
 - **Auto match results** — polls FACEIT and posts finished matches with K/D/A, ADR, per-player Elo ↑/↓ and team Elo, plus an AI win/loss line that reacts to the match stats (top fraggers, aces, clutches, comebacks, overtime).
-- **Non-repeating AI voice** — each line is composed from a rolled premise × register × sentence shape ([`src/voice.ts`](src/voice.ts)), with the recent history kept in SQLite so a redeploy doesn't make the bot retell a joke. Preview any prompt change before shipping with `npm run ai:preview`.
 - **Timezone** — event times show 🇺🇦 Kyiv and 🇪🇺 CET side by side. Posters default to Kyiv; those listed in `EU_TIMEZONE_MEMBERS` type in CET instead.
 - **Quiet feedback** — usage hints, errors, and confirmations reply only to you and clear themselves, so they never clutter the group.
 - **Language** — English or Ukrainian.
@@ -41,7 +40,6 @@ The bot is configured entirely through environment variables:
 | `BOT_TOKEN` | Telegram bot token (required) |
 | `FACEIT_API_KEY` | FACEIT Data API key — [developers.faceit.com](https://developers.faceit.com) (required for match results) |
 | `DEEPSEEK_API_KEY` | Optional — AI phrases; falls back to built-ins if unset |
-| `DEEPSEEK_MODEL` | Optional — defaults to `deepseek-v4-pro`; `deepseek-v4-flash` is cheaper but blander |
 | `FACEIT_POLL_MINUTES` | How often to check for new matches (default `20`, min `5`) |
 | `LANGUAGE` | `EN` or `UA` (default `EN`) |
 | `EU_TIMEZONE_MEMBERS` | Optional — comma-separated user IDs whose typed times are read as 🇪🇺 CET instead of 🇺🇦 Kyiv (default: all Kyiv) |
@@ -77,7 +75,7 @@ Requires one repo secret `JUSTRUNMY_DEPLOY_URL` = `https://<user>:<token>@justru
 
 ## Contributing
 
-Branch, open a PR against `main`, and let [CI](.github/workflows/ci.yml) typecheck it. Merging deploys to production, so keep `main` green — run `npm run typecheck` before pushing, and preview any AI prompt change with `npm run ai:preview`.
+Branch, open a PR against `main`, and let [CI](.github/workflows/ci.yml) typecheck it. Merging deploys to production, so keep `main` green — run `npm run typecheck` before pushing.
 
 ## License
 
