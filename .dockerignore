@@ -1,9 +1,17 @@
 .git
 .github
 .gitignore
+.dockerignore
 .vscode
 node_modules
 *.log
 README.md
+CLAUDE.md
 LICENSE
-data/
+
+# Secrets — keep them out of the build context entirely, not just out of the COPY list
+.env
+
+# SQLite databases. Unlike .gitignore, patterns here don't match nested paths implicitly,
+# so the local app/data/ needs the glob.
+**/data/

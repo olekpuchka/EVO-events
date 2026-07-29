@@ -17,7 +17,7 @@ Thumbs.db
 .idea/
 .vscode/
 
-# SQLite database
+# SQLite database — no leading slash, so this covers app/data/ too
 data/
 *.db
 *.db-shm

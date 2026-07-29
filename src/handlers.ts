@@ -1,4 +1,4 @@
-import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvent, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, hasPostedMatch, markMatchPosted } from "./db.ts";
+import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvents, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, hasPostedMatch, markMatchPosted } from "./db.ts";
 import { buildMention, escapeHtml, escapeAiHtml, stripAiHtml, sendEphemeral } from "./helpers.ts";
 import type { Mentionable } from "./helpers.ts";
 import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapName, getMapImage, matchRoomUrl } from "./faceit.ts";
@@ -18,6 +18,7 @@ import type {
   RichBlockTableCell,
 } from "@grammyjs/types";
 import type {
+  ActiveEventRow,
   RsvpRow,
   EventRow,
   FaceitMatchStats,
@@ -46,7 +47,7 @@ type RichBlocks = NonNullable<NonNullable<Parameters<Api["sendRichMessage"]>[1]>
 // Poster timezones. Everyone defaults to Kyiv; the members listed in EU_TIMEZONE_MEMBERS
 // (comma-separated Telegram user IDs) type their event times in Central European Time instead.
 const DEFAULT_TZ = 'Europe/Kyiv';
-const EU_TZ = 'CET'; // Central European Time — DST-aware (CET in winter, CEST in summer)
+const EU_TZ = 'CET';
 const euTimezoneMembers = new Set(
   (process.env.EU_TIMEZONE_MEMBERS ?? "")
     .split(",")
@@ -107,7 +108,7 @@ function parseEventTime(text: string, timeZone = DEFAULT_TZ): number | null {
   return Math.floor(utcMs / 1000);
 }
 
-// Format an event's Unix timestamp as HH:MM wall-clock time in the given IANA zone (DST-aware).
+// An event's Unix timestamp as HH:MM wall-clock time in the given zone.
 function formatTimeIn(unixSeconds: number, timeZone: string): string {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone,
@@ -119,38 +120,47 @@ function formatTimeIn(unixSeconds: number, timeZone: string): string {
   return `${get('hour')}:${get('minute')}`;
 }
 
-// Rewrite the event-time token in an (HTML-escaped) message to its Kyiv value flagged 🇺🇦 plus the
-// CET/CEST equivalent flagged 🇪🇺 — e.g. "23:30" → "🇺🇦 23:30 (🇪🇺 22:30)". Both come from the
-// resolved timestamp, so an EU poster's typed CET time still shows correctly under each flag.
-// escapeHtml only rewrites & < >, so matchEventTimeToken's indices stay valid on the escaped string.
+// Rewrite the time token in an (HTML-escaped) message: "CS 23:30" → "CS 🇺🇦 23:30 (🇪🇺 22:30)". Both
+// times read off the resolved timestamp, so an EU poster's typed time still shows right under each
+// flag. escapeHtml only rewrites & < >, so matchEventTimeToken's indices stay valid here.
 function decorateEventTime(escapedMessage: string, eventTime: number): string {
   const token = matchEventTimeToken(escapedMessage);
   if (!token) return escapedMessage;
-  const kyiv = formatTimeIn(eventTime, DEFAULT_TZ);
-  const eu = formatTimeIn(eventTime, EU_TZ);
-  return escapedMessage.slice(0, token.start) + `🇺🇦 ${kyiv} (🇪🇺 ${eu})` + escapedMessage.slice(token.end);
+  const bothZones = `🇺🇦 ${formatTimeIn(eventTime, DEFAULT_TZ)} (🇪🇺 ${formatTimeIn(eventTime, EU_TZ)})`;
+  return escapedMessage.slice(0, token.start) + bothZones + escapedMessage.slice(token.end);
 }
 
 const MAX_PLAYERS = 5;
 
+// base_text is always `<a …>poster</a>: event`. Split on the closing tag, not the first ": " —
+// a display name containing ": " would cut mid-mention and leave a stray </a> Telegram rejects.
+const POSTER_SEP = "</a>: ";
+
 function extractEventName(baseText: string): string | null {
   const firstLine = baseText.split("\n")[0];
-  const colonIdx = firstLine.indexOf(": ");
-  return colonIdx !== -1 ? firstLine.slice(colonIdx + 2).trim() : null;
+  const sep = firstLine.indexOf(POSTER_SEP);
+  return sep === -1 ? null : firstLine.slice(sep + POSTER_SEP.length).trim();
 }
 
 
-// Both keyed by phraseKey() — hold AI hype phrases frozen per event so RSVP edits reuse them
+// Both keyed by eventKey() — hold AI hype phrases frozen per event so RSVP edits reuse them
 // instead of regenerating. reminderPhraseCache is frozen when the reminder fires; fullPhraseCache
 // is frozen once the squad first fills (and cleared if it drops below full, so a re-fill re-hypes).
-// Both are torn down together in clearEventPhrases when the event ends.
+// Both are torn down by endEvent when the event ends.
 const reminderPhraseCache = new Map<string, string>();
 const fullPhraseCache = new Map<string, string>();
 
-// chatId → messageId for pins triggered by @all — lets bot.ts delete only those service messages.
-export const pendingPinDeletion = new Map<number, number>();
+// Identifies one event — the same (chat_id, message_id) pair the DB is keyed on.
+const eventKey = (chatId: number | string, messageId: number): string => `${chatId}:${messageId}`;
 
-const phraseKey = (chatId: number | string, messageId: number): string => `${chatId}:${messageId}`;
+// Pins the bot made for an @all event — only these get their "pinned a message" notice deleted,
+// never a member's pin. Keyed per event, not per chat: two can be pinned seconds apart.
+const pendingPinDeletion = new Set<string>();
+
+// Was this pin the bot's own? Claims it at the same time, so one notice is deleted once.
+export function claimBotPin(chatId: number | string, messageId: number): boolean {
+  return pendingPinDeletion.delete(eventKey(chatId, messageId));
+}
 
 // Return the cached hype phrase for this key, or generate one and freeze it in the cache.
 async function cachedHypePhrase(cache: Map<string, string>, key: string, eventName: string | null): Promise<string> {
@@ -159,10 +169,17 @@ async function cachedHypePhrase(cache: Map<string, string>, key: string, eventNa
   return phrase;
 }
 
-export function clearEventPhrases(chatId: number | string, messageId: number): void {
-  const key = phraseKey(chatId, messageId);
+// Everything an event owns, released in one call: DB rows, cached phrases, and any pin notice
+// still waiting on it. Both ends of life — the scheduled unpin and /cancel — come through here.
+// Returns the name it removed, so each caller can log the ending in its own words.
+export function endEvent(chatId: number | string, messageId: number): string {
+  const key = eventKey(chatId, messageId);
+  const name = extractEventName(getEventBaseText(chatId, messageId)?.base_text ?? "") ?? "";
+  deleteEventData(chatId, messageId);
   reminderPhraseCache.delete(key);
   fullPhraseCache.delete(key);
+  pendingPinDeletion.delete(key);
+  return name;
 }
 
 
@@ -234,22 +251,12 @@ export async function mentionAll(ctx: HearsContext<Context>, message = ""): Prom
 
   const poster = buildMention(from);
   const eventTime = parseEventTime(message, timezoneForUser(from.id));
-  // Flag the event time inline — 🇺🇦 Kyiv with the 🇪🇺 (CET/CEST) equivalent in parens,
+  // Flag the event time inline — 🇺🇦 Kyiv with the 🇪🇺 equivalent in parens,
   // e.g. "CS 🇺🇦 23:30 (🇪🇺 22:30)". No time = message unchanged.
   const escaped = escapeHtml(message);
   const messageLine = `${poster}: ${eventTime ? decorateEventTime(escaped, eventTime) : escaped}`;
   const mentionedUsers = rows.filter(r => r.id !== from.id);
 
-  if (eventTime) {
-    const activeEvent = getActiveEvent(ctx.chat.id);
-    if (activeEvent) {
-      const chatIdStr = String(ctx.chat.id);
-      const peerId = chatIdStr.startsWith("-100") ? chatIdStr.slice(4) : chatIdStr.replace("-", "");
-      const link = `https://t.me/c/${peerId}/${activeEvent.message_id}`;
-      await sendEphemeral(ctx, t("activeEventExists", link), { parse_mode: "HTML" });
-      return;
-    }
-  }
   let lastSent: Message | null = null;
 
   if (eventTime) {
@@ -272,17 +279,21 @@ export async function mentionAll(ctx: HearsContext<Context>, message = ""): Prom
     }
     saveRsvp(ctx.chat.id, lastSent.message_id, from, "join");
 
+    // Schedule before pinning, never inside its try: the unpin is what deletes the event row, so
+    // a failed pin would otherwise strand the row forever. Pinning is decoration, not lifecycle.
+    scheduleUnpin(ctx.chat.id, lastSent.message_id, eventTime);
+    const reminderAt = eventTime - 10 * 60;
+    if (reminderAt > Math.floor(Date.now() / 1000)) {
+      scheduleReminder(ctx.chat.id, lastSent.message_id, reminderAt);
+    }
+    console.log(`[event] created "${message}"`);
+
+    const pinKey = eventKey(ctx.chat.id, lastSent.message_id);
     try {
-      pendingPinDeletion.set(ctx.chat.id, lastSent.message_id);
+      pendingPinDeletion.add(pinKey);
       await ctx.pinChatMessage(lastSent.message_id, { disable_notification: true });
-      scheduleUnpin(ctx.chat.id, lastSent.message_id, eventTime);
-      const reminderAt = eventTime - 10 * 60;
-      if (reminderAt > Math.floor(Date.now() / 1000)) {
-        scheduleReminder(ctx.chat.id, lastSent.message_id, reminderAt);
-      }
-      console.log(`[event] created "${message}"`);
     } catch (err) {
-      pendingPinDeletion.delete(ctx.chat.id);
+      pendingPinDeletion.delete(pinKey);
       console.error("[event] pin failed:", (err as Error).message);
     }
   } else {
@@ -308,24 +319,65 @@ export async function unpinEventMessage(api: Api, chatId: number | string, messa
   }
 }
 
+// Deep link to a message. t.me/c/ wants the bare peer ID, without the supergroup -100 prefix.
+function messageLink(chatId: number | string, messageId: number): string {
+  const chatIdStr = String(chatId);
+  const peerId = chatIdStr.startsWith("-100") ? chatIdStr.slice(4) : chatIdStr.replace("-", "");
+  return `https://t.me/c/${peerId}/${messageId}`;
+}
+
+// One line of the "which event?" list. base_text is already HTML-escaped, so the name is safe to
+// nest in the link — and always present, since every stored base_text carries the poster mention.
+function eventPickerLine(chatId: number | string, event: ActiveEventRow): string {
+  const label = extractEventName(event.base_text) ?? "?";
+  return `• <a href="${messageLink(chatId, event.message_id)}">${label}</a>`;
+}
+
 export async function cancelEvent(ctx: CommandContext<Context>): Promise<void> {
   if (ctx.chat.type === "private") return;
   if (!ctx.from) return; // anonymous admins / channel posts have no sender
 
-  const activeEvent = getActiveEvent(ctx.chat.id);
-  if (!activeEvent) {
+  const active = getActiveEvents(ctx.chat.id);
+  if (active.length === 0) {
     await sendEphemeral(ctx, t("noActiveEvent"));
     return;
   }
 
-  const { message_id } = activeEvent;
+  // /cancel is scoped by replying to the event you mean. Telegram auto-attaches a reply in two
+  // cases that mean nothing — a forum topic's start message, and a discussion group's forwarded
+  // channel post — so both read as "no reply". Not message_thread_id: that is set for ordinary
+  // supergroup reply threads too, and would throw away a deliberate reply to the event itself.
+  const reply = ctx.message?.reply_to_message;
+  const autoAttached = reply?.forum_topic_created !== undefined || reply?.is_automatic_forward === true;
+  const repliedTo = reply && !autoAttached ? reply.message_id : undefined;
+
+  let target: ActiveEventRow | undefined;
+  if (repliedTo !== undefined) {
+    // Never redirect a deliberate reply. An ended event's message stays in the history, so
+    // falling back to "the only live one" would cancel something the user didn't point at.
+    target = active.find(e => e.message_id === repliedTo);
+    if (!target) {
+      await sendEphemeral(ctx, t("replyNotAnEvent"), { parse_mode: "HTML" });
+      return;
+    }
+  } else if (active.length === 1) {
+    target = active[0];
+  } else {
+    const list = active.map(e => eventPickerLine(ctx.chat.id, e)).join("\n");
+    await sendEphemeral(ctx, t("pickEventToCancel", list), {
+      parse_mode: "HTML",
+      link_preview_options: { is_disabled: true },
+    });
+    return;
+  }
+
+  const { message_id, base_text } = target;
   const reminderMessageId = getReminderMessageId(ctx.chat.id, message_id);
-  const row = getEventBaseText(ctx.chat.id, message_id);
   const rsvps = getRsvps(ctx.chat.id, message_id);
 
   await unpinEventMessage(ctx.api, ctx.chat.id, message_id);
 
-  const cancelledText = (row?.base_text ?? "") + buildRsvpSection(rsvps) + `\n\n⛔ <b>${t("cancelledBy", buildMention(ctx.from))}</b>`;
+  const cancelledText = base_text + buildRsvpSection(rsvps) + `\n\n⛔ <b>${t("cancelledBy", buildMention(ctx.from))}</b>`;
   try {
     await ctx.api.editMessageText(ctx.chat.id, message_id, cancelledText, {
       parse_mode: "HTML",
@@ -338,9 +390,7 @@ export async function cancelEvent(ctx: CommandContext<Context>): Promise<void> {
   if (reminderMessageId) {
     await ctx.api.deleteMessage(ctx.chat.id, reminderMessageId).catch(() => {});
   }
-  deleteEventData(ctx.chat.id, message_id);
-  clearEventPhrases(ctx.chat.id, message_id);
-  console.log("[cancel] event cancelled");
+  console.log(`[event] cancelled "${endEvent(ctx.chat.id, message_id)}"`);
   try { await ctx.deleteMessage(); } catch {}
 }
 
@@ -388,25 +438,16 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
   const chatId = ctx.chat!.id;
   if (!ctx.from) return; // every callback query carries a sender, but the type allows undefined
 
-  const activeEvent = getActiveEvent(chatId);
-  if (!activeEvent) {
-    await ack(ctx, t("eventEnded"));
-    return;
-  }
-  const messageId = activeEvent.message_id;
-
-  // The tapped button may live on a stale message on a not-yet-synced client
-  // (e.g. an older, already-ended event). Only accept taps on the message that
-  // is actually the current active event.
-  const clickedMessageId = ctx.callbackQuery.message?.message_id;
-  if (clickedMessageId && clickedMessageId !== messageId) {
-    await ack(ctx, t("eventEnded"));
+  // Several events can be live, so the tapped message is what identifies this RSVP's event.
+  const messageId = ctx.callbackQuery.message?.message_id;
+  if (messageId === undefined) {
+    await ack(ctx, t("eventEnded")); // too old for Telegram to attach — nothing to resolve
     return;
   }
 
+  // Rows are deleted when an event ends, so a missing row is just a stale keyboard — expected.
   const row = getEventBaseText(chatId, messageId);
   if (!row) {
-    console.error("[rsvp] no active event found");
     await ack(ctx, t("eventEnded"));
     return;
   }
@@ -435,7 +476,7 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
   const notJoining = rsvps.filter(r => r.status === "not_join");
   const isFull = joining.length >= MAX_PLAYERS;
   const eventName = extractEventName(row.base_text);
-  console.log(`[rsvp] ${status === "join" ? "joined" : "not joining"} (🍌 ${joining.length}/${MAX_PLAYERS}, ❌ ${notJoining.length})${isFull ? " — squad full" : ""}`);
+  console.log(`[rsvp] ${status === "join" ? "joined" : "not joining"} "${eventName ?? ""}" (🍌 ${joining.length}/${MAX_PLAYERS}, ❌ ${notJoining.length})${isFull ? " — squad full" : ""}`);
 
   // Answer the callback first — the toast is uniform (same for the 1st or 5th joiner)
   // and needs no AI, so the button stops spinning immediately instead of waiting on
@@ -445,7 +486,7 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
   // Generate the full-squad hype phrase for the message body only (not the toast).
   // Freeze it on first fill so later edits (a non-player tapping "not going" while still
   // 5/5) reuse it instead of generating a new line; drop it if the squad is no longer full.
-  const key = phraseKey(chatId, messageId);
+  const key = eventKey(chatId, messageId);
   let fullPhrase = "";
   if (isFull) {
     fullPhrase = await cachedHypePhrase(fullPhraseCache, key, eventName);
@@ -824,10 +865,11 @@ export async function sendReminder(api: Api, chatId: number | string, messageId:
   const joining = rsvps.filter(r => r.status === "join");
   if (joining.length <= 1) return;
 
-  const phrase = await generateHypePhrase(extractEventName(row.base_text));
-  reminderPhraseCache.set(phraseKey(chatId, messageId), phrase);
+  const eventName = extractEventName(row.base_text);
+  const phrase = await generateHypePhrase(eventName);
+  reminderPhraseCache.set(eventKey(chatId, messageId), phrase);
   const text = buildReminderText(row, joining, phrase);
   const sent = await api.sendMessage(chatId, text, { parse_mode: "HTML" });
-  console.log(`[reminder] sent — ${joining.length} joining`);
+  console.log(`[reminder] sent "${eventName ?? ""}" — ${joining.length} joining`);
   return sent;
 }

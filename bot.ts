@@ -1,12 +1,18 @@
+import "./src/log.ts"; // first — ESM runs imports in order, so startup warnings are stamped too
 import { Bot } from "grammy";
-import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, clearEventPhrases, registerFaceit, autoPostResult, pendingPinDeletion, unpinEventMessage } from "./src/handlers.ts";
-import { getDueUnpins, getDueReminders, deleteScheduledReminder, deleteEventData, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/db.ts";
+import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, endEvent, registerFaceit, autoPostResult, claimBotPin, unpinEventMessage } from "./src/handlers.ts";
+import { getDueUnpins, getDueReminders, deleteScheduledReminder, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/db.ts";
 
+// State the config up front — a missing FACEIT key otherwise just 401s forever, silently.
 if (!process.env.BOT_TOKEN) {
-  throw new Error("BOT_TOKEN is not set.");
+  console.error("[config] BOT_TOKEN is not set — cannot start.");
+  process.exit(1);
 }
 if (!process.env.FACEIT_API_KEY) {
-  console.warn("FACEIT_API_KEY is not set — /faceit command will fail.");
+  console.warn("[config] FACEIT_API_KEY is not set — /faceit and auto match results will fail (every poll 401s).");
+}
+if (!process.env.DEEPSEEK_API_KEY) {
+  console.log("[config] DEEPSEEK_API_KEY is not set — using built-in phrases instead of AI.");
 }
 
 const bot = new Bot(process.env.BOT_TOKEN);
@@ -87,8 +93,7 @@ async function processSchedules(now: number): Promise<void> {
         await bot.api.deleteMessage(chat_id, reminder_message_id).catch(() => {});
       }
     } finally {
-      deleteEventData(chat_id, message_id);
-      clearEventPhrases(chat_id, message_id);
+      console.log(`[event] ended "${endEvent(chat_id, message_id)}"`);
     }
   });
 
@@ -121,9 +126,9 @@ const schedulerInterval = setInterval(async () => {
 // ─── Delete "pinned a message" service notifications (only for @all pins) ────
 
 bot.on("message:pinned_message", async (ctx) => {
-  const expected = pendingPinDeletion.get(ctx.chat.id);
-  if (expected !== ctx.message.pinned_message?.message_id) return;
-  pendingPinDeletion.delete(ctx.chat.id);
+  // Not ours (a member pinned something) → leave the notice alone.
+  const pinned = ctx.message.pinned_message?.message_id;
+  if (pinned === undefined || !claimBotPin(ctx.chat.id, pinned)) return;
   try { await ctx.deleteMessage(); } catch {}
 });
 
