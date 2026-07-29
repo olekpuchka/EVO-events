@@ -494,7 +494,14 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
     fullPhraseCache.delete(key);
   }
 
-  const newText = row.base_text + buildMentionedBlock(getMembers(chatId), rsvps) + buildRsvpSection(rsvps) + (isFull ? `\n\n<blockquote>🔥 <i>${escapeAiHtml(fullPhrase)}</i> (${MAX_PLAYERS}/${MAX_PLAYERS}) 🔒</blockquote>` : "");
+  // A locked squad has no seat to recruit for, so the "Mentioned" list is just noise — drop it.
+  // Freeing a seat brings it back, already filtered to whoever still hasn't answered.
+  const mentioned = isFull ? "" : buildMentionedBlock(getMembers(chatId), rsvps);
+  const lockedBanner = isFull
+    ? `\n\n<blockquote>🔥 <i>${escapeAiHtml(fullPhrase)}</i> (${MAX_PLAYERS}/${MAX_PLAYERS}) 🔒</blockquote>`
+    : "";
+
+  const newText = row.base_text + mentioned + buildRsvpSection(rsvps) + lockedBanner;
   const keyboard = isFull ? buildLeaveOnlyKeyboard() : buildKeyboard();
 
   try {
