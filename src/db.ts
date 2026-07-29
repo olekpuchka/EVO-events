@@ -21,8 +21,12 @@ const allRows = <T>(stmt: StatementSync, ...params: SQLInputValue[]): T[] =>
 const oneRow = <T>(stmt: StatementSync, ...params: SQLInputValue[]): T | undefined =>
   stmt.get(...params) as unknown as T | undefined;
 
-const DATA_DIR = process.env.DATA_DIR ?? "./data";
+// app/data inside the project; the image overrides this with the absolute /app/data volume mount.
+// `||` not `??`, so an empty DATA_DIR= in a .env means "unset" rather than the working directory.
+const DATA_DIR = process.env.DATA_DIR || "./app/data";
 mkdirSync(DATA_DIR, { recursive: true });
+// Say where the data landed — a wrong path here is an empty database, with no other symptom.
+console.log(`[db] ${DATA_DIR}`);
 
 const db = new DatabaseSync(join(DATA_DIR, "members.db"));
 
@@ -142,8 +146,11 @@ db.exec(`CREATE INDEX IF NOT EXISTS idx_rsvps_event     ON rsvps(chat_id, messag
 db.exec(`CREATE INDEX IF NOT EXISTS idx_unpins_due      ON scheduled_unpins(unpin_at)`);
 db.exec(`CREATE INDEX IF NOT EXISTS idx_reminders_due   ON scheduled_reminders(remind_at)`);
 
-const stmtGetActiveEvent = db.prepare(`
-  SELECT message_id FROM events WHERE chat_id = ? ORDER BY rowid DESC LIMIT 1
+// Rows are deleted on unpin or cancel, so every row for a chat is a live event — and several
+// can run in parallel. Ordered by start time so pickers read chronologically.
+const stmtGetActiveEvents = db.prepare(`
+  SELECT message_id, base_text, event_time FROM events
+  WHERE chat_id = ? ORDER BY event_time, rowid
 `);
 
 const stmtInsertUnpin = db.prepare(`
@@ -248,8 +255,8 @@ export function deleteScheduledReminder(chatId: ChatId, messageId: number): void
   stmtDeleteReminder.run(String(chatId), messageId);
 }
 
-export function getActiveEvent(chatId: ChatId): ActiveEventRow | null {
-  return oneRow<ActiveEventRow>(stmtGetActiveEvent, String(chatId)) ?? null;
+export function getActiveEvents(chatId: ChatId): ActiveEventRow[] {
+  return allRows<ActiveEventRow>(stmtGetActiveEvents, String(chatId));
 }
 
 const stmtSetFaceit = db.prepare(`UPDATE members SET faceit_player_id = ?, faceit_elo = ? WHERE chat_id = ? AND user_id = ?`);

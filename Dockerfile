@@ -9,6 +9,18 @@ FROM node:24-alpine
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Non-secret config; runtime env (JustRunMy.App → Settings) overrides any of it.
+# KEEP IN SYNC: an ENV here beats the fallback in src/, so changing a code default alone
+# never reaches the container.
+ENV DATA_DIR=/app/data
+ENV LANGUAGE=UA
+ENV FACEIT_POLL_MINUTES=20
+# Empty means everyone is on Kyiv time.
+ENV EU_TIMEZONE_MEMBERS=""
+
+# Secrets stay out of the image — ENV is readable via `docker history`. Supply at runtime:
+# BOT_TOKEN and FACEIT_API_KEY (required), DEEPSEEK_API_KEY (optional).
+
 # Non-root user for security
 RUN addgroup -S botgroup && adduser -S botuser -G botgroup
 

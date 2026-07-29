@@ -1,5 +1,14 @@
 # EVO Events Bot
 
+## Config defaults
+
+Optional env vars are defaulted in **two** places: the fallback in `src/` and an `ENV` line in the
+Dockerfile. An `ENV` wins at runtime, so changing a code default alone never reaches the container
+— **change both**. Nothing enforces this; it was judged not worth a CI check at this size.
+
+`DATA_DIR` is the deliberate exception: `/app/data` in the image (the volume mount), `app/data`
+inside the project locally.
+
 ## CI
 
 `.github/workflows/ci.yml` typechecks every PR into `main`. Deploy typechecks again before

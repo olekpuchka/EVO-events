@@ -26,7 +26,8 @@ export interface EventRow {
   event_time: number | null;
 }
 
-export interface ActiveEventRow {
+// An EventRow plus the id that identifies it — what getActiveEvents selects.
+export interface ActiveEventRow extends EventRow {
   message_id: number;
 }
 

@@ -1,11 +1,15 @@
 const SUPPORTED = ["EN", "UA"] as const;
 type Lang = (typeof SUPPORTED)[number];
 
-const requested = (process.env.LANGUAGE ?? "EN").toUpperCase();
-if (!SUPPORTED.includes(requested as Lang)) {
-  console.warn(`[i18n] Unknown LANGUAGE "${process.env.LANGUAGE}", falling back to EN.`);
+const DEFAULT_LANG: Lang = "UA";
+
+// `||`, not `??`, so an empty LANGUAGE= in a .env falls back rather than failing the check below.
+const requested = (process.env.LANGUAGE || DEFAULT_LANG).toUpperCase();
+const supported = SUPPORTED.includes(requested as Lang);
+if (!supported) {
+  console.warn(`[i18n] Unknown LANGUAGE "${process.env.LANGUAGE}", falling back to ${DEFAULT_LANG}.`);
 }
-export const LANG: Lang = SUPPORTED.includes(requested as Lang) ? (requested as Lang) : "EN";
+export const LANG: Lang = supported ? (requested as Lang) : DEFAULT_LANG;
 
 type Label = string | ((...args: any[]) => string);
 
@@ -15,8 +19,9 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     noMembers: "No members registered yet.\n\nMembers need to use <code>/mute</code> or <code>/unmute</code> to be added to the mention list.",
     usageAll: "Please include an event name and time, e.g.:\n<code>@all CS 22:00</code>",
     mentioned: "Mentioned:",
-    activeEventExists: (link) => `There is already <a href="${link}">an active event</a>. It will be unpinned automatically when it ends.`,
     noActiveEvent: "There is no active event to cancel.",
+    replyNotAnEvent: "That message isn't an active event — it may have already ended. Reply to the event you want to cancel, or send <code>/cancel</code> on its own.",
+    pickEventToCancel: (list) => `More than one event is active. Tap one below, then <b>reply</b> to it with <code>/cancel</code> — swipe on mobile, right-click → Reply on desktop.\n\n${list}`,
     cancelledBy: (mention) => `Cancelled by ${mention}`,
     alreadyMuted: "You are already muted — @all won't mention you.",
     mutedSuccess: "You've been muted. You won't be mentioned by @all in this group.\nUse /unmute to re-enable.",
@@ -50,8 +55,9 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     noMembers: "Учасників ще не зареєстровано.\n\nЩоб потрапити у список для згадування, потрібно використати <code>/mute</code> або <code>/unmute</code>.",
     usageAll: "Вкажи назву події та час, наприклад:\n<code>@all CS 22:00</code>",
     mentioned: "Згадані:",
-    activeEventExists: (link) => `Вже є <a href="${link}">активна подія</a>. Вона автоматично відкріпиться, коли завершиться.`,
     noActiveEvent: "Немає активної події для скасування.",
+    replyNotAnEvent: "Це повідомлення не є активною подією — можливо, вона вже завершилась. Відповідай на подію, яку хочеш скасувати, або надішли <code>/cancel</code> окремо.",
+    pickEventToCancel: (list) => `Активних подій кілька. Натисни на потрібну нижче, потім <b>відповідай</b> на неї командою <code>/cancel</code> — свайп на телефоні, правий клік → Відповісти на комп'ютері.\n\n${list}`,
     cancelledBy: (mention) => `Скасовано ${mention}`,
     alreadyMuted: "Ти вже в муті — @all не буде тебе згадувати.",
     mutedSuccess: "Тебе замучено. @all більше не згадуватиме тебе в цій групі.\nВикористай /unmute, щоб увімкнути назад.",
