@@ -148,7 +148,7 @@ function extractEventName(baseText: string): string | null {
 
 // Both keyed by eventKey() — hold AI hype phrases frozen per event so RSVP edits reuse them
 // instead of regenerating. reminderPhraseCache is frozen when the reminder fires; fullPhraseCache
-// is frozen once the squad first fills (and cleared if it drops below full, so a re-fill re-hypes).
+// once the squad first fills, and stays frozen through a drop-out and re-fill.
 // Both are torn down by endEvent when the event ends.
 const reminderPhraseCache = new Map<string, string>();
 const fullPhraseCache = new Map<string, string>();
@@ -275,7 +275,7 @@ export async function mentionAll(ctx: HearsContext<Context>, message = ""): Prom
     // avoiding the send-then-edit race condition that caused buttons to not appear.
     // The poster is the only RSVP and is already out of mentionedUsers, so everyone there is pending.
     const initialRsvps: RsvpLike[] = [{ ...from, status: "join" }];
-    const initialText = messageLine + buildMentionedBlock(mentionedUsers) + buildRsvpSection(initialRsvps);
+    const initialText = messageLine + buildRsvpSection(initialRsvps) + buildMentionedBlock(mentionedUsers);
     const keyboard = buildKeyboard();
 
     lastSent = await ctx.api.sendMessage(ctx.chat.id, initialText, {
@@ -503,16 +503,9 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
   // the hype generation and edit round-trips below.
   await ack(ctx, status === "join" ? t("joining") : t("notJoining"));
 
-  // Generate the full-squad hype phrase for the message body only (not the toast).
-  // Freeze it on first fill so later edits (a non-player tapping "not going" while still
-  // 5/5) reuse it instead of generating a new line; drop it if the squad is no longer full.
+  // Body only — the toast needs no AI. A re-fill reuses the frozen phrase instead of paying again.
   const key = eventKey(chatId, messageId);
-  let fullPhrase = "";
-  if (isFull) {
-    fullPhrase = await cachedHypePhrase(fullPhraseCache, key, eventName);
-  } else {
-    fullPhraseCache.delete(key);
-  }
+  const fullPhrase = isFull ? await cachedHypePhrase(fullPhraseCache, key, eventName) : "";
 
   // Both the "Mentioned:" block and the reminder's nudge want whoever hasn't answered, so it's
   // filtered once. A locked squad recruits for nothing, so it skips the read and both fall away.
@@ -522,7 +515,8 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
     ? `\n\n<blockquote>🔥 <i>${escapeAiHtml(fullPhrase)}</i> (${MAX_PLAYERS}/${MAX_PLAYERS}) 🔒</blockquote>`
     : "";
 
-  const newText = row.base_text + mentioned + buildRsvpSection(rsvps) + lockedBanner;
+  // Squad first, then the ask — the roster holds a fixed spot while the "Mentioned" list shrinks.
+  const newText = row.base_text + buildRsvpSection(rsvps) + mentioned + lockedBanner;
   const keyboard = isFull ? buildLeaveOnlyKeyboard() : buildKeyboard();
 
   try {
@@ -557,7 +551,8 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
 // Deep link to the pinned event, where the RSVP buttons live. Re-sent on every reminder edit:
 // omitting reply_markup on an edit strips the keyboard.
 function buildEventLinkKeyboard(chatId: number | string, messageId: number): InlineKeyboardMarkup {
-  return { inline_keyboard: [[{ text: t("openEvent"), url: messageLink(chatId, messageId) }]] };
+  // primary (blue), not success — green is the join button's colour, and this only navigates.
+  return { inline_keyboard: [[{ text: t("openEvent"), url: messageLink(chatId, messageId), style: "primary" }]] };
 }
 
 function buildReminderText(row: EventRow, joining: RsvpRow[], phrase: string, pending: Mentionable[]): string {

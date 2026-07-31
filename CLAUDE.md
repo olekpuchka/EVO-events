@@ -33,6 +33,40 @@ rejects — a handler must never delete its own trigger directly. Use `deleteTri
 `src/helpers.ts`: it skips an ephemeral trigger and still removes a plainly-sent one (`@all`, which
 can never be ephemeral, or a client ignoring the flag).
 
+## Rich messages
+
+`sendRichMessage` takes real headings, lists and tables — but it has **no `receiver_user_id`**, so a
+rich message can't be sent privately the way `sendEphemeral()` sends everything else. That rules it
+out for anything personal: help, usage hints, errors, confirmations. Use it only for output the whole
+group is meant to see, which today means the match scoreboard. `/help` was tried as a rich table and
+reverted for exactly this reason.
+
+The payload nests: `rich_message: { blocks: [...] }`. grammY's `sendRichMessage(chatId, { blocks })`
+passes that object as the second positional argument, so the `{ blocks }` shape at the call site is
+already correct — a raw HTTP call putting `blocks` at the top level gets "rich message must be
+non-empty".
+
+## Schema
+
+`src/db.ts` creates tables with `CREATE TABLE IF NOT EXISTS` and nothing else — there is no
+migration step. Adding a column to an existing table therefore does **not** reach the `members.db`
+on the mounted volume, and every `db.prepare` naming it throws at boot. So a new column needs a
+migration guard written first. This is why the FACEIT nickname is fetched live rather than stored,
+and why hype phrases stay in memory.
+
+## Hype phrases
+
+A DeepSeek call takes **4–9 seconds** (thinking mode, no timeout) — measured, not guessed. Never
+`await` one in front of a user-visible update: `sendReminder` reads its roster *after* the phrase
+for exactly this reason, and the locked-squad edit in `handleRsvp` still pays the delay before the
+message shows 5/5.
+
+A phrase is frozen per event and deliberately **not** regenerated when a squad drops below full and
+refills — same event, same squad, and a re-hype costs another call plus that delay. `endEvent` is
+the only thing that clears it; don't add a delete on the not-full branch. Both caches are in-memory,
+so a redeploy mid-event re-hypes on the next tap. Persisting them would need a new column, which
+the schema can't take — see **Schema**.
+
 ## FACEIT links
 
 Two writers, deliberately not one. `setFaceitAccount` sets the link and expresses a user's
