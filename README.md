@@ -11,6 +11,7 @@ Built with [grammY](https://grammy.dev/) in TypeScript on Node.js — run direct
 - **Squad capped at 5** — locks with a hype message when full; drop out to reopen a seat.
 - **"Mentioned:" list** shows who hasn't replied yet, shrinks as people RSVP, and disappears once the squad is locked.
 - **Auto-pin / auto-unpin** at start time, with a **reminder 10 minutes before** — sent only once at least two people are in.
+- **Last call in the reminder** — if seats are still open it names whoever hasn't answered either way and links back to the event. The line shrinks as people reply and disappears once the squad locks.
 - **Parallel events** — several can run at once (say 20:00 and 22:00), each with its own RSVPs, reminder and unpin. Joining one doesn't stop you joining another.
 - **AI hype phrases** (DeepSeek, optional) when the squad fills and in the reminder.
 - **Auto match results** — polls FACEIT and posts finished matches with K/D/A, ADR, per-player Elo ↑/↓ and team Elo, plus an AI win/loss line that reacts to the match stats (top fraggers, aces, clutches, comebacks, overtime).
@@ -26,7 +27,9 @@ Built with [grammY](https://grammy.dev/) in TypeScript on Node.js — run direct
 | `@all CS` | Mention all only (no time = no event) |
 | `/cancel` | Cancel an active event (any member can cancel). With more than one live, reply it to the event you mean |
 | `/mute` / `/unmute` | Opt out / into `@all` mentions |
-| `/faceit <nickname>` | Link your FACEIT account for match-result posts |
+| `/faceit <nickname>` | Link your FACEIT account so you show up in match-result posts. A typo or the wrong capitalisation comes back as tap-to-copy suggestions instead of a dead end |
+| `/faceit` | Show which FACEIT account you're linked to, and how to change it |
+| `/faceit off` | Unlink — your stats stop appearing in match results. An argument, not its own command, so it costs no menu row |
 | `/help` | How to use the bot — the `@all` syntax and every command |
 
 Slash commands are case-insensitive and work in groups only. Match results post automatically once members link FACEIT accounts.

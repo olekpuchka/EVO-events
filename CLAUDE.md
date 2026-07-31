@@ -19,6 +19,10 @@ Adding or renaming one means changing both, plus a `cmd*` key in **both** langua
 `src/i18n.ts` — `t()` falls back to `EN` with only a console warning, so a missing `UA`
 description ships English rather than failing.
 
+That cost is why a secondary action is an **argument**, not a command: `/faceit off` unlinks, and
+`/faceit` with no argument reports the current link. Both live inside the one handler, so neither
+spends a menu row or a second pair of descriptions. Reach for an argument first.
+
 Only `all_group_chats` is published; the `default` scope is cleared alongside it. That is what
 leaves DMs with no menu, and it's deliberate — every command returns early in a private chat.
 Don't restore it.
@@ -28,6 +32,14 @@ but its sender. Such a message arrives with **`message_id: 0`**, which `ctx.dele
 rejects — a handler must never delete its own trigger directly. Use `deleteTrigger()` from
 `src/helpers.ts`: it skips an ephemeral trigger and still removes a plainly-sent one (`@all`, which
 can never be ephemeral, or a client ignoring the flag).
+
+## FACEIT links
+
+Two writers, deliberately not one. `setFaceitAccount` sets the link and expresses a user's
+explicit intent; `setFaceitElo` only advances the Elo delta baseline, and its `WHERE
+faceit_player_id = ?` is what stops the 20-minute poll from resurrecting a link that `/faceit off`
+removed mid-poll. The poll must never call the former — its roster is a snapshot from poll start,
+so it would write back an id the user has since cleared. Nothing enforces this but the names.
 
 ## CI
 

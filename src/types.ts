@@ -56,6 +56,13 @@ export interface FaceitPlayer {
   games?: { cs2?: { faceit_elo?: number | null } };
 }
 
+// A hit from /search/players — narrower than FaceitPlayer on purpose: that response shapes `games`
+// as an array rather than the keyed object /players returns, so only the shared fields are declared.
+export interface FaceitSearchItem {
+  player_id: string;
+  nickname: string;
+}
+
 export interface FaceitHistoryItem {
   status: string;
   finished_at: number;
