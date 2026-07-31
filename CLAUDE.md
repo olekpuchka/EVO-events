@@ -9,6 +9,20 @@ Dockerfile. An `ENV` wins at runtime, so changing a code default alone never rea
 `DATA_DIR` is the deliberate exception: `/app/data` in the image (the volume mount), `app/data`
 inside the project locally.
 
+## Command menu
+
+Telegram's command registry is published from `bot.ts` on every boot. BotFather is **not** the
+source of truth — anything set there is overwritten on the next deploy.
+
+A command lives in **two** places: its `bot.command(...)` handler and the `GROUP_COMMANDS` list.
+Adding or renaming one means changing both, plus a `cmd*` key in **both** languages in
+`src/i18n.ts` — `t()` falls back to `EN` with only a console warning, so a missing `UA`
+description ships English rather than failing.
+
+Only `all_group_chats` is published; the `default` scope is cleared alongside it. That is what
+leaves DMs with no menu, and it's deliberate — every command returns early in a private chat.
+Don't restore it.
+
 ## CI
 
 `.github/workflows/ci.yml` typechecks every PR into `main`. Deploy typechecks again before

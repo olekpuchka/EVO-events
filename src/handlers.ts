@@ -394,6 +394,14 @@ export async function cancelEvent(ctx: CommandContext<Context>): Promise<void> {
   try { await ctx.deleteMessage(); } catch {}
 }
 
+// The only place `@all` is documented in-app: it isn't a slash command, so it can never appear in
+// Telegram's command menu.
+export async function showHelp(ctx: CommandContext<Context>): Promise<void> {
+  if (ctx.chat.type === "private") { await ctx.reply(t("groupOnly")); return; }
+  if (!ctx.from) return; // anonymous admins / channel posts have no sender — nobody to reply privately to
+  await sendEphemeral(ctx, t("helpBody", MAX_PLAYERS), { parse_mode: "HTML" });
+}
+
 export async function muteNotifications(ctx: CommandContext<Context>): Promise<void> {
   if (ctx.chat.type === "private") { await ctx.reply(t("groupOnly")); return; }
   if (!ctx.from) return; // anonymous admins / channel posts have no sender

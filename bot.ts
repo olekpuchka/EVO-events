@@ -1,7 +1,9 @@
 import "./src/log.ts"; // first — ESM runs imports in order, so startup warnings are stamped too
 import { Bot } from "grammy";
-import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, endEvent, registerFaceit, autoPostResult, claimBotPin, unpinEventMessage } from "./src/handlers.ts";
+import type { BotCommand } from "@grammyjs/types";
+import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, endEvent, registerFaceit, autoPostResult, claimBotPin, unpinEventMessage, showHelp } from "./src/handlers.ts";
 import { getDueUnpins, getDueReminders, deleteScheduledReminder, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/db.ts";
+import { t } from "./src/i18n.ts";
 
 // State the config up front — a missing FACEIT key otherwise just 401s forever, silently.
 if (!process.env.BOT_TOKEN) {
@@ -29,12 +31,41 @@ bot.use((ctx, next) => {
   return next();
 });
 
-// ─── Commands: /mute, /unmute, /cancel ───────────────────────────────────────
+// ─── Commands ────────────────────────────────────────────────────────────────
 
 bot.command("mute", muteNotifications);
 bot.command("unmute", unmuteNotifications);
 bot.command("cancel", cancelEvent);
 bot.command("faceit", registerFaceit);
+bot.command("help", showHelp);
+
+// ─── Command menu ─────────────────────────────────────────────────────────────
+// Telegram's command registry lives here rather than in BotFather, so descriptions follow
+// LANGUAGE and ship with the deploy. Group scope only: every command returns early in a DM.
+
+const GROUP_COMMANDS: BotCommand[] = [
+  { command: "cancel", description: t("cmdCancel") },
+  { command: "mute", description: t("cmdMute") },
+  { command: "unmute", description: t("cmdUnmute") },
+  { command: "faceit", description: t("cmdFaceit") },
+  { command: "help", description: t("cmdHelp") },
+];
+
+// Re-published on every boot: idempotent, and it makes the registry a deploy artifact.
+// Each scope is settled on its own so a flood-wait on one still lets the other land.
+async function publishCommands(): Promise<void> {
+  const results = await Promise.allSettled([
+    bot.api.setMyCommands(GROUP_COMMANDS, { scope: { type: "all_group_chats" } }),
+    // Telegram falls back to the default scope wherever a narrower one is unset, so clearing it
+    // both drops anything BotFather left behind and leaves DMs with no menu at all.
+    bot.api.setMyCommands([], { scope: { type: "default" } }),
+  ]);
+  for (const result of results) {
+    if (result.status === "rejected") {
+      console.error("[commands] publish failed:", result.reason?.message ?? result.reason);
+    }
+  }
+}
 
 // ─── Text trigger: @all <optional message> ────────────────────────────────────
 // Works when the bot has privacy mode disabled (set via BotFather → /setprivacy → Disable).
@@ -157,5 +188,9 @@ process.once("SIGINT", () => {
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 bot.start({
-  onStart: ({ username }) => console.log(`@${username} is running (Node ${process.version}).`),
+  onStart: ({ username }) => {
+    console.log(`@${username} is running (Node ${process.version}).`);
+    // Unawaited — the menu is decoration; a slow registry call must not delay answering updates.
+    void publishCommands();
+  },
 });

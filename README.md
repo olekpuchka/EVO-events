@@ -27,8 +27,11 @@ Built with [grammY](https://grammy.dev/) in TypeScript on Node.js — run direct
 | `/cancel` | Cancel an active event (any member can cancel). With more than one live, reply it to the event you mean |
 | `/mute` / `/unmute` | Opt out / into `@all` mentions |
 | `/faceit <nickname>` | Link your FACEIT account for match-result posts |
+| `/help` | How to use the bot — the `@all` syntax and every command |
 
-Slash commands are case-insensitive. Match results post automatically once members link FACEIT accounts.
+Slash commands are case-insensitive and work in groups only. Match results post automatically once members link FACEIT accounts.
+
+The `/` menu is published from [bot.ts](bot.ts) at startup and overwrites anything set in BotFather — nothing to configure by hand.
 
 ## Setup
 
