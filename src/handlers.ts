@@ -1,7 +1,7 @@
-import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvents, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, hasPostedMatch, markMatchPosted } from "./db.ts";
+import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvents, deleteEventData, getReminderMessageId, setFaceitAccount, setFaceitElo, getFaceitAccount, clearFaceitAccount, getFaceitMembers, hasPostedMatch, markMatchPosted } from "./db.ts";
 import { buildMention, escapeHtml, escapeAiHtml, stripAiHtml, sendEphemeral, deleteTrigger } from "./helpers.ts";
 import type { Mentionable } from "./helpers.ts";
-import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapName, getMapImage, matchRoomUrl } from "./faceit.ts";
+import { getPlayer, getPlayerById, searchPlayers, getRecentMatches, getMatchStats, getMatchDetails, getMapName, getMapImage, matchRoomUrl } from "./faceit.ts";
 import { generateHypePhrase, generateMatchPhrase } from "./ai.ts";
 import { t } from "./i18n.ts";
 import type {
@@ -21,6 +21,7 @@ import type {
   ActiveEventRow,
   RsvpRow,
   EventRow,
+  FaceitPlayer,
   FaceitMatchStats,
   FaceitMatchDetails,
   EloPair,
@@ -131,6 +132,8 @@ function decorateEventTime(escapedMessage: string, eventTime: number): string {
 }
 
 const MAX_PLAYERS = 5;
+// A solo event isn't a game. Named because sendReminder tests it twice and the two must not drift.
+const MIN_JOINING_FOR_REMINDER = 2;
 
 // base_text is always `<a …>poster</a>: event`. Split on the closing tag, not the first ": " —
 // a display name containing ": " would cut mid-mention and leave a stray </a> Telegram rejects.
@@ -203,12 +206,19 @@ function buildLeaveOnlyKeyboard(): InlineKeyboardMarkup {
   };
 }
 
-// Lists only members who haven't RSVP'd yet — responders already show in the
-// Joining/Not joining sections. Returns "" when nobody's left, so the block
-// disappears instead of leaving an empty header.
-function buildMentionedBlock(mentionedUsers: Mentionable[], rsvps: { id: number }[]): string {
+// "1735 Elo", or the unranked label when FACEIT has no Elo for the account.
+const eloLabel = (elo: number | null | undefined): string => elo ? `${elo} Elo` : t("unranked");
+
+// Members who haven't answered either way — "not joining" counts as answered. Shared by the event's
+// "Mentioned:" block and the reminder's nudge, so the two can't disagree on who's still undecided.
+function pendingMembers(mentionedUsers: Mentionable[], rsvps: { id: number }[]): Mentionable[] {
   const responded = new Set(rsvps.map(r => r.id));
-  const pending = mentionedUsers.filter(u => !responded.has(u.id));
+  return mentionedUsers.filter(u => !responded.has(u.id));
+}
+
+// Renders the undecided list — responders already show in the Joining/Not joining sections.
+// Returns "" when nobody's left, so the block disappears instead of leaving an empty header.
+function buildMentionedBlock(pending: Mentionable[]): string {
   if (pending.length === 0) return "";
   return `\n\n<b>${t("mentioned")}</b> ${pending.map(buildMention).join(", ")}`;
 }
@@ -263,8 +273,9 @@ export async function mentionAll(ctx: HearsContext<Context>, message = ""): Prom
     // Build the full initial text with RSVP section (poster auto-joined) before sending,
     // so the message is delivered to all clients with the keyboard already attached —
     // avoiding the send-then-edit race condition that caused buttons to not appear.
+    // The poster is the only RSVP and is already out of mentionedUsers, so everyone there is pending.
     const initialRsvps: RsvpLike[] = [{ ...from, status: "join" }];
-    const initialText = messageLine + buildMentionedBlock(mentionedUsers, initialRsvps) + buildRsvpSection(initialRsvps);
+    const initialText = messageLine + buildMentionedBlock(mentionedUsers) + buildRsvpSection(initialRsvps);
     const keyboard = buildKeyboard();
 
     lastSent = await ctx.api.sendMessage(ctx.chat.id, initialText, {
@@ -297,7 +308,8 @@ export async function mentionAll(ctx: HearsContext<Context>, message = ""): Prom
       console.error("[event] pin failed:", (err as Error).message);
     }
   } else {
-    const fullText = messageLine + buildMentionedBlock(mentionedUsers, []);
+    // Nobody has answered a mention-only post, so every mentioned member is still pending.
+    const fullText = messageLine + buildMentionedBlock(mentionedUsers);
     lastSent = await ctx.api.sendMessage(ctx.chat.id, fullText, { parse_mode: "HTML" });
     console.log(`[mention] "${message}"`);
   }
@@ -334,7 +346,7 @@ function eventPickerLine(chatId: number | string, event: ActiveEventRow): string
 }
 
 export async function cancelEvent(ctx: CommandContext<Context>): Promise<void> {
-  if (ctx.chat.type === "private") return;
+  if (ctx.chat.type === "private") { await ctx.reply(t("groupOnly")); return; }
   if (!ctx.from) return; // anonymous admins / channel posts have no sender
 
   const active = getActiveEvents(ctx.chat.id);
@@ -399,7 +411,7 @@ export async function cancelEvent(ctx: CommandContext<Context>): Promise<void> {
 export async function showHelp(ctx: CommandContext<Context>): Promise<void> {
   if (ctx.chat.type === "private") { await ctx.reply(t("groupOnly")); return; }
   if (!ctx.from) return; // anonymous admins / channel posts have no sender — nobody to reply privately to
-  await sendEphemeral(ctx, t("helpBody", MAX_PLAYERS), { parse_mode: "HTML" });
+  await sendEphemeral(ctx, t("helpBody"), { parse_mode: "HTML" });
 }
 
 export async function muteNotifications(ctx: CommandContext<Context>): Promise<void> {
@@ -502,9 +514,10 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
     fullPhraseCache.delete(key);
   }
 
-  // A locked squad has no seat to recruit for, so the "Mentioned" list is just noise — drop it.
-  // Freeing a seat brings it back, already filtered to whoever still hasn't answered.
-  const mentioned = isFull ? "" : buildMentionedBlock(getMembers(chatId), rsvps);
+  // Both the "Mentioned:" block and the reminder's nudge want whoever hasn't answered, so it's
+  // filtered once. A locked squad recruits for nothing, so it skips the read and both fall away.
+  const pending = isFull ? [] : pendingMembers(getMembers(chatId), rsvps);
+  const mentioned = buildMentionedBlock(pending);
   const lockedBanner = isFull
     ? `\n\n<blockquote>🔥 <i>${escapeAiHtml(fullPhrase)}</i> (${MAX_PLAYERS}/${MAX_PLAYERS}) 🔒</blockquote>`
     : "";
@@ -523,13 +536,16 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
     }
   }
 
-  // If the reminder has already been sent, update its joining list too.
-  // Done after the ack so a cache-miss AI call doesn't block the response.
+  // If the reminder is already out, refresh its joining list and nudge — both shrink as people
+  // answer. Done after the ack so a cache-miss AI call doesn't block the response.
   const reminderMessageId = getReminderMessageId(chatId, messageId);
   if (reminderMessageId) {
     const phrase = await cachedHypePhrase(reminderPhraseCache, key, eventName);
-    const updatedReminderText = buildReminderText(row, joining, phrase);
-    await ctx.api.editMessageText(chatId, reminderMessageId, updatedReminderText, { parse_mode: "HTML" })
+    const updatedReminderText = buildReminderText(row, joining, phrase, pending);
+    await ctx.api.editMessageText(chatId, reminderMessageId, updatedReminderText, {
+      parse_mode: "HTML",
+      reply_markup: buildEventLinkKeyboard(chatId, messageId),
+    })
       .catch(err => {
         if (!err.message?.includes("message is not modified")) {
           console.error("[reminder] edit failed:", err.message);
@@ -538,26 +554,77 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
   }
 }
 
-function buildReminderText(row: EventRow, joining: RsvpRow[], phrase: string): string {
+// Deep link to the pinned event, where the RSVP buttons live. Re-sent on every reminder edit:
+// omitting reply_markup on an edit strips the keyboard.
+function buildEventLinkKeyboard(chatId: number | string, messageId: number): InlineKeyboardMarkup {
+  return { inline_keyboard: [[{ text: t("openEvent"), url: messageLink(chatId, messageId) }]] };
+}
+
+function buildReminderText(row: EventRow, joining: RsvpRow[], phrase: string, pending: Mentionable[]): string {
   const eventName = extractEventName(row.base_text);
+  // Last call for the open seats, aimed at whoever hasn't answered either way. Gone once the squad
+  // locks — nothing left to recruit for — or once everyone has answered.
+  const seatsLeft = MAX_PLAYERS - joining.length;
+  const nudge = seatsLeft > 0 && pending.length > 0
+    ? `\n\n${t("seatsLeft", seatsLeft, pending.map(buildMention).join(", "))}`
+    : "";
   return (
     t("reminderHeader") +
     (eventName ? `\n\n${eventName}` : "") +
     `\n\n${t("joiningHeader", joining.length)}\n${joining.map(buildMention).join(", ")}` +
+    nudge +
     `\n\n<blockquote><i>${escapeAiHtml(phrase)}</i></blockquote>`
   );
 }
 
-export async function registerFaceit(ctx: CommandContext<Context>): Promise<void> {
-  if (ctx.chat.type === "private") return;
-  if (!ctx.from) return; // anonymous admins / channel posts have no sender
-  const nickname = ctx.match?.trim();
-  if (!nickname) {
-    await sendEphemeral(ctx, t("faceitUsage"), { parse_mode: "HTML" });
+// `/faceit` with no nickname: report the link you already have. Only the player id is stored, so
+// the nickname is read live — which also keeps up with a FACEIT rename.
+async function showFaceitStatus(ctx: CommandContext<Context>, userId: number): Promise<void> {
+  const account = getFaceitAccount(ctx.chat.id, userId);
+  if (!account) {
+    await sendEphemeral(ctx, t("faceitNotLinked"), { parse_mode: "HTML" });
     return;
   }
 
-  let player;
+  let player: FaceitPlayer | null = null;
+  try {
+    // No retries — the fallback headline already covers a miss, so answering now beats backing off.
+    player = await getPlayerById(account.faceit_player_id, { retries: 0 });
+  } catch (err) {
+    console.warn("[faceit] status lookup failed:", (err as Error).message);
+  }
+
+  // An unreachable API and a deleted FACEIT account both land here; neither can name the account,
+  // so both get the same headline. The relink hint is the way out of either.
+  const headline = player
+    ? t("faceitStatus", escapeHtml(player.nickname), eloLabel(player.games?.cs2?.faceit_elo))
+    : t("faceitStatusUnavailable");
+  await sendEphemeral(ctx, `${headline}\n\n${t("faceitLinkHelp")}`, { parse_mode: "HTML" });
+}
+
+export async function registerFaceit(ctx: CommandContext<Context>): Promise<void> {
+  if (ctx.chat.type === "private") { await ctx.reply(t("groupOnly")); return; }
+  if (!ctx.from) return; // anonymous admins / channel posts have no sender
+  const nickname = ctx.match?.trim();
+  if (!nickname) {
+    await showFaceitStatus(ctx, ctx.from.id);
+    return;
+  }
+
+  // `off` unlinks — an argument rather than its own command, so it costs no menu row. The command
+  // is lowercased upstream but its argument isn't; a player really nicknamed "off" can't link.
+  if (nickname.toLowerCase() === "off") {
+    if (!getFaceitAccount(ctx.chat.id, ctx.from.id)) {
+      await sendEphemeral(ctx, t("faceitNotLinked"), { parse_mode: "HTML" });
+      return;
+    }
+    clearFaceitAccount(ctx.chat.id, ctx.from.id);
+    console.log("[faceit] unlinked");
+    await sendEphemeral(ctx, t("faceitUnlinked"), { parse_mode: "HTML" });
+    return;
+  }
+
+  let player: FaceitPlayer | null;
   try {
     player = await getPlayer(nickname);
   } catch (err) {
@@ -567,7 +634,16 @@ export async function registerFaceit(ctx: CommandContext<Context>): Promise<void
   }
 
   if (!player) {
-    await sendEphemeral(ctx, t("faceitNotFound", escapeHtml(nickname)), { parse_mode: "HTML" });
+    // /players matches case-exactly, so a miss is often just a typo; search is fuzzy and ranks the
+    // exact match first. Hits go out as <code> commands, which Telegram copies on tap. The catch
+    // keeps a failed search reading "not found" rather than "FACEIT is unavailable".
+    const suggestions = await searchPlayers(nickname).catch(err => {
+      console.warn("[faceit] search failed:", (err as Error).message);
+      return [];
+    });
+    const list = suggestions.map(p => `• <code>/faceit ${escapeHtml(p.nickname)}</code>`).join("\n");
+    const notFound = t("faceitNotFound", escapeHtml(nickname));
+    await sendEphemeral(ctx, list ? `${notFound} ${t("didYouMean", list)}` : notFound, { parse_mode: "HTML" });
     return;
   }
 
@@ -583,7 +659,7 @@ export async function registerFaceit(ctx: CommandContext<Context>): Promise<void
 
   await sendEphemeral(
     ctx,
-    t("faceitLinked", escapeHtml(player.nickname), cs2.faceit_elo ? `${cs2.faceit_elo} Elo` : t("unranked")),
+    t("faceitLinked", escapeHtml(player.nickname), eloLabel(cs2.faceit_elo)),
     { parse_mode: "HTML" }
   );
 }
@@ -862,7 +938,7 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
     for (const pid of participantIds) {
       const entry = registeredIds.get(pid)!;
       if (entry.postElo !== null) {
-        setFaceitAccount(chatId, entry.userId, pid, entry.postElo);
+        setFaceitElo(chatId, entry.userId, pid, entry.postElo);
         // Advance the baseline so a member's next match this poll shows delta 0
         // instead of repeating the same swing — postElo is live Elo, one value per batch.
         entry.preElo = entry.postElo;
@@ -876,15 +952,26 @@ export async function sendReminder(api: Api, chatId: number | string, messageId:
   const row = getEventBaseText(chatId, messageId);
   if (!row) return;
 
-  const rsvps = getRsvps(chatId, messageId);
-  const joining = rsvps.filter(r => r.status === "join");
-  if (joining.length <= 1) return;
+  // Cheap gate first, so a solo event never pays for a phrase it won't use.
+  if (getRsvps(chatId, messageId).filter(r => r.status === "join").length < MIN_JOINING_FOR_REMINDER) return;
 
   const eventName = extractEventName(row.base_text);
   const phrase = await generateHypePhrase(eventName);
   reminderPhraseCache.set(eventKey(chatId, messageId), phrase);
-  const text = buildReminderText(row, joining, phrase);
-  const sent = await api.sendMessage(chatId, text, { parse_mode: "HTML" });
-  console.log(`[reminder] sent "${eventName ?? ""}" — ${joining.length} joining`);
+
+  // Read the roster after the phrase call, not before: it takes seconds and fires at the peak RSVP
+  // moment, so a stale snapshot would under-count joiners and @-mention a fresh one as undecided —
+  // which their own tap can't fix, having run before reminder_message_id was saved.
+  const rsvps = getRsvps(chatId, messageId);
+  const joining = rsvps.filter(r => r.status === "join");
+  if (joining.length < MIN_JOINING_FOR_REMINDER) return; // they dropped out while the phrase generated
+  // This send is the one that notifies, so the nudge is a real last call; later edits are silent.
+  const pending = pendingMembers(getMembers(chatId), rsvps);
+  const text = buildReminderText(row, joining, phrase, pending);
+  const sent = await api.sendMessage(chatId, text, {
+    parse_mode: "HTML",
+    reply_markup: buildEventLinkKeyboard(chatId, messageId),
+  });
+  console.log(`[reminder] sent "${eventName ?? ""}" — ${joining.length} joining, ${pending.length} undecided`);
   return sent;
 }

@@ -1,5 +1,6 @@
 import type {
   FaceitPlayer,
+  FaceitSearchItem,
   FaceitHistoryItem,
   FaceitMatchStats,
   FaceitMatchDetails,
@@ -38,8 +39,19 @@ export function getPlayer(nickname: string): Promise<FaceitPlayer | null> {
   return faceitGet<FaceitPlayer>(`${BASE}/players?nickname=${encodeURIComponent(nickname)}`);
 }
 
-export function getPlayerById(playerId: string): Promise<FaceitPlayer | null> {
-  return faceitGet<FaceitPlayer>(`${BASE}/players/${playerId}`);
+// Fuzzy, case-insensitive nickname search — turns a failed exact /players lookup into suggestions
+// instead of a dead end. No retries: "not found" is already decided, so backoff is just dead air.
+export async function searchPlayers(nickname: string, limit = 5): Promise<FaceitSearchItem[]> {
+  const data = await faceitGet<{ items?: FaceitSearchItem[] }>(
+    `${BASE}/search/players?nickname=${encodeURIComponent(nickname)}&game=cs2&offset=0&limit=${limit}`,
+    { retries: 0 }
+  );
+  return data?.items ?? [];
+}
+
+// `retries` is exposed because callers differ: the poll should ride out a 429, a watched command shouldn't.
+export function getPlayerById(playerId: string, opts?: { retries?: number }): Promise<FaceitPlayer | null> {
+  return faceitGet<FaceitPlayer>(`${BASE}/players/${playerId}`, opts);
 }
 
 export async function getRecentMatches(playerId: string, limit = 5): Promise<FaceitHistoryItem[]> {

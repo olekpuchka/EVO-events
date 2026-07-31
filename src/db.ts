@@ -260,17 +260,40 @@ export function getActiveEvents(chatId: ChatId): ActiveEventRow[] {
 }
 
 const stmtSetFaceit = db.prepare(`UPDATE members SET faceit_player_id = ?, faceit_elo = ? WHERE chat_id = ? AND user_id = ?`);
+// Elo goes with the id: it's only a delta baseline, and leaving a stale one behind would make a
+// future re-link measure its first swing from the wrong number.
+const stmtClearFaceit = db.prepare(`UPDATE members SET faceit_player_id = NULL, faceit_elo = NULL WHERE chat_id = ? AND user_id = ?`);
+const stmtSetFaceitElo = db.prepare(`UPDATE members SET faceit_elo = ? WHERE chat_id = ? AND user_id = ? AND faceit_player_id = ?`);
 const stmtGetFaceitMembers = db.prepare(`
   SELECT user_id, faceit_player_id, faceit_elo
   FROM members WHERE chat_id = ? AND faceit_player_id IS NOT NULL
+`);
+const stmtGetFaceitAccount = db.prepare(`
+  SELECT user_id, faceit_player_id, faceit_elo
+  FROM members WHERE chat_id = ? AND user_id = ? AND faceit_player_id IS NOT NULL
 `);
 
 export function setFaceitAccount(chatId: ChatId, userId: number, playerId: string, elo: number | null): void {
   stmtSetFaceit.run(playerId, elo, String(chatId), userId);
 }
 
+export function clearFaceitAccount(chatId: ChatId, userId: number): void {
+  stmtClearFaceit.run(String(chatId), userId);
+}
+
+// Elo only, and only while the link still points where the caller thinks. The poll's roster is a
+// snapshot from its start, so writing the id here would undo a `/faceit off` sent mid-poll.
+export function setFaceitElo(chatId: ChatId, userId: number, playerId: string, elo: number | null): void {
+  stmtSetFaceitElo.run(elo, String(chatId), userId, playerId);
+}
+
 export function getFaceitMembers(chatId: ChatId): FaceitMemberRow[] {
   return allRows<FaceitMemberRow>(stmtGetFaceitMembers, String(chatId));
+}
+
+// One member's FACEIT link, or null if unlinked — read by `/faceit` with no argument.
+export function getFaceitAccount(chatId: ChatId, userId: number): FaceitMemberRow | null {
+  return oneRow<FaceitMemberRow>(stmtGetFaceitAccount, String(chatId), userId) ?? null;
 }
 
 db.exec(`

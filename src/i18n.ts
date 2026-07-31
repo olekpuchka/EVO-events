@@ -31,18 +31,16 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     cmdCancel: "Cancel an active event",
     cmdMute: "Stop being mentioned by @all",
     cmdUnmute: "Resume being mentioned by @all",
-    cmdFaceit: "Link your FACEIT account",
+    cmdFaceit: "Link or check your FACEIT account",
     cmdHelp: "How to use the bot",
-    helpBody: (max) => `🍌 <b>EVO Events</b>
+    helpBody: `🍌 <b>EVO Events</b>
 
 <b>@all CS 22:00</b> — mentions everyone and pins an event with RSVP buttons. A reminder goes out 10 min before, and it unpins at start time.
 <b>@all CS</b> — no time, so it only mentions everyone.
 
-The squad caps at ${max} — drop out to free a seat.
-
 <b>Commands</b>
 /cancel — cancel an active event. With more than one live, reply to the one you mean.
-/faceit &lt;nickname&gt; — link FACEIT so match results post here.
+/faceit &lt;nickname&gt; — link FACEIT so you show up in match results. Without a nickname it shows the account you're linked to; <code>/faceit off</code> unlinks.
 /mute · /unmute — stop or resume being mentioned by @all. New here? Send /unmute once to get on the list.`,
     alreadyJoining: "🍌 You're already joining!",
     alreadyNotJoining: "❌ You're already not joining!",
@@ -54,11 +52,18 @@ The squad caps at ${max} — drop out to free a seat.
     joiningHeader: (n) => `🍌 <b>Joining (${n}):</b>`,
     notJoiningHeader: (n) => `❌ <b>Not joining (${n}):</b>`,
     reminderHeader: () => `🔔 <b>Game in 10 min</b> 🎮`,
-    faceitUsage: "Usage: /faceit &lt;your FACEIT nickname&gt;",
+    seatsLeft: (n, mentions) => `🪑 <b>${n} seat${n === 1 ? "" : "s"} left</b> — ${mentions}?`,
+    openEvent: "Open event",
+    faceitNotLinked: "🎮 You don't have a FACEIT account linked yet.\n\nSend <code>/faceit YourNickname</code> to show up in this group's match results.",
     faceitUnavailable: "FACEIT API is unavailable, try again later.",
     faceitNotFound: (nickname) => `Player "${nickname}" not found on FACEIT.`,
+    didYouMean: (list) => `Did you mean one of these? Tap to copy, then send it.\n\n${list}`,
     faceitNoStats: (nickname) => `"${nickname}" has no CS2 stats on FACEIT.`,
     faceitLinked: (nickname, eloStr) => `Linked! <b>${nickname}</b> (${eloStr})`,
+    faceitStatus: (nickname, eloStr) => `🎮 Linked to <b>${nickname}</b> (${eloStr})`,
+    faceitStatusUnavailable: "🎮 Your FACEIT account is linked, but its details couldn't be loaded right now.",
+    faceitLinkHelp: "Send <code>/faceit &lt;nickname&gt;</code> to link a different account, or <code>/faceit off</code> to unlink.",
+    faceitUnlinked: "🎮 Unlinked — your stats won't appear in this group's match results any more.\n\nSend <code>/faceit YourNickname</code> to link again.",
     unranked: "Unranked",
     scorePlayer: "Player",
     viewOnFaceit: "View on",
@@ -82,23 +87,21 @@ The squad caps at ${max} — drop out to free a seat.
     eventEnded: "Ця подія вже завершилась.",
     cmdCancel: "Скасувати активну подію",
     cmdMute: "Не згадувати мене в @all",
-    cmdUnmute: "Знову згадувати мене в @all",
-    cmdFaceit: "Прив'язати акаунт FACEIT",
+    cmdUnmute: "Згадувати мене в @all",
+    cmdFaceit: "Прив'язати або перевірити акаунт FACEIT",
     cmdHelp: "Як користуватися ботом",
-    helpBody: (max) => `🍌 <b>EVO Events</b>
+    helpBody: `🍌 <b>EVO Events</b>
 
 <b>@all CS 22:00</b> — згадує всіх і закріплює подію з кнопками. Нагадування — за 10 хв до старту, відкріплення — на початку.
 <b>@all CS</b> — без часу, тільки згадка.
 
-Загін максимум ${max} — вийди, щоб звільнити місце.
-
 <b>Команди</b>
 /cancel — скасувати активну подію. Якщо їх кілька — відповідай на потрібну.
-/faceit &lt;нікнейм&gt; — прив'язати FACEIT, щоб тут з'являлись результати матчів.
-/mute · /unmute — не згадувати / знову згадувати в @all. Вперше тут? Надішли /unmute один раз, щоб потрапити в список.`,
+/faceit &lt;нікнейм&gt; — прив'язати FACEIT, щоб з'являтися в результатах матчів. Без нікнейму покаже прив'язаний акаунт; <code>/faceit off</code> — відв'язати.
+/mute · /unmute — не згадувати / згадувати в @all. Вперше тут? Надішли /unmute один раз, щоб потрапити в список.`,
     alreadyJoining: "🍌 Ти вже в грі!",
     alreadyNotJoining: "❌ Ти вже не береш участь!",
-    squadFull: (max) => `🔒 Загін уже повний (${max}/${max})!`,
+    squadFull: (max) => `🔒 Сквад уже повний (${max}/${max})!`,
     joining: "🍌 Ти в грі!",
     notJoining: "❌ Ти не береш участь!",
     joinButton: "🍌 В грі",
@@ -106,11 +109,20 @@ The squad caps at ${max} — drop out to free a seat.
     joiningHeader: (n) => `🍌 <b>В грі (${n}):</b>`,
     notJoiningHeader: (n) => `❌ <b>Не будуть (${n}):</b>`,
     reminderHeader: () => `🔔 <b>Гра через 10 хв</b> 🎮`,
-    faceitUsage: "Використання: /faceit &lt;твій нікнейм FACEIT&gt;",
+    // 1 місце / 2–4 місця / 5+ місць — any count up to the cap can render, since people are free
+    // to drop out after the reminder is already out.
+    seatsLeft: (n, mentions) => `🪑 <b>Залишилось ${n} ${n === 1 ? "місце" : n < 5 ? "місця" : "місць"}</b> — ${mentions}?`,
+    openEvent: "Відкрити подію",
+    faceitNotLinked: "🎮 У тебе ще немає прив'язаного акаунта FACEIT.\n\nНадішли <code>/faceit ТвійНікнейм</code>, щоб з'являтися в результатах матчів цієї групи.",
     faceitUnavailable: "FACEIT API недоступний, спробуй пізніше.",
     faceitNotFound: (nickname) => `Гравця "${nickname}" не знайдено на FACEIT.`,
+    didYouMean: (list) => `Можливо, це хтось із них? Натисни, щоб скопіювати, і надішли.\n\n${list}`,
     faceitNoStats: (nickname) => `У "${nickname}" немає статистики CS2 на FACEIT.`,
     faceitLinked: (nickname, eloStr) => `Прив'язано! <b>${nickname}</b> (${eloStr})`,
+    faceitStatus: (nickname, eloStr) => `🎮 Прив'язано до <b>${nickname}</b> (${eloStr})`,
+    faceitStatusUnavailable: "🎮 Твій акаунт FACEIT прив'язаний, але деталі зараз не завантажились.",
+    faceitLinkHelp: "Надішли <code>/faceit &lt;нікнейм&gt;</code>, щоб прив'язати інший акаунт, або <code>/faceit off</code>, щоб відв'язати.",
+    faceitUnlinked: "🎮 Відв'язано — твоя статистика більше не з'являтиметься в результатах матчів цієї групи.\n\nНадішли <code>/faceit ТвійНікнейм</code>, щоб прив'язати знову.",
     unranked: "Без рангу",
     scorePlayer: "Гравець",
     viewOnFaceit: "Дивитись на",
