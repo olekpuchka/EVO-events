@@ -29,19 +29,15 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     unmutedSuccess: "You've been added to the mention list. You'll be mentioned by @all in this group.",
     eventEnded: "This event has already ended.",
     cmdCancel: "Cancel an active event",
-    cmdMute: "Stop being mentioned by @all",
-    cmdUnmute: "Resume being mentioned by @all",
+    cmdMute: "Don't mention me in @all",
+    cmdUnmute: "Mention me in @all",
     cmdFaceit: "Link or check your FACEIT account",
     cmdHelp: "How to use the bot",
-    helpBody: `🍌 <b>EVO Events</b>
-
-<b>@all CS 22:00</b> — mentions everyone and pins an event with RSVP buttons. A reminder goes out 10 min before, and it unpins at start time.
+    helpBody: `<b>@all CS 22:00</b> — mentions everyone and pins an event with RSVP buttons. A reminder goes out 10 min before, and it unpins at start time.
 <b>@all CS</b> — no time, so it only mentions everyone.
 
-<b>Commands</b>
-/cancel — cancel an active event. With more than one live, reply to the one you mean.
-/faceit &lt;nickname&gt; — link FACEIT so you show up in match results. Without a nickname it shows the account you're linked to; <code>/faceit off</code> unlinks.
-/mute · /unmute — stop or resume being mentioned by @all. New here? Send /unmute once to get on the list.`,
+Every command is in the <b>/</b> menu.
+New here? Send /unmute to get on the list.`,
     alreadyJoining: "🍌 You're already joining!",
     alreadyNotJoining: "❌ You're already not joining!",
     squadFull: (max) => `🔒 Squad's already full (${max}/${max})!`,
@@ -52,7 +48,7 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     joiningHeader: (n) => `🍌 <b>Joining (${n}):</b>`,
     notJoiningHeader: (n) => `❌ <b>Not joining (${n}):</b>`,
     reminderHeader: () => `🔔 <b>Game in 10 min</b> 🎮`,
-    seatsLeft: (n, mentions) => `🪑 <b>${n} seat${n === 1 ? "" : "s"} left</b> — ${mentions}?`,
+    seatsLeft: (n, mentions) => `📣 <b>${n} seat${n === 1 ? "" : "s"} left</b> — ${mentions}`,
     openEvent: "Open event",
     faceitNotLinked: "🎮 You don't have a FACEIT account linked yet.\n\nSend <code>/faceit YourNickname</code> to show up in this group's match results.",
     faceitUnavailable: "FACEIT API is unavailable, try again later.",
@@ -63,7 +59,7 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     faceitStatus: (nickname, eloStr) => `🎮 Linked to <b>${nickname}</b> (${eloStr})`,
     faceitStatusUnavailable: "🎮 Your FACEIT account is linked, but its details couldn't be loaded right now.",
     faceitLinkHelp: "Send <code>/faceit &lt;nickname&gt;</code> to link a different account, or <code>/faceit off</code> to unlink.",
-    faceitUnlinked: "🎮 Unlinked — your stats won't appear in this group's match results any more.\n\nSend <code>/faceit YourNickname</code> to link again.",
+    faceitUnlinked: "🎮 Unlinked — your stats won't appear in this group's match results any more.\n\nSend <code>/faceit YourNickname</code> to link.",
     unranked: "Unranked",
     scorePlayer: "Player",
     viewOnFaceit: "View on",
@@ -80,9 +76,9 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     replyNotAnEvent: "Це повідомлення не є активною подією — можливо, вона вже завершилась. Відповідай на подію, яку хочеш скасувати, або надішли <code>/cancel</code> окремо.",
     pickEventToCancel: (list) => `Активних подій кілька. Натисни на потрібну нижче, потім <b>відповідай</b> на неї командою <code>/cancel</code> — свайп на телефоні, правий клік → Відповісти на комп'ютері.\n\n${list}`,
     cancelledBy: (mention) => `Скасовано ${mention}`,
-    alreadyMuted: "Ти вже в муті — @all не буде тебе згадувати.",
+    alreadyMuted: "Ти вже не в списку згадувань — @all тебе не згадує.",
     mutedSuccess: "Тебе замучено. @all більше не згадуватиме тебе в цій групі.\nВикористай /unmute, щоб увімкнути назад.",
-    alreadyUnmuted: "Ти вже не в муті, @all тебе згадуватиме.",
+    alreadyUnmuted: "Ти вже в списку згадувань — @all тебе згадує.",
     unmutedSuccess: "Тебе додано до списку згадувань. @all тепер згадуватиме тебе в цій групі.",
     eventEnded: "Ця подія вже завершилась.",
     cmdCancel: "Скасувати активну подію",
@@ -90,15 +86,12 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     cmdUnmute: "Згадувати мене в @all",
     cmdFaceit: "Прив'язати або перевірити акаунт FACEIT",
     cmdHelp: "Як користуватися ботом",
-    helpBody: `🍌 <b>EVO Events</b>
-
-<b>@all CS 22:00</b> — згадує всіх і закріплює подію з кнопками. Нагадування — за 10 хв до старту, відкріплення — на початку.
+    helpBody: `<b>@all CS 22:00</b> — згадує всіх і закріплює подію з кнопками. Нагадування — за 10 хв до старту, відкріплення — на початку.
 <b>@all CS</b> — без часу, тільки згадка.
 
-<b>Команди</b>
-/cancel — скасувати активну подію. Якщо їх кілька — відповідай на потрібну.
-/faceit &lt;нікнейм&gt; — прив'язати FACEIT, щоб з'являтися в результатах матчів. Без нікнейму покаже прив'язаний акаунт; <code>/faceit off</code> — відв'язати.
-/mute · /unmute — не згадувати / згадувати в @all. Вперше тут? Надішли /unmute один раз, щоб потрапити в список.`,
+Усі команди — у меню <b>/</b>.
+
+Вперше тут? Надішли /unmute щоб потрапити в список.`,
     alreadyJoining: "🍌 Ти вже в грі!",
     alreadyNotJoining: "❌ Ти вже не береш участь!",
     squadFull: (max) => `🔒 Сквад уже повний (${max}/${max})!`,
@@ -111,7 +104,7 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     reminderHeader: () => `🔔 <b>Гра через 10 хв</b> 🎮`,
     // 1 місце / 2–4 місця / 5+ місць — any count up to the cap can render, since people are free
     // to drop out after the reminder is already out.
-    seatsLeft: (n, mentions) => `🪑 <b>Залишилось ${n} ${n === 1 ? "місце" : n < 5 ? "місця" : "місць"}</b> — ${mentions}?`,
+    seatsLeft: (n, mentions) => `📣 <b>Залишилось ${n} ${n === 1 ? "місце" : n < 5 ? "місця" : "місць"}</b> — ${mentions}`,
     openEvent: "Відкрити подію",
     faceitNotLinked: "🎮 У тебе ще немає прив'язаного акаунта FACEIT.\n\nНадішли <code>/faceit ТвійНікнейм</code>, щоб з'являтися в результатах матчів цієї групи.",
     faceitUnavailable: "FACEIT API недоступний, спробуй пізніше.",
@@ -122,7 +115,7 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     faceitStatus: (nickname, eloStr) => `🎮 Прив'язано до <b>${nickname}</b> (${eloStr})`,
     faceitStatusUnavailable: "🎮 Твій акаунт FACEIT прив'язаний, але деталі зараз не завантажились.",
     faceitLinkHelp: "Надішли <code>/faceit &lt;нікнейм&gt;</code>, щоб прив'язати інший акаунт, або <code>/faceit off</code>, щоб відв'язати.",
-    faceitUnlinked: "🎮 Відв'язано — твоя статистика більше не з'являтиметься в результатах матчів цієї групи.\n\nНадішли <code>/faceit ТвійНікнейм</code>, щоб прив'язати знову.",
+    faceitUnlinked: "🎮 Відв'язано — твоя статистика більше не з'являтиметься в результатах матчів цієї групи.\n\nНадішли <code>/faceit ТвійНікнейм</code>, щоб прив'язати.",
     unranked: "Без рангу",
     scorePlayer: "Гравець",
     viewOnFaceit: "Дивитись на",
