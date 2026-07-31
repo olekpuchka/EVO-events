@@ -1,5 +1,5 @@
 import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvents, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitMembers, hasPostedMatch, markMatchPosted } from "./db.ts";
-import { buildMention, escapeHtml, escapeAiHtml, stripAiHtml, sendEphemeral } from "./helpers.ts";
+import { buildMention, escapeHtml, escapeAiHtml, stripAiHtml, sendEphemeral, deleteTrigger } from "./helpers.ts";
 import type { Mentionable } from "./helpers.ts";
 import { getPlayer, getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapName, getMapImage, matchRoomUrl } from "./faceit.ts";
 import { generateHypePhrase, generateMatchPhrase } from "./ai.ts";
@@ -302,7 +302,7 @@ export async function mentionAll(ctx: HearsContext<Context>, message = ""): Prom
     console.log(`[mention] "${message}"`);
   }
 
-  try { await ctx.deleteMessage(); } catch {}
+  await deleteTrigger(ctx);
 }
 
 // Unpin an event that is over, whether it ended or was cancelled. "not found" just means someone
@@ -391,7 +391,7 @@ export async function cancelEvent(ctx: CommandContext<Context>): Promise<void> {
     await ctx.api.deleteMessage(ctx.chat.id, reminderMessageId).catch(() => {});
   }
   console.log(`[event] cancelled "${endEvent(ctx.chat.id, message_id)}"`);
-  try { await ctx.deleteMessage(); } catch {}
+  await deleteTrigger(ctx);
 }
 
 // The only place `@all` is documented in-app: it isn't a slash command, so it can never appear in

@@ -4,14 +4,14 @@ on:
   push:
     branches:
       - main
-  # Re-deploy an arbitrary ref (e.g. a v* tag, to roll back) from the Actions tab.
+  # Re-deploy an arbitrary ref (a commit SHA, to roll back) from the Actions tab.
   workflow_dispatch:
 
 # Deliberately NOT triggered by `v*` tags. JustRunMy.App rebuilds and restarts on every
 # push to its git remote — it never fast-forwards, so a second push of the *same* commit
 # is a full second deploy, not a no-op. With a tag trigger, `git push --follow-tags` fired
 # both triggers and restarted the bot twice for one release. Push-to-main is the only
-# automatic deploy; tags are just version markers.
+# automatic deploy, and we don't tag releases at all — roll back by dispatching a commit SHA.
 #
 # Still serialize rather than cancel: a merge can land while a dispatch is mid-flight, and
 # a half-finished deploy is worse than a queued one.

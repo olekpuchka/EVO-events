@@ -30,13 +30,21 @@ export interface Mentionable {
 
 type ReplyOptions = NonNullable<Parameters<Context["reply"]>[1]>;
 
-// Fallback for sendEphemeral: post a reply and delete it (plus the command) after 10s.
+// Fallback for sendEphemeral: post a reply and delete it, plus the trigger, after 10s.
 function autoDelete(ctx: Context, reply: { message_id: number }): void {
   setTimeout(async () => {
-    await ctx.deleteMessage().catch(() => {});
+    await deleteTrigger(ctx);
     // autoDelete only runs after a reply succeeded in this chat, so ctx.chat is present.
     await ctx.api.deleteMessage(ctx.chat!.id, reply.message_id).catch(() => {});
   }, 10_000);
+}
+
+// Remove the message that triggered this handler. Skipped when it arrived ephemeral (an
+// is_ephemeral command): nobody but its sender ever saw it, and it carries message_id 0, which
+// deleteMessage rejects. Still runs for a plainly-sent trigger — @all, or a client ignoring the flag.
+export async function deleteTrigger(ctx: Context): Promise<void> {
+  if (ctx.msg?.ephemeral_message_id !== undefined) return;
+  await ctx.deleteMessage().catch(() => {});
 }
 
 // Reply visible only to the invoking user, so transient feedback never clutters the group.
@@ -46,8 +54,8 @@ export async function sendEphemeral(ctx: Context, text: string, opts: ReplyOptio
   if (isGroup && ctx.from?.id) {
     try {
       await ctx.reply(text, { ...opts, receiver_user_id: ctx.from.id });
-      // Reply is private, but the triggering command is still public — remove it.
-      await ctx.deleteMessage().catch(() => {});
+      // The reply is private, but the message that triggered it isn't always — remove it.
+      await deleteTrigger(ctx);
       return;
     } catch (err) {
       console.warn("[ephemeral] send failed, falling back to auto-delete:", (err as Error).message);
