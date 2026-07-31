@@ -43,12 +43,16 @@ bot.command("help", showHelp);
 // Telegram's command registry lives here rather than in BotFather, so descriptions follow
 // LANGUAGE and ship with the deploy. Group scope only: every command returns early in a DM.
 
+// is_ephemeral has clients hide the invoking "/command" from everyone but its sender, so it never
+// reaches the group at all — better than posting it and deleting it a moment later. Telegram's
+// reply restrictions on ephemeral messages (15s window, reply must itself be ephemeral) apply to
+// replying *to* one, so /cancel's "reply to the event you mean" scoping is unaffected.
 const GROUP_COMMANDS: BotCommand[] = [
-  { command: "cancel", description: t("cmdCancel") },
-  { command: "mute", description: t("cmdMute") },
-  { command: "unmute", description: t("cmdUnmute") },
-  { command: "faceit", description: t("cmdFaceit") },
-  { command: "help", description: t("cmdHelp") },
+  { command: "cancel", description: t("cmdCancel"), is_ephemeral: true },
+  { command: "mute", description: t("cmdMute"), is_ephemeral: true },
+  { command: "unmute", description: t("cmdUnmute"), is_ephemeral: true },
+  { command: "faceit", description: t("cmdFaceit"), is_ephemeral: true },
+  { command: "help", description: t("cmdHelp"), is_ephemeral: true },
 ];
 
 // Re-published on every boot: idempotent, and it makes the registry a deploy artifact.

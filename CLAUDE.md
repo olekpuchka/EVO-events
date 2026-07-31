@@ -23,6 +23,12 @@ Only `all_group_chats` is published; the `default` scope is cleared alongside it
 leaves DMs with no menu, and it's deliberate — every command returns early in a private chat.
 Don't restore it.
 
+Every command is published `is_ephemeral`, so Telegram hides the invoking `/command` from everyone
+but its sender. Such a message arrives with **`message_id: 0`**, which `ctx.deleteMessage()`
+rejects — a handler must never delete its own trigger directly. Use `deleteTrigger()` from
+`src/helpers.ts`: it skips an ephemeral trigger and still removes a plainly-sent one (`@all`, which
+can never be ephemeral, or a client ignoring the flag).
+
 ## CI
 
 `.github/workflows/ci.yml` typechecks every PR into `main`. Deploy typechecks again before
@@ -45,10 +51,7 @@ To release: fold the version bump into the change's own commit (**never** a sepa
 2. Commit the change + bump together, with a descriptive message, on a branch.
 3. Open a PR, let CI pass, merge — the merge deploys.
 
-Tagging is **optional** and purely a marker: `git tag -a v<x.y.z> -m v<x.y.z> && git push
---follow-tags` (annotated — `--follow-tags` only pushes annotated tags). Worth doing for
-versions you might want to roll back to, not for every merge. Since merges happen on GitHub
-and tagging is local, don't rely on every release being tagged.
+We don't tag releases — `package.json` plus the merge commit on `main` is the whole record.
 
 **To roll back or re-deploy an old version:** run the Deploy workflow manually from the
-Actions tab (`workflow_dispatch`) against the tag or SHA you want.
+Actions tab (`workflow_dispatch`) against the commit SHA you want.

@@ -9,13 +9,13 @@ Built with [grammY](https://grammy.dev/) in TypeScript on Node.js — run direct
 - **`@all <message>`** — pings everyone. Add a time (`@all CS 22:00`) to make it a pinned event with RSVPs.
 - **Live RSVP buttons** — 🍌 Joining / ❌ Not joining, updated in place on the pinned message.
 - **Squad capped at 5** — locks with a hype message when full; drop out to reopen a seat.
-- **"Mentioned:" list** shows who hasn't replied yet, and shrinks as people RSVP.
-- **Auto-pin / auto-unpin** at start time, with a **reminder 10 minutes before**.
+- **"Mentioned:" list** shows who hasn't replied yet, shrinks as people RSVP, and disappears once the squad is locked.
+- **Auto-pin / auto-unpin** at start time, with a **reminder 10 minutes before** — sent only once at least two people are in.
 - **Parallel events** — several can run at once (say 20:00 and 22:00), each with its own RSVPs, reminder and unpin. Joining one doesn't stop you joining another.
 - **AI hype phrases** (DeepSeek, optional) when the squad fills and in the reminder.
 - **Auto match results** — polls FACEIT and posts finished matches with K/D/A, ADR, per-player Elo ↑/↓ and team Elo, plus an AI win/loss line that reacts to the match stats (top fraggers, aces, clutches, comebacks, overtime).
 - **Timezone** — event times show 🇺🇦 Kyiv and 🇪🇺 CET side by side. Posters default to Kyiv; those listed in `EU_TIMEZONE_MEMBERS` type in CET instead.
-- **Quiet feedback** — usage hints, errors, and confirmations reply only to you and clear themselves, so they never clutter the group.
+- **Quiet feedback** — slash commands are hidden from everyone but the sender, and usage hints, errors and confirmations reply only to you, so none of it clutters the group.
 - **Language** — English or Ukrainian.
 
 ## Commands
@@ -74,14 +74,7 @@ git commit -am "feat: ..."               # change + bump in one commit
 # open a PR, let CI pass, merge — the merge deploys
 ```
 
-Tagging is optional, for versions worth naming as rollback points:
-
-```bash
-git tag -a v2.5.0 -m v2.5.0              # annotated — --follow-tags only pushes annotated tags
-git push --follow-tags
-```
-
-To roll back or re-deploy an old version, run Deploy manually from the **Actions** tab against that tag or SHA. See [CLAUDE.md](CLAUDE.md) for the full flow.
+To roll back or re-deploy an old version, run Deploy manually from the **Actions** tab against that commit SHA. See [CLAUDE.md](CLAUDE.md) for the full flow.
 
 Requires one repo secret `JUSTRUNMY_DEPLOY_URL` = `https://<user>:<token>@justrunmy.app/git/<repo-id>`.
 
