@@ -28,6 +28,22 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     alreadyUnmuted: "You are already unmuted and will be mentioned by @all.",
     unmutedSuccess: "You've been added to the mention list. You'll be mentioned by @all in this group.",
     eventEnded: "This event has already ended.",
+    cmdCancel: "Cancel an active event",
+    cmdMute: "Stop being mentioned by @all",
+    cmdUnmute: "Resume being mentioned by @all",
+    cmdFaceit: "Link your FACEIT account",
+    cmdHelp: "How to use the bot",
+    helpBody: (max) => `🍌 <b>EVO Events</b>
+
+<b>@all CS 22:00</b> — mentions everyone and pins an event with RSVP buttons. A reminder goes out 10 min before, and it unpins at start time.
+<b>@all CS</b> — no time, so it only mentions everyone.
+
+The squad caps at ${max} — drop out to free a seat.
+
+<b>Commands</b>
+/cancel — cancel an active event. With more than one live, reply to the one you mean.
+/faceit &lt;nickname&gt; — link FACEIT so match results post here.
+/mute · /unmute — stop or resume being mentioned by @all. New here? Send /unmute once to get on the list.`,
     alreadyJoining: "🍌 You're already joining!",
     alreadyNotJoining: "❌ You're already not joining!",
     squadFull: (max) => `🔒 Squad's already full (${max}/${max})!`,
@@ -64,6 +80,22 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     alreadyUnmuted: "Ти вже не в муті, @all тебе згадуватиме.",
     unmutedSuccess: "Тебе додано до списку згадувань. @all тепер згадуватиме тебе в цій групі.",
     eventEnded: "Ця подія вже завершилась.",
+    cmdCancel: "Скасувати активну подію",
+    cmdMute: "Не згадувати мене в @all",
+    cmdUnmute: "Знову згадувати мене в @all",
+    cmdFaceit: "Прив'язати акаунт FACEIT",
+    cmdHelp: "Як користуватися ботом",
+    helpBody: (max) => `🍌 <b>EVO Events</b>
+
+<b>@all CS 22:00</b> — згадує всіх і закріплює подію з кнопками. Нагадування — за 10 хв до старту, відкріплення — на початку.
+<b>@all CS</b> — без часу, тільки згадка.
+
+Загін максимум ${max} — вийди, щоб звільнити місце.
+
+<b>Команди</b>
+/cancel — скасувати активну подію. Якщо їх кілька — відповідай на потрібну.
+/faceit &lt;нікнейм&gt; — прив'язати FACEIT, щоб тут з'являлись результати матчів.
+/mute · /unmute — не згадувати / знову згадувати в @all. Вперше тут? Надішли /unmute один раз, щоб потрапити в список.`,
     alreadyJoining: "🍌 Ти вже в грі!",
     alreadyNotJoining: "❌ Ти вже не береш участь!",
     squadFull: (max) => `🔒 Загін уже повний (${max}/${max})!`,
