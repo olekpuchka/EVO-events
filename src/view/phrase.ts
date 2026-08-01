@@ -6,7 +6,6 @@
 // `finalizePhrase` returns null for a phrase that must not ship. The caller retries
 // once before falling back; see **The AI call** in CLAUDE.md.
 
-import { LANG } from "./i18n.ts";
 import type { Kind, PhraseChecks, PromptPlayer } from "../types.ts";
 
 /* ------------------------------------------------------------------ *
@@ -156,7 +155,6 @@ const ENGLISH_TELL =
   /(?<![\p{L}\p{N}])(the|and|that|this|with|from|was|were|have|has|been|just|after|before|nothing|they|them|their|threw|still|only|about|into|than|then|when|what|because|would|could|should)(?![\p{L}\p{N}])/giu;
 
 function wrongLanguage(text: string): boolean {
-  if (LANG !== "UA") return false;
   return (text.match(ENGLISH_TELL)?.length ?? 0) >= 2;
 }
 

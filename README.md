@@ -1,41 +1,64 @@
-# EVO Events Telegram Bot
+# EVO Events
 
-A Telegram group bot for organizing gaming sessions — mention everyone with `@all`, collect RSVPs on a pinned message, send reminders, and auto-post FACEIT match results.
+A Telegram bot that organizes CS2 sessions for a group of friends: it mentions everyone, collects
+RSVPs on a pinned message, reminds the squad before the match, and posts the FACEIT scoreboard
+afterwards with an AI-written line about how it went.
 
-Built with [grammY](https://grammy.dev/) in TypeScript, storing everything in built-in SQLite. Node 24 runs the source directly via native type-stripping, so there is no build step.
+Built for one group of about five players, and every decision assumes that: no admin panel, no test
+suite, one SQLite file on one volume.
 
-## Features
+Interface language is **Ukrainian**. Code and comments are English.
 
-- **`@all <message>`** pings everyone. Add a time (`@all CS 22:00`) and it becomes a pinned event with RSVP buttons.
-- **Live RSVPs** — 🍌 Joining / ❌ Not joining, updated in place on the pinned message.
-- **Squad capped at 5** — locks with a hype line when full; drop out to reopen a seat.
-- **"Mentioned:" list** names who hasn't answered yet and shrinks as they do.
-- **Reminder 10 minutes before** start, once at least two people are in, with a last call naming whoever is still undecided. Auto-unpins at start time.
-- **Parallel events** — 20:00 and 22:00 can run at once, each with its own RSVPs, reminder and unpin.
-- **FACEIT results** post automatically: K/D/A, ADR, per-player Elo ↑/↓, team Elo, and an AI line that reacts to the actual match. A win picks its own shoutout from every player's full stat line, so it can land on a knife kill, 606 utility damage or a lone Zeus rather than only the top fragger. A loss turns outward instead — it never names our own players, and roasts the opponents' suspiciously good aim using their real numbers.
-- **AI hype phrases** (DeepSeek, optional) when the squad fills and in the reminder — one per event, so a drop-out and re-fill keeps the same line.
-- **Two timezones** — event times show 🇺🇦 Kyiv and 🇪🇺 CET side by side.
-- **Quiet by default** — slash commands are hidden from everyone but the sender, and hints, errors and confirmations reply privately.
-- **English or Ukrainian.**
+**Stack:** TypeScript on Node 24 (run directly, no build step — Node strips the types),
+[grammY](https://grammy.dev/) for Telegram, built-in `node:sqlite` for storage, DeepSeek for the
+phrases. Two runtime dependencies total.
+
+## What it does
+
+**Events.** `@all CS 22:00` mentions everyone on the list, pins a message with 🍌 Joining / ❌ Not
+joining buttons, and schedules the rest. RSVPs update the pinned message in place, and a "Mentioned:"
+block names whoever hasn't answered yet. The squad caps at five — the Joining button disappears at
+5/5 and a hype line locks it in; dropping out reopens the seat. Ten minutes before start, a reminder
+goes out — only if at least two people are in — naming whoever is still undecided. At start time the
+event unpins and the buttons come off. Several events can be live at once, each with its own RSVPs
+and schedule.
+
+`@all CS` with no time just mentions people. Nothing is pinned, nothing is scheduled.
+
+**Match results.** Finished matches post automatically: scoreboard with K/D/A, ADR, per-player Elo
+with the delta, team Elo, the map image, and one AI-written line about that match.
+
+**The AI line** picks its own subject. On a win the model gets every player's full stat line, so the
+shoutout can land on a knife kill, 777 utility damage or a lone Zeus rather than always the top
+fragger, and roughly one call in three invites it to tease someone instead. On a loss our roster is
+never sent at all — the opponents become the subject, using their real numbers.
+
+Times display in both 🇺🇦 Kyiv and 🇪🇺 CET. Slash commands are hidden from the group by Telegram, and
+every hint, error and confirmation is sent privately, so the chat stays clean.
 
 ## Commands
 
 | Trigger | Effect |
 |---|---|
-| `@all CS 22:00` | Mention everyone, pin an event with RSVP buttons, schedule the reminder and unpin |
+| `@all CS 22:00` | Mention everyone, pin an event with RSVP buttons, schedule reminder and unpin |
 | `@all CS` | Mention everyone only — no time, no event |
 | `/cancel` | Cancel an active event. With more than one live, reply it to the event you mean |
 | `/mute` · `/unmute` | Opt out of / into `@all` mentions |
-| `/faceit <nickname>` | Link your FACEIT account so you appear in match results. A typo comes back as tap-to-copy suggestions |
+| `/faceit <nickname>` | Link a FACEIT account. A typo comes back as tap-to-copy suggestions |
 | `/faceit` | Show which account you're linked to |
 | `/faceit off` | Unlink |
-| `/help` | The `@all` syntax — the one thing the `/` menu can't list, since `@all` isn't a slash command |
+| `/help` | The `@all` syntax — the one thing the `/` menu can't list, since `@all` isn't a command |
 
-Commands are case-insensitive and work in groups only. The `/` menu is published from [bot.ts](bot.ts) at startup and overwrites anything set in BotFather.
+Commands work in groups only and are case-insensitive. The `/` menu is published on every boot and
+**overwrites whatever is in BotFather**.
 
-## Quick start
+## Running it
 
-Requires **Node.js 24+**, a token from [@BotFather](https://t.me/BotFather), and privacy mode **disabled** (`/setprivacy` → your bot → Disable) so the bot can see `@all`.
+You need Node 24+, a bot token, and two settings on the bot itself:
+
+- **Privacy mode off** — BotFather → `/setprivacy` → your bot → Disable. Without this the bot never
+  sees `@all`, because Telegram only forwards commands to a privacy-mode bot.
+- **Admin in the group**, with *Pin Messages* and *Delete Messages*.
 
 ```bash
 git clone https://github.com/olekpuchka/EVO-events.git
@@ -45,83 +68,83 @@ cp .env.example .env          # fill in BOT_TOKEN
 node --env-file=.env bot.ts
 ```
 
-The database is created at `app/data/` inside the project (gitignored) — nothing to set up.
+The SQLite file is created at `app/data/` on first run (gitignored). `npm run dev` restarts on
+change; `npm run typecheck` is the only check there is.
+
+**The mention list starts empty.** The Bot API cannot enumerate a group's members, so people add
+themselves with `/unmute` — until someone does, `@all` has nobody to mention and says so.
 
 ## Configuration
 
-Everything is configured through environment variables. All of them are read in one place, [`src/config.ts`](src/config.ts).
+Everything is set through environment variables, all read in one place,
+[`src/config.ts`](src/config.ts).
 
-**Secrets** — supply at runtime: JustRunMy.App → **Settings** in production, `.env` locally. Never put these in the Dockerfile; `ENV` is baked into the image and readable by anyone who has it.
+**Secrets** — supply at runtime (`.env` locally, host settings in production), never as a Dockerfile
+`ENV`: that is baked into the image and readable with `docker history`.
 
 | Variable | Notes |
 |---|---|
-| `BOT_TOKEN` | Required — the bot exits at startup without it |
-| `FACEIT_API_KEY` | Required for match results, from [developers.faceit.com](https://developers.faceit.com). Without it the bot still starts and every poll 401s |
-| `DEEPSEEK_API_KEY` | Optional — AI phrases. Built-in phrases are used if unset |
+| `BOT_TOKEN` | Required. The process exits at startup without it |
+| `FACEIT_API_KEY` | Required for match results ([developers.faceit.com](https://developers.faceit.com)). Without it the bot starts, warns, and every poll 401s |
+| `DEEPSEEK_API_KEY` | Optional. Unset means built-in phrases instead of AI |
 
-**Everything else** has a default in the [Dockerfile](Dockerfile), so the bot runs unconfigured.
+**Everything else** is defaulted, so the bot runs with no configuration at all.
 
 | Variable | Default | Notes |
 |---|---|---|
-| `DATA_DIR` | `/app/data` in the image, `app/data` locally | SQLite location |
-| `LANGUAGE` | `UA` | `EN` or `UA` |
+| `DATA_DIR` | `/app/data` in the image, `app/data` locally | Where `members.db` goes |
 | `FACEIT_POLL_MINUTES` | `20` | How often to check for finished matches (minimum `5`) |
-| `EU_TIMEZONE_MEMBERS` | empty | Comma-separated user IDs whose typed times mean 🇪🇺 CET rather than 🇺🇦 Kyiv |
+| `EU_TIMEZONE_MEMBERS` | empty | Comma-separated user IDs whose typed times mean CET rather than Kyiv |
 
-> A Dockerfile `ENV` beats the fallback in `src/config.ts`, so changing a default in code alone won't reach the container — **change both**.
+> A Dockerfile `ENV` beats the default in `src/config.ts`, so changing one alone won't reach the
+> container — change both.
 
 ## Project structure
 
 ```
-bot.ts              composition root — config, handler registration, scheduler, shutdown
+bot.ts              composition root — config checks, handlers, scheduler, shutdown
 src/
   config.ts         every process.env read in the project
   log.ts            timestamps on console output
   types.ts          shared SQLite row and FACEIT response shapes
-  adapters/         one module per external system
-    db.ts             SQLite
-    faceit.ts         FACEIT Data API
-    ai.ts             DeepSeek call, retry, fallback (deepseek-v4-pro, thinking off)
+  adapters/         one module per external system — db, faceit, ai
   view/             data → strings; no I/O, no Telegram context
-    html.ts           escaping and mentions
-    i18n.ts           EN/UA copy
-    render.ts         event text, reminders, keyboards
-    eventtime.ts      parsing "22:00", rendering both timezones
-    prompt.ts         system prompt, angle roulette, match facts → prompt text
-    phrase.ts         sanitizing, the checks a reply must pass, emoji
-  handlers/         Telegram entry points
-    events.ts         @all, RSVP, /cancel, /mute, /faceit, reminders
-    results.ts        FACEIT poll → scoreboard
-    guards.ts         group-only wrapper, private replies, trigger cleanup
+  handlers/         Telegram entry points — events, results, guards
 ```
 
-One rule holds it together: **exactly one module talks to each external system.** Nothing outside `adapters/faceit.ts` calls `fetch`, nothing outside `adapters/db.ts` imports `node:sqlite`, nothing outside `adapters/ai.ts` builds an LLM client. Nothing points back up either — `view/` imports no adapter and no handler. The sideways edges all run `adapters/ai.ts` → `view/`: `i18n.ts` for fallback phrases, `prompt.ts` for what to ask, `phrase.ts` for judging the reply.
+One rule holds it together: **exactly one module talks to each external system.** Nothing outside
+`adapters/faceit.ts` calls `fetch`, nothing outside `adapters/db.ts` imports `node:sqlite`, nothing
+outside `adapters/ai.ts` builds an LLM client. `view/` imports no adapter and no handler, which keeps
+it importable on its own — `adapters/db.ts` creates the database at import time.
 
-That keeps `view/` importable on its own, which matters because `adapters/db.ts` opens the database and creates tables **at import time** — importing it, directly or not, creates a SQLite file as a side effect. Pure logic belongs in `view/`.
+## Deploying
 
-## Deployment
+Hosted on [JustRunMy.App](https://justrunmy.app/telegram-bots) — always-on container, free tier.
+Deploy from Git, set `BOT_TOKEN` and `FACEIT_API_KEY`, and mount a persistent volume at `/app/data`.
+Deploying from CI needs one repo secret, `JUSTRUNMY_DEPLOY_URL` =
+`https://<user>:<token>@justrunmy.app/git/<repo-id>`.
 
-Hosted on [JustRunMy.App](https://justrunmy.app/telegram-bots) (always-on containers, free tier). Create an app → **Deploy from Git**, set `BOT_TOKEN` and `FACEIT_API_KEY`, and mount a persistent volume at `/app/data`. Add `DEEPSEEK_API_KEY` too unless you want the built-in phrases — without it the bot starts fine and posts the same three canned lines forever.
-
-Any push to `main` deploys via the [Deploy workflow](.github/workflows/deploy.yml), which typechecks first — so merging a PR is a release, and `main` is always what's live. Tags deliberately don't trigger it: the host rebuilds on every push, so a tag trigger deployed each release twice.
-
-Fold the version bump into the change's own commit, so `main` never collects a separate "chore: release":
-
-```bash
-npm version minor --no-git-tag-version   # bump package.json + lock, no commit or tag
-git commit -am "feat: ..."               # change and bump in one commit
-# open a PR, let CI pass, merge — the merge deploys
-```
-
-To roll back, run Deploy manually from the **Actions** tab against the commit SHA you want. Requires one repo secret, `JUSTRUNMY_DEPLOY_URL` = `https://<user>:<token>@justrunmy.app/git/<repo-id>`.
+**Any push to `main` deploys**, via the [Deploy workflow](.github/workflows/deploy.yml), which
+typechecks first. Merging a PR is the release, and `main` is always what's live. There are no tags
+and no changelog — `package.json` plus the merge commit is the record. To roll back, run Deploy
+manually from the Actions tab against the commit SHA you want.
 
 ## Contributing
 
-Branch, open a PR against `main`, and let [CI](.github/workflows/ci.yml) typecheck it. Merging deploys to production, so keep `main` green — run `npm run typecheck` before pushing. There is no test suite; typecheck is the whole gate.
+Branch, open a PR against `main`, let [CI](.github/workflows/ci.yml) typecheck it. Merging deploys to
+production, so keep `main` green — run `npm run typecheck` before you push.
 
-`@types/node` is pinned to **24.x** on purpose — its major tracks the Node runtime major, so `npm outdated`'s offer of 26.x would typecheck against APIs the runtime doesn't have.
+Since the merge is the release, fold the version bump into the change's own commit rather than a
+separate `chore: release`:
 
-[CLAUDE.md](CLAUDE.md) documents the decisions behind the non-obvious parts.
+```bash
+npm version <patch|minor|major> --no-git-tag-version   # bumps package.json + lock, no commit, no tag
+git commit -am "feat: ..."                             # change and bump together
+```
+
+[CLAUDE.md](CLAUDE.md) documents the decisions behind the non-obvious parts, and the traps worth
+knowing before you change them: there are no schema migrations, the AI prompt and its output checks
+are deliberately split across three modules, and several behaviours that read as bugs are intentional.
 
 ## License
 

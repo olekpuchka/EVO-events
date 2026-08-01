@@ -20,9 +20,6 @@ export const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
 // The deliberate exception to the keep-in-sync rule above — the two values differ on purpose.
 export const DATA_DIR = process.env.DATA_DIR || "./app/data";
 
-// EN or UA. Left raw: i18n.ts owns the validation, so it can warn with what was actually set.
-export const LANGUAGE = process.env.LANGUAGE || "";
-
 // Floored at 5 so a typo can't turn the poll into a hammer.
 export const FACEIT_POLL_MINUTES = Math.max(5, Number(process.env.FACEIT_POLL_MINUTES) || 20);
 

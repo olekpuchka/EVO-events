@@ -45,8 +45,8 @@ bot.command("faceit", registerFaceit);
 bot.command("help", showHelp);
 
 // ─── Command menu ─────────────────────────────────────────────────────────────
-// Telegram's command registry lives here rather than in BotFather, so descriptions follow
-// LANGUAGE and ship with the deploy. Group scope only: every command returns early in a DM.
+// Telegram's command registry lives here rather than in BotFather, so descriptions ship with the
+// deploy. Group scope only: every command returns early in a DM.
 
 // is_ephemeral has clients hide the invoking "/command" from everyone but its sender, so it never
 // reaches the group at all — better than posting it and deleting it a moment later. Telegram's
