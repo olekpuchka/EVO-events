@@ -1,32 +1,10 @@
+// Context plumbing shared by every handler: replying privately, cleaning up the trigger, and the
+// group-only guard each entry point opens with. Lives beside the handlers rather than in view/
+// because all of it needs a grammy Context — it acts on an update, it doesn't render one.
+
 import type { Context } from "grammy";
-
-const HTML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;" };
-export function escapeHtml(text: string): string {
-  return text.replace(/[&<>]/g, c => HTML_ESCAPES[c]);
-}
-
-// AI phrases are generated as Telegram HTML: the prompt and sanitize() together
-// guarantee the only tags present are balanced <b>/<i>. Fully escaping them would
-// show the tags as literal text, so escape everything then restore just those two.
-export function escapeAiHtml(text: string): string {
-  return escapeHtml(text).replace(/&lt;(\/?[bi])&gt;/g, "<$1>");
-}
-
-// Rich-message blocks take literal text, not HTML, so the <b>/<i> tags an AI phrase
-// carries would render as visible tags. The blockquote is already styled italic, so
-// drop the tags entirely rather than leave them showing.
-export function stripAiHtml(text: string): string {
-  return text.replace(/<\/?[bi]>/g, "");
-}
-
-// The minimal shape buildMention needs — satisfied by both a grammy `User`
-// (ctx.from) and the member/RSVP rows read from SQLite.
-export interface Mentionable {
-  id: number;
-  username?: string | null;
-  first_name: string;
-  last_name?: string | null;
-}
+import type { User } from "@grammyjs/types";
+import { t } from "../view/i18n.ts";
 
 type ReplyOptions = NonNullable<Parameters<Context["reply"]>[1]>;
 
@@ -65,9 +43,22 @@ export async function sendEphemeral(ctx: Context, text: string, opts: ReplyOptio
   autoDelete(ctx, reply);
 }
 
-export function buildMention(user: Mentionable): string {
-  const name = user.username
-    ? `@${user.username}`
-    : [user.first_name, user.last_name].filter(Boolean).join(" ");
-  return `<a href="tg://user?id=${user.id}">${escapeHtml(name)}</a>`;
+// Any context that has resolved a chat — every command and text trigger the bot registers.
+type ChattyContext = Context & { chat: NonNullable<Context["chat"]> };
+
+// The two guards every command opens with: group chats only, and a real sender. A DM gets the
+// one-line explanation; an anonymous admin or channel post is dropped, having nobody to answer
+// privately. Wrapped rather than repeated because the cleared `default` command scope leans on it
+// — see CLAUDE.md. `from` comes through narrowed, so handlers never re-check it.
+export function groupOnly<C extends ChattyContext, A extends unknown[]>(
+  handler: (ctx: C, from: User, ...args: A) => Promise<void>,
+): (ctx: C, ...args: A) => Promise<void> {
+  return async (ctx, ...args) => {
+    if (ctx.chat.type === "private") {
+      await ctx.reply(t("groupOnly"));
+      return;
+    }
+    if (!ctx.from) return;
+    await handler(ctx, ctx.from, ...args);
+  };
 }

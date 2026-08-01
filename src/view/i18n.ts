@@ -1,13 +1,14 @@
+import { LANGUAGE } from "../config.ts";
+
 const SUPPORTED = ["EN", "UA"] as const;
 type Lang = (typeof SUPPORTED)[number];
 
 const DEFAULT_LANG: Lang = "UA";
 
-// `||`, not `??`, so an empty LANGUAGE= in a .env falls back rather than failing the check below.
-const requested = (process.env.LANGUAGE || DEFAULT_LANG).toUpperCase();
+const requested = (LANGUAGE || DEFAULT_LANG).toUpperCase();
 const supported = SUPPORTED.includes(requested as Lang);
 if (!supported) {
-  console.warn(`[i18n] Unknown LANGUAGE "${process.env.LANGUAGE}", falling back to ${DEFAULT_LANG}.`);
+  console.warn(`[i18n] Unknown LANGUAGE "${LANGUAGE}", falling back to ${DEFAULT_LANG}.`);
 }
 export const LANG: Lang = supported ? (requested as Lang) : DEFAULT_LANG;
 
@@ -33,10 +34,17 @@ const LABELS: Record<Lang, Record<string, Label>> = {
     cmdUnmute: "Mention me in @all",
     cmdFaceit: "Link or check your FACEIT account",
     cmdHelp: "How to use the bot",
-    helpBody: `<b>@all CS 22:00</b> — mentions everyone and pins an event with RSVP buttons. A reminder goes out 10 min before, and it unpins at start time.
-<b>@all CS</b> — no time, so it only mentions everyone.
+    // One block per form, each a bold header over its own description, blank line between. The
+    // two used to share a paragraph and the second wrapped straight onto the first — unreadable.
+    helpBody: `<b>@all CS 22:00</b>
+Mentions everyone and pins an event with RSVP buttons.
+Reminder 10 min before the start, unpins when it begins.
+
+<b>@all CS</b>
+No time — mentions everyone, nothing gets pinned.
 
 Every command is in the <b>/</b> menu.
+
 New here? Send /unmute to get on the list.`,
     alreadyJoining: "🍌 You're already joining!",
     alreadyNotJoining: "❌ You're already not joining!",
@@ -86,12 +94,16 @@ New here? Send /unmute to get on the list.`,
     cmdUnmute: "Згадувати мене в @all",
     cmdFaceit: "Прив'язати або перевірити акаунт FACEIT",
     cmdHelp: "Як користуватися ботом",
-    helpBody: `<b>@all CS 22:00</b> — згадує всіх і закріплює подію з кнопками. Нагадування — за 10 хв до старту, відкріплення — на початку.
-<b>@all CS</b> — без часу, тільки згадка.
+    helpBody: `<b>@all CS 22:00</b>
+Згадує всіх і закріплює подію з кнопками.
+Нагадування — за 10 хв до старту, відкріплення — на початку.
+
+<b>@all CS</b>
+Без часу — тільки згадка, нічого не закріплюється.
 
 Усі команди — у меню <b>/</b>.
 
-Вперше тут? Надішли /unmute щоб потрапити в список.`,
+Вперше тут? Надішли /unmute, щоб потрапити в список.`,
     alreadyJoining: "🍌 Ти вже в грі!",
     alreadyNotJoining: "❌ Ти вже не береш участь!",
     squadFull: (max) => `🔒 Сквад уже повний (${max}/${max})!`,

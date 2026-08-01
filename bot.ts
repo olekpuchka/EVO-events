@@ -1,28 +1,33 @@
 import "./src/log.ts"; // first — ESM runs imports in order, so startup warnings are stamped too
 import { Bot } from "grammy";
 import type { BotCommand } from "@grammyjs/types";
-import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, endEvent, registerFaceit, autoPostResult, claimBotPin, unpinEventMessage, showHelp } from "./src/handlers.ts";
-import { getDueUnpins, getDueReminders, deleteScheduledReminder, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/db.ts";
-import { t } from "./src/i18n.ts";
+import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, endEvent, registerFaceit, claimBotPin, unpinEventMessage, showHelp } from "./src/handlers/events.ts";
+import { autoPostResult } from "./src/handlers/results.ts";
+import { getDueUnpins, getDueReminders, deleteScheduledReminder, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/adapters/db.ts";
+import { t } from "./src/view/i18n.ts";
+import { BOT_TOKEN, FACEIT_API_KEY, DEEPSEEK_API_KEY, FACEIT_POLL_MINUTES } from "./src/config.ts";
 
 // State the config up front — a missing FACEIT key otherwise just 401s forever, silently.
-if (!process.env.BOT_TOKEN) {
+if (!BOT_TOKEN) {
   console.error("[config] BOT_TOKEN is not set — cannot start.");
   process.exit(1);
 }
-if (!process.env.FACEIT_API_KEY) {
+if (!FACEIT_API_KEY) {
   console.warn("[config] FACEIT_API_KEY is not set — /faceit and auto match results will fail (every poll 401s).");
 }
-if (!process.env.DEEPSEEK_API_KEY) {
+if (!DEEPSEEK_API_KEY) {
   console.log("[config] DEEPSEEK_API_KEY is not set — using built-in phrases instead of AI.");
 }
 
-const bot = new Bot(process.env.BOT_TOKEN);
+const bot = new Bot(BOT_TOKEN);
 
 // ─── Normalize command case (grammy matches /command exactly, case-sensitive) ─
 
+// Only `message`: grammy resolves a command from `ctx.message ?? ctx.channelPost`, but
+// `allowed_updates` below no longer admits a channel post — and every handler dropped one anyway,
+// having no `from` to answer.
 bot.use((ctx, next) => {
-  const msg = ctx.message ?? ctx.channelPost;
+  const msg = ctx.message;
   const entity = msg?.entities?.find(e => e.type === "bot_command" && e.offset === 0);
   if (entity && msg?.text) {
     const cmd = msg.text.slice(0, entity.length);
@@ -85,7 +90,7 @@ bot.callbackQuery(/^(join|not_join)$/, handleRsvp);
 
 // ─── Unpin + reminder scheduler: check every minute ──────────────────────────
 
-const FACEIT_POLL_INTERVAL = Math.max(5, Number(process.env.FACEIT_POLL_MINUTES) || 20) * 60;
+const FACEIT_POLL_INTERVAL = FACEIT_POLL_MINUTES * 60;
 const PRUNE_INTERVAL = 24 * 60 * 60;
 let lastFaceitPoll = 0;
 // Seeded with the boot time, a prune needed 24h of unbroken uptime — with regular redeploys
@@ -177,21 +182,28 @@ bot.catch((err) => {
 
 // ─── Graceful shutdown ───────────────────────────────────────────────────────
 
-process.once("SIGTERM", () => {
-  console.log("SIGTERM received, stopping bot…");
+// Both signals land here; the container sends SIGTERM on every redeploy.
+//
+// The database is deliberately left open. SQLite auto-checkpoints the WAL every 1000 pages, so it
+// self-caps near 4MB unaided, and closing here would race the FACEIT poll and the scheduler tick —
+// both outlive bot.stop() and would throw on a finalized statement mid-write. An unclosed WAL is
+// replayed on the next open; a half-written one is not.
+async function shutdown(signal: string): Promise<void> {
+  console.log(`${signal} received, stopping bot…`);
   clearInterval(schedulerInterval);
-  bot.stop();
-});
+  await bot.stop();
+}
 
-process.once("SIGINT", () => {
-  console.log("SIGINT received, stopping bot…");
-  clearInterval(schedulerInterval);
-  bot.stop();
-});
+process.once("SIGTERM", () => void shutdown("SIGTERM"));
+process.once("SIGINT", () => void shutdown("SIGINT"));
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 bot.start({
+  // Only the two update types anything here handles: `message` carries @all, every command and the
+  // pinned-message notice; `callback_query` carries the RSVP taps. Left unset, Telegram also sends
+  // edited messages, channel posts and business messages — all fetched, parsed and dropped.
+  allowed_updates: ["message", "callback_query"],
   onStart: ({ username }) => {
     console.log(`@${username} is running (Node ${process.version}).`);
     // Unawaited — the menu is decoration; a slow registry call must not delay answering updates.

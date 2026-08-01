@@ -1,6 +1,7 @@
 import { DatabaseSync, type StatementSync, type SQLInputValue } from "node:sqlite";
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { DATA_DIR } from "../config.ts";
 import type { User } from "@grammyjs/types";
 import type {
   MemberRow,
@@ -10,7 +11,7 @@ import type {
   FaceitMemberRow,
   DueUnpinRow,
   DueReminderRow,
-} from "./types.ts";
+} from "../types.ts";
 
 type ChatId = number | string;
 
@@ -21,9 +22,6 @@ const allRows = <T>(stmt: StatementSync, ...params: SQLInputValue[]): T[] =>
 const oneRow = <T>(stmt: StatementSync, ...params: SQLInputValue[]): T | undefined =>
   stmt.get(...params) as unknown as T | undefined;
 
-// app/data inside the project; the image overrides this with the absolute /app/data volume mount.
-// `||` not `??`, so an empty DATA_DIR= in a .env means "unset" rather than the working directory.
-const DATA_DIR = process.env.DATA_DIR || "./app/data";
 mkdirSync(DATA_DIR, { recursive: true });
 // Say where the data landed — a wrong path here is an empty database, with no other symptom.
 console.log(`[db] ${DATA_DIR}`);
@@ -238,7 +236,6 @@ export function getReminderMessageId(chatId: ChatId, messageId: number): number 
   return oneRow<{ reminder_message_id: number | null }>(stmtGetReminderMessageId, String(chatId), messageId)?.reminder_message_id ?? null;
 }
 
-
 export function saveReminderMessageId(chatId: ChatId, messageId: number, reminderMessageId: number): void {
   stmtUpdateUnpinReminderId.run(reminderMessageId, String(chatId), messageId);
 }
@@ -307,7 +304,11 @@ db.exec(`
 
 const stmtHasPostedMatch = db.prepare(`SELECT 1 FROM posted_matches WHERE chat_id = ? AND match_id = ?`);
 const stmtMarkMatchPosted = db.prepare(`INSERT OR IGNORE INTO posted_matches (chat_id, match_id, posted_at) VALUES (?, ?, datetime('now'))`);
-const stmtPrunePostedMatches = db.prepare(`DELETE FROM posted_matches WHERE posted_at < datetime('now', '-30 days')`);
+// `posted_at IS NULL` is carried explicitly: in SQL `NULL < x` is NULL, not true, so a row missing
+// the stamp would otherwise outlive every prune. Inserts always write one, but nothing backfills.
+const stmtPrunePostedMatches = db.prepare(`
+  DELETE FROM posted_matches WHERE posted_at IS NULL OR posted_at < datetime('now', '-30 days')
+`);
 
 export function hasPostedMatch(chatId: ChatId, matchId: string): boolean {
   return !!stmtHasPostedMatch.get(String(chatId), matchId);

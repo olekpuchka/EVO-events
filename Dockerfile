@@ -10,8 +10,8 @@ WORKDIR /app
 ENV NODE_ENV=production
 
 # Non-secret config; runtime env (JustRunMy.App → Settings) overrides any of it.
-# KEEP IN SYNC: an ENV here beats the fallback in src/, so changing a code default alone
-# never reaches the container.
+# KEEP IN SYNC: an ENV here beats the fallback in src/config.ts, so changing a code default
+# alone never reaches the container.
 ENV DATA_DIR=/app/data
 ENV LANGUAGE=UA
 ENV FACEIT_POLL_MINUTES=20
