@@ -1,11 +1,20 @@
 import OpenAI from "openai";
-import { t, LANG } from "./i18n.ts";
-import type { MatchPlayer, EloPair, MatchFlow } from "./types.ts";
+import { t, LANG } from "../view/i18n.ts";
+import { DEEPSEEK_API_KEY } from "../config.ts";
+import type { MatchPlayer, EloPair, MatchFlow } from "../types.ts";
 
 type Kind = "hype" | "win" | "loss";
 
-const ai = process.env.DEEPSEEK_API_KEY
-  ? new OpenAI({ apiKey: process.env.DEEPSEEK_API_KEY, baseURL: "https://api.deepseek.com" })
+// Both callers block on this: handleRsvp before the 5/5 edit, sendReminder after the scheduler
+// already claimed the row. The SDK applies `timeout` per attempt, so no retries — 15s is then a
+// hard bound, against a measured 4–9s. A miss costs a fallback phrase, which is what they're for.
+const ai = DEEPSEEK_API_KEY
+  ? new OpenAI({
+      apiKey: DEEPSEEK_API_KEY,
+      baseURL: "https://api.deepseek.com",
+      timeout: 15_000,
+      maxRetries: 0,
+    })
   : null;
 
 const FALLBACK_HYPE = t("fallbackHype");

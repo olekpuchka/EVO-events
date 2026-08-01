@@ -4,7 +4,9 @@ import type {
   FaceitHistoryItem,
   FaceitMatchStats,
   FaceitMatchDetails,
-} from "./types.ts";
+} from "../types.ts";
+
+import { FACEIT_API_KEY } from "../config.ts";
 
 const BASE = "https://open.faceit.com/data/v4";
 
@@ -13,7 +15,7 @@ export const matchRoomUrl = (matchId: string): string =>
   `https://www.faceit.com/en/cs2/room/${matchId}/scoreboard`;
 
 function authHeader(): Record<string, string> {
-  return { Authorization: `Bearer ${process.env.FACEIT_API_KEY}` };
+  return { Authorization: `Bearer ${FACEIT_API_KEY}` };
 }
 
 const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
