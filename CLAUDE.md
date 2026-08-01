@@ -20,8 +20,8 @@ handler. The sideways edges all run `adapters/ai.ts` → `view/`: `i18n.ts` for 
 
 A phrase therefore crosses three modules, split by what makes each one change: `view/prompt.ts` is
 jokes and tone, `view/phrase.ts` is what may not ship, and `adapters/ai.ts` is only the call, the
-retry and the fallback — 88 lines, none of them about wording. Adding an angle or a stat touches
-`prompt.ts` alone.
+retry and the fallback — no wording in it at all. Adding an angle or a stat touches `prompt.ts`
+alone.
 
 That keeps `view/` importable on its own, which matters because `adapters/db.ts` opens the file and
 creates tables **at import time** — importing it, directly or not, creates a database as a side
@@ -43,9 +43,9 @@ Telegram's command registry is published from `bot.ts` on every boot. BotFather 
 source of truth — anything set there is overwritten on the next deploy.
 
 A command lives in **two** places: its `bot.command(...)` handler and the `GROUP_COMMANDS` list.
-Adding or renaming one means changing both, plus a `cmd*` key in **both** languages in
-`src/view/i18n.ts` — `t()` falls back to `EN` with only a console warning, so a missing `UA`
-description ships English rather than failing.
+Adding or renaming one means changing both, plus a `cmd*` key in `src/view/i18n.ts`. `LABELS` is
+declared with `satisfies`, not an annotation, so `t()` takes `keyof typeof LABELS` — a missing or
+misspelled key fails typecheck instead of reaching the group.
 
 That cost is why a secondary action is an **argument**, not a command: `/faceit off` unlinks, and
 `/faceit` with no argument reports the current link. Both live inside the one handler, so neither
@@ -166,9 +166,9 @@ every single time and kept landing on the same player — four of six messages a
 in the register of "he was carried" and "he's a bot". Banned outright, it stopped teasing at all.
 Rolling it keeps the dig a surprise and spreads who wears it.
 
-**A win highlights us, a loss highlights them.** On a loss our roster never reaches the model —
-crediting our own numbers while losing reads as self-congratulation, and using them to explain the
-defeat reads as blame. The opponents become the subject instead, which is why `opponentsLine` takes
+**A win highlights us, a loss highlights them.** That rule is enforced by the data, not the prompt:
+on a loss our roster never reaches the model at all, so it cannot land on a teammate even if asked
+to. The opponents become the subject instead, which is why `opponentsLine` takes
 `won`: their top fragger's kills and ADR plus the team's best HS% are what the suspicious-aim, smurf
 and exit-frag angles were always reaching for, and without real figures the model invented them.
 Opponents are never named — they're outside the group, and anonymous carries the joke anyway.

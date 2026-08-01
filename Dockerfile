@@ -13,7 +13,6 @@ ENV NODE_ENV=production
 # KEEP IN SYNC: an ENV here beats the fallback in src/config.ts, so changing a code default
 # alone never reaches the container.
 ENV DATA_DIR=/app/data
-ENV LANGUAGE=UA
 ENV FACEIT_POLL_MINUTES=20
 # Empty means everyone is on Kyiv time.
 ENV EU_TIMEZONE_MEMBERS=""
