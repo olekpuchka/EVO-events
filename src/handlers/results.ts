@@ -12,9 +12,11 @@ import type { RichText, RichBlockTableCell } from "@grammyjs/types";
 import type {
   FaceitMatchStats,
   FaceitMatchDetails,
+  FaceitStatPlayer,
   EloPair,
   MatchFlow,
   MatchPlayer,
+  Opponents,
   ResultRow,
   MatchResult,
 } from "../types.ts";
@@ -28,6 +30,45 @@ interface RegEntry {
 
 // The exact block-array type sendRichMessage accepts, so buildResultBlocks stays in sync with grammy.
 type RichBlocks = NonNullable<NonNullable<Parameters<Api["sendRichMessage"]>[1]>["blocks"]>;
+
+// The only place FACEIT's stat key spellings appear. Run for our roster and for the
+// opposing one, so both read the same keys through the same coercion.
+function toMatchPlayer(p: FaceitStatPlayer): MatchPlayer {
+  const s = p.player_stats ?? {};
+  return {
+    nickname: p.nickname,
+    kills: Number(s.Kills),
+    deaths: Number(s.Deaths),
+    assists: Number(s.Assists),
+    kd: Number(s["K/D Ratio"]),
+    adr: Number(s.ADR),
+    damage: Number(s.Damage),
+    hs: Number(s["Headshots %"]),
+    mvps: Number(s.MVPs),
+    doubles: Number(s["Double Kills"]),
+    triples: Number(s["Triple Kills"]),
+    quadros: Number(s["Quadro Kills"]),
+    aces: Number(s["Penta Kills"]),
+    firstKills: Number(s["First Kills"]),
+    entries: Number(s["Entry Wins"]),
+    entryCount: Number(s["Entry Count"]),
+    onevoneWins: Number(s["1v1Wins"]),
+    onevoneCount: Number(s["1v1Count"]),
+    clutches: Number(s["1v2Wins"]),
+    clutchCount: Number(s["1v2Count"]),
+    clutchKills: Number(s["Clutch Kills"]),
+    awp: Number(s["Sniper Kills"]),
+    pistol: Number(s["Pistol Kills"]),
+    knife: Number(s["Knife Kills"]),
+    zeus: Number(s["Zeus Kills"]),
+    util: Number(s["Utility Damage"]),
+    utilEnemies: Number(s["Utility Enemies"]),
+    utilCount: Number(s["Utility Count"]),
+    flashes: Number(s["Enemies Flashed"]),
+    flashSuccesses: Number(s["Flash Successes"]),
+    flashCount: Number(s["Flash Count"]),
+  };
+}
 
 async function buildMatchResult(
   stats: FaceitMatchStats,
@@ -81,24 +122,27 @@ async function buildMatchResult(
     || rawMap.replace(/^de_/, "").replace(/^cs_/, "").replace(/^\w/, c => c.toUpperCase())
     || null;
   const mapImage = getMapImage(matchDetails, rawMap);
-  const players: MatchPlayer[] = registered.map(p => {
-    const s = p.player_stats ?? {};
-    return {
-      nickname: p.nickname,
-      kills: Number(s.Kills),
-      deaths: Number(s.Deaths),
-      assists: Number(s.Assists),
-      adr: Number(s.ADR),
-      hs: Number(s["Headshots %"]),
-      aces: Number(s["Penta Kills"]),
-      quadros: Number(s["Quadro Kills"]),
-      clutches: Number(s["1v2Wins"]),
-      awp: Number(s["Sniper Kills"]),
-      entries: Number(s["Entry Wins"]),
-      util: Number(s["Utility Damage"]),
-      flashes: Number(s["Enemies Flashed"]),
-    };
-  });
+  const players: MatchPlayer[] = registered.map(toMatchPlayer);
+  // Their side, anonymised for the AI phrase — "best fragger" is by kills, and bestHs
+  // is the team's peak, which is what the suspicious-aim angles reach for. Mapped
+  // through toMatchPlayer so the FACEIT key spellings live in exactly one place.
+  // Players without stats are dropped before the reduce: seeded with a NaN kill count
+  // every later comparison is false, so the whole opponents block would vanish — and
+  // on a loss that leaves the model with no numbers at all, since our roster is
+  // deliberately withheld.
+  const theirs = (theirTeam?.players ?? []).map(toMatchPlayer).filter(p => Number.isFinite(p.kills));
+  const theirHs = theirs.map(p => p.hs).filter(Number.isFinite);
+  const theirTop = theirs.reduce<MatchPlayer | null>(
+    (best, p) => (!best || p.kills > best.kills ? p : best),
+    null
+  );
+  const opponents: Opponents | null = theirTop
+    ? {
+        topKills: theirTop.kills,
+        topAdr: theirTop.adr,
+        bestHs: theirHs.length ? Math.max(...theirHs) : NaN,
+      }
+    : null;
   const matchFlow: MatchFlow | null = theirTeam
     ? {
         ourFirst: Number(ourTeam.team_stats?.["First Half Score"]),
@@ -107,7 +151,7 @@ async function buildMatchResult(
         theirOt: Number(theirTeam.team_stats?.["Overtime score"]),
       }
     : null;
-  const phrase = await generateMatchPhrase(won, `${ourScore}:${theirScore}`, { map, elo, players, matchFlow });
+  const phrase = await generateMatchPhrase(won, `${ourScore}:${theirScore}`, { map, elo, players, matchFlow, opponents });
 
   return { won, ourScore, theirScore, elo, mapImage, matchId, rows: resultRows, phrase };
 }

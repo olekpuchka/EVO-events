@@ -12,7 +12,7 @@ Built with [grammY](https://grammy.dev/) in TypeScript, storing everything in bu
 - **"Mentioned:" list** names who hasn't answered yet and shrinks as they do.
 - **Reminder 10 minutes before** start, once at least two people are in, with a last call naming whoever is still undecided. Auto-unpins at start time.
 - **Parallel events** — 20:00 and 22:00 can run at once, each with its own RSVPs, reminder and unpin.
-- **FACEIT results** post automatically: K/D/A, ADR, per-player Elo ↑/↓, team Elo, and an AI line that reacts to the actual match (top fraggers, aces, clutches, comebacks, overtime).
+- **FACEIT results** post automatically: K/D/A, ADR, per-player Elo ↑/↓, team Elo, and an AI line that reacts to the actual match. A win picks its own shoutout from every player's full stat line, so it can land on a knife kill, 606 utility damage or a lone Zeus rather than only the top fragger. A loss turns outward instead — it never names our own players, and roasts the opponents' suspiciously good aim using their real numbers.
 - **AI hype phrases** (DeepSeek, optional) when the squad fills and in the reminder — one per event, so a drop-out and re-fill keeps the same line.
 - **Two timezones** — event times show 🇺🇦 Kyiv and 🇪🇺 CET side by side.
 - **Quiet by default** — slash commands are hidden from everyone but the sender, and hints, errors and confirmations reply privately.
@@ -81,25 +81,27 @@ src/
   adapters/         one module per external system
     db.ts             SQLite
     faceit.ts         FACEIT Data API
-    ai.ts             DeepSeek
+    ai.ts             DeepSeek call, retry, fallback (deepseek-v4-pro, thinking off)
   view/             data → strings; no I/O, no Telegram context
     html.ts           escaping and mentions
     i18n.ts           EN/UA copy
     render.ts         event text, reminders, keyboards
     eventtime.ts      parsing "22:00", rendering both timezones
+    prompt.ts         system prompt, angle roulette, match facts → prompt text
+    phrase.ts         sanitizing, the checks a reply must pass, emoji
   handlers/         Telegram entry points
     events.ts         @all, RSVP, /cancel, /mute, /faceit, reminders
     results.ts        FACEIT poll → scoreboard
     guards.ts         group-only wrapper, private replies, trigger cleanup
 ```
 
-One rule holds it together: **exactly one module talks to each external system.** Nothing outside `adapters/faceit.ts` calls `fetch`, nothing outside `adapters/db.ts` imports `node:sqlite`, nothing outside `adapters/ai.ts` builds an LLM client. Nothing points back up either — `view/` imports no adapter and no handler. One sideways edge: `adapters/ai.ts` → `view/i18n.ts`, for the fallback phrases.
+One rule holds it together: **exactly one module talks to each external system.** Nothing outside `adapters/faceit.ts` calls `fetch`, nothing outside `adapters/db.ts` imports `node:sqlite`, nothing outside `adapters/ai.ts` builds an LLM client. Nothing points back up either — `view/` imports no adapter and no handler. The sideways edges all run `adapters/ai.ts` → `view/`: `i18n.ts` for fallback phrases, `prompt.ts` for what to ask, `phrase.ts` for judging the reply.
 
 That keeps `view/` importable on its own, which matters because `adapters/db.ts` opens the database and creates tables **at import time** — importing it, directly or not, creates a SQLite file as a side effect. Pure logic belongs in `view/`.
 
 ## Deployment
 
-Hosted on [JustRunMy.App](https://justrunmy.app/telegram-bots) (always-on containers, free tier). Create an app → **Deploy from Git**, set `BOT_TOKEN` and `FACEIT_API_KEY`, and mount a persistent volume at `/app/data`.
+Hosted on [JustRunMy.App](https://justrunmy.app/telegram-bots) (always-on containers, free tier). Create an app → **Deploy from Git**, set `BOT_TOKEN` and `FACEIT_API_KEY`, and mount a persistent volume at `/app/data`. Add `DEEPSEEK_API_KEY` too unless you want the built-in phrases — without it the bot starts fine and posts the same three canned lines forever.
 
 Any push to `main` deploys via the [Deploy workflow](.github/workflows/deploy.yml), which typechecks first — so merging a PR is a release, and `main` is always what's live. Tags deliberately don't trigger it: the host rebuilds on every push, so a tag trigger deployed each release twice.
 
