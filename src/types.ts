@@ -126,9 +126,21 @@ export interface PhraseRequest {
   checks: PhraseChecks;
 }
 
+// Why a phrase can't ship. Here rather than in view/phrase.ts because all three modules
+// handle one: phrase.ts decides it, ai.ts logs and retries, prompt.ts corrects.
+export type RejectReason =
+  | "empty" | "elo" | "language" | "scoreline" | "unsourced-stat" | "unknown-code" | "callout";
+
+// A judged reply. Named here because view/phrase.ts returns it and adapters/ai.ts
+// forwards it untouched — the `"phrase" in result` narrowing on both sides must agree.
+export type PhraseVerdict = { phrase: string } | { rejected: RejectReason };
+
 // What a generated phrase is checked against, decided while building the prompt.
 export interface PhraseChecks {
   allowElo: boolean;
+  // Hype may name a place: «rush B» is one of its angles and no round has been played.
+  // A match message never may. Set in prompt.ts, where the angles that need it live.
+  allowCallouts: boolean;
   players: PromptPlayer[];
   safeNumbers: Set<string>;
   // Scorelines the prompt supplied itself, e.g. the half-time score behind a comeback
@@ -138,12 +150,18 @@ export interface PhraseChecks {
   map: string | null;
 }
 
+// All a hype message knows besides the event name — it gets no stats.
+export interface HypeContext {
+  startsIn?: number | null; // minutes until kick-off, null when the event has no time
+  squadFull?: boolean;
+}
+
 export interface MatchPhraseContext {
   map?: string | null;
   elo?: EloPair | null;
   players?: MatchPlayer[];
   matchFlow?: MatchFlow | null;
-  opponents?: Opponents | null;
+  opponents?: Opponents;
 }
 
 /* ── Structures handed from the FACEIT layer to the AI layer ───────────────── */
@@ -153,14 +171,9 @@ export interface EloPair {
   theirs: number | string;
 }
 
-// The other team, anonymised. Several loss angles are jokes about the opponents'
-// suspiciously good aim, so they need real numbers — but never a name, since
-// they're outside the group and the phrase has no business identifying them.
-export interface Opponents {
-  topKills: number; // their best fragger, and topAdr is that same player's
-  topAdr: number;
-  bestHs: number; // highest HS% anyone on their team managed
-}
+// The other team, anonymised: everyone with stats, minus the nickname — they're outside the
+// group. The numbers are real because the suspicious-aim angles are built on them.
+export type Opponents = Omit<MatchPlayer, "nickname">[];
 
 export interface MatchFlow {
   ourFirst: number;

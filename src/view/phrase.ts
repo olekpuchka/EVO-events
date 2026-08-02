@@ -6,7 +6,7 @@
 // `finalizePhrase` returns null for a phrase that must not ship. The caller retries
 // once before falling back; see **The AI call** in CLAUDE.md.
 
-import type { Kind, PhraseChecks, PromptPlayer } from "../types.ts";
+import type { Kind, PhraseChecks, PhraseVerdict, PromptPlayer } from "../types.ts";
 
 /* ------------------------------------------------------------------ *
  * Emoji are picked in code and appended after generation — one less
@@ -65,9 +65,18 @@ const TERM_RX: [RegExp, string][] = TERM_FIX.map(([canon, spellings]) => [
   canon,
 ]);
 
+// «Звісно, ось повідомлення в заданому стилі: …» shipped once. Stripped, not rejected — a
+// rejection costs the one retry. Nothing may sit between the deictic and the noun: looser
+// versions ate «Ось текст нашого заповіту:» and «Ось офіційне повідомлення прес-служби:», both
+// openings the angles invite by name, and the strip is silent so nothing reports it.
+const PREAMBLE =
+  /^(?:звісно|гаразд|окей|добре|sure|okay|of course)?[,\s]*(?:ось|here'?s|here is)\s+(?:the\s+|твоє\s+|ваше\s+)?(?:повідомленн\p{L}*|message)(?:\s+(?:в|у)\s+заданому\s+\p{L}+|\s+(?:as|you)\s+\p{L}+(?:\s+\p{L}+)?)?\s*:\s+/iu;
+
 function sanitize(text: string, map: string | null): string {
   let r = text
+    // Quotes first: the preamble strip is anchored, and a reply wrapped in «…» hid it behind them.
     .replace(/["«»„“”‘‚]/g, "")
+    .replace(PREAMBLE, "")
     // strip apostrophe-like chars only OUTSIDE words, so quoting is gone but
     // Ukrainian intra-word apostrophes (зв'язки, п'ятірка) survive
     .replace(/(?<!\p{L})['’ʼ]/gu, "")
@@ -147,10 +156,17 @@ function unsourcedStat(text: string, players: PromptPlayer[], safe: Set<string>)
     .some(n => !mine.has(n) && !safe.has(n));
 }
 
-// Instructions alone don't hold the language either — a UA run came back as two
-// English sentences with one Ukrainian clause. Counting Latin characters is the
-// wrong test, since nicknames, ADR, MVP and "full buy" are all legitimately Latin.
-// English function words are the tell: never Ukrainian, never a gaming term.
+// The map is given, the position never is, so a callout is always invented — it put their coach
+// «над Banana». `allowCallouts` decides who is judged. Every entry has to survive being an
+// ordinary word in a joke: no «піт» (sweat), «вікно», «палац» or ninja (`ninja defuse` is an
+// angle), «мід» takes no case ending, and Cyrillic «банан» needs a place preposition.
+const CALLOUT =
+  /(?<![\p{L}\p{N}])(?:(?:на|в|у|через|біля|під)\s+банан\p{L}{0,2}|banana|mid|мід|ramp|рамп\p{L}{0,2}|long|лонг|short|шорт|connector|конектор|коннектор|catwalk|катвок|heaven|хевен|jungle|джангл|[AB][\s-]?site)(?![\p{L}\p{N}])/iu;
+
+// Instructions alone don't hold the language either — a UA run came back as two English
+// sentences with one Ukrainian clause. Counting Latin characters is the wrong test, since
+// nicknames, ADR, MVP and "full buy" are legitimately Latin. English function words are the
+// tell: never Ukrainian, never a gaming term.
 const ENGLISH_TELL =
   /(?<![\p{L}\p{N}])(the|and|that|this|with|from|was|were|have|has|been|just|after|before|nothing|they|them|their|threw|still|only|about|into|than|then|when|what|because|would|could|should)(?![\p{L}\p{N}])/giu;
 
@@ -160,16 +176,14 @@ function wrongLanguage(text: string): boolean {
 
 /* ------------------------------------------------------------------ */
 
-export type RejectReason = "empty" | "elo" | "language" | "scoreline" | "unsourced-stat" | "unknown-code";
-
 // The model's raw reply → a sendable phrase, or why it can't ship. The caller logs
 // the reason and asks again: a rejection that starts firing on every call would
 // otherwise look exactly like the API being down.
 export function finalizePhrase(
   text: string,
   kind: Kind,
-  { allowElo, players, safeNumbers, allowedScorelines, map }: PhraseChecks
-): { phrase: string } | { rejected: RejectReason } {
+  { allowElo, allowCallouts, players, safeNumbers, allowedScorelines, map }: PhraseChecks
+): PhraseVerdict {
   let result = sanitize(text, map);
 
   // Cheapest first, and all of these read better before the swap: a nickname could
@@ -179,6 +193,7 @@ export function finalizePhrase(
   if (!allowElo && ELO_MENTION.test(result)) return { rejected: "elo" };
   if (wrongLanguage(result)) return { rejected: "language" };
   if (badScoreline(result, allowedScorelines)) return { rejected: "scoreline" };
+  if (!allowCallouts && CALLOUT.test(result)) return { rejected: "callout" };
   if (unsourcedStat(result, players, safeNumbers)) return { rejected: "unsourced-stat" };
 
   // Codes back to nicknames in one pass (immune to transliteration). Doing it per

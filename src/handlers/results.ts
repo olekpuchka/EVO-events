@@ -123,26 +123,12 @@ async function buildMatchResult(
     || null;
   const mapImage = getMapImage(matchDetails, rawMap);
   const players: MatchPlayer[] = registered.map(toMatchPlayer);
-  // Their side, anonymised for the AI phrase — "best fragger" is by kills, and bestHs
-  // is the team's peak, which is what the suspicious-aim angles reach for. Mapped
-  // through toMatchPlayer so the FACEIT key spellings live in exactly one place.
-  // Players without stats are dropped before the reduce: seeded with a NaN kill count
-  // every later comparison is false, so the whole opponents block would vanish — and
-  // on a loss that leaves the model with no numbers at all, since our roster is
-  // deliberately withheld.
-  const theirs = (theirTeam?.players ?? []).map(toMatchPlayer).filter(p => Number.isFinite(p.kills));
-  const theirHs = theirs.map(p => p.hs).filter(Number.isFinite);
-  const theirTop = theirs.reduce<MatchPlayer | null>(
-    (best, p) => (!best || p.kills > best.kills ? p : best),
-    null
-  );
-  const opponents: Opponents | null = theirTop
-    ? {
-        topKills: theirTop.kills,
-        topAdr: theirTop.adr,
-        bestHs: theirHs.length ? Math.max(...theirHs) : NaN,
-      }
-    : null;
+  // Raw, because which stat is worth a joke is a prompt decision. Players without stats lose
+  // every comparison the picker makes, and the nickname is deleted — `Omit` erases at runtime.
+  const opponents: Opponents = (theirTeam?.players ?? [])
+    .map(toMatchPlayer)
+    .filter(p => Number.isFinite(p.kills))
+    .map(({ nickname: _drop, ...stats }) => stats);
   const matchFlow: MatchFlow | null = theirTeam
     ? {
         ourFirst: Number(ourTeam.team_stats?.["First Half Score"]),

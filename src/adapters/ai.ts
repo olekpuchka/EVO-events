@@ -4,10 +4,10 @@
 
 import OpenAI from "openai";
 import { t } from "../view/i18n.ts";
-import { hypePrompt, matchPrompt, remember, SYSTEM_PROMPT } from "../view/prompt.ts";
+import { hypePrompt, matchPrompt, remember, retryAsk, SYSTEM_PROMPT } from "../view/prompt.ts";
 import { finalizePhrase } from "../view/phrase.ts";
 import { DEEPSEEK_API_KEY } from "../config.ts";
-import type { Kind, MatchPhraseContext, PhraseChecks } from "../types.ts";
+import type { HypeContext, Kind, MatchPhraseContext, PhraseChecks, PhraseVerdict } from "../types.ts";
 
 // Both callers block on this: handleRsvp before the 5/5 edit, sendReminder after the scheduler
 // already claimed the row. `maxRetries: 0` is about transport — a failed call is not worth
@@ -28,19 +28,21 @@ const FALLBACK_HYPE = t("fallbackHype");
 const FALLBACK_WIN = t("fallbackWin");
 const FALLBACK_LOSS = t("fallbackLoss");
 
-// One attempt: null means the reply broke a rule and the caller may ask again.
-// A thrown error is the API failing, which retrying wouldn't fix. Both log why —
-// a silent drop to the fallback is indistinguishable from the API being down, and
-// that is exactly how a switched-back-on `thinking` went unnoticed once already.
-async function generateOnce(kind: Kind, prompt: string, checks: PhraseChecks): Promise<string | null> {
+// One attempt. A rejection carries its reason so the retry can name it; a thrown error is the
+// API failing. Both log — a silent fallback looks exactly like the API being down.
+async function generateOnce(
+  kind: Kind,
+  prompt: string,
+  checks: PhraseChecks
+): Promise<PhraseVerdict> {
   const chat = await ai!.chat.completions.create({
     model: "deepseek-v4-pro",
     messages: [
       { role: "system", content: SYSTEM_PROMPT },
       { role: "user", content: prompt },
     ],
-    // Generous for a 25-word message, but nothing caps the reply's length any more —
-    // this is the only bound on how much a runaway answer can cost.
+    // The only bound on a runaway answer. Measured: 35 Ukrainian words is 86–131 tokens,
+    // so `MAX_WORDS` in view/prompt.ts has room to move before this matters.
     max_tokens: 512,
     temperature: 0.8,
     // `thinking` is a DeepSeek extension absent from the OpenAI SDK types; spread
@@ -50,14 +52,15 @@ async function generateOnce(kind: Kind, prompt: string, checks: PhraseChecks): P
     ...({ thinking: { type: "disabled" } } as object),
   });
   const text = chat.choices[0]?.message?.content?.trim();
-  if (!text) {
-    console.warn(`[ai] ${kind}: empty reply`);
-    return null;
-  }
-  const result = finalizePhrase(text, kind, checks);
-  if ("phrase" in result) return result.phrase;
-  console.warn(`[ai] ${kind} rejected (${result.rejected}): ${text}`);
-  return null;
+  // Logged apart from a rejection — the API returned nothing, rather than the reply
+  // breaking a rule — but naming the verdict stays view/phrase.ts's job.
+  if (!text) console.warn(`[ai] ${kind}: empty reply`);
+  const result = finalizePhrase(text ?? "", kind, checks);
+  if ("phrase" in result) return result;
+  // One line per failure: an empty reply already logged above, and repeating it here as
+  // `(empty): undefined` blurs the distinction that line exists to draw.
+  if (text) console.warn(`[ai] ${kind} rejected (${result.rejected}): ${text}`);
+  return result;
 }
 
 async function generate(
@@ -68,15 +71,15 @@ async function generate(
 ): Promise<string> {
   if (!ai) return fallback;
   try {
-    // A rejection means the model broke a rule, not that we have no AI — so at 2–3s
-    // a call, ask once more rather than ship a canned phrase. Temperature 0.8 makes
-    // the second take differ. See **The AI call** in CLAUDE.md.
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const phrase = await generateOnce(kind, prompt, checks);
-      if (phrase) {
-        remember(kind, phrase);
-        return phrase;
-      }
+    // A broken rule, not a broken API, so at 2–3s a call it's worth asking again. Not looped,
+    // because the second ask names what was rejected — temperature alone re-rolled the mistake.
+    const first = await generateOnce(kind, prompt, checks);
+    const result = "phrase" in first
+      ? first
+      : await generateOnce(kind, retryAsk(prompt, first.rejected), checks);
+    if ("phrase" in result) {
+      remember(kind, result.phrase);
+      return result.phrase;
     }
   } catch (err) {
     console.error("[ai] generation failed:", (err as Error).message);
@@ -84,8 +87,8 @@ async function generate(
   return fallback;
 }
 
-export async function generateHypePhrase(eventName: string | null): Promise<string> {
-  const { prompt, checks } = hypePrompt(eventName);
+export async function generateHypePhrase(eventName: string | null, context: HypeContext = {}): Promise<string> {
+  const { prompt, checks } = hypePrompt(eventName, context);
   return generate("hype", prompt, checks, FALLBACK_HYPE);
 }
 
