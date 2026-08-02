@@ -3,6 +3,7 @@ import { buildMention, escapeHtml, escapeAiHtml } from "../view/html.ts";
 import { sendEphemeral, deleteTrigger, groupOnly } from "./guards.ts";
 import { getPlayer, getPlayerById, searchPlayers } from "../adapters/faceit.ts";
 import { generateHypePhrase } from "../adapters/ai.ts";
+import type { HypeContext } from "../types.ts";
 import { t } from "../view/i18n.ts";
 import { parseEventTime, decorateEventTime, timezoneForUser } from "../view/eventtime.ts";
 import {
@@ -52,9 +53,19 @@ export function claimBotPin(chatId: number | string, messageId: number): boolean
   return pendingPinDeletion.delete(eventKey(chatId, messageId));
 }
 
+// The one real fact a hype message gets. Null when the event has no time; negative once it
+// has started, which the prompt buckets as "right now".
+const minutesToStart = (eventTime: number | null): number | null =>
+  eventTime == null ? null : Math.round((eventTime - Date.now() / 1000) / 60);
+
 // Return the cached hype phrase for this key, or generate one and freeze it in the cache.
-async function cachedHypePhrase(cache: Map<string, string>, key: string, eventName: string | null): Promise<string> {
-  const phrase = cache.get(key) ?? await generateHypePhrase(eventName);
+async function cachedHypePhrase(
+  cache: Map<string, string>,
+  key: string,
+  eventName: string | null,
+  context: HypeContext
+): Promise<string> {
+  const phrase = cache.get(key) ?? await generateHypePhrase(eventName, context);
   cache.set(key, phrase);
   return phrase;
 }
@@ -308,7 +319,9 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
 
   // Body only — the toast needs no AI. A re-fill reuses the frozen phrase instead of paying again.
   const key = eventKey(chatId, messageId);
-  const fullPhrase = isFull ? await cachedHypePhrase(fullPhraseCache, key, eventName) : "";
+  const fullPhrase = isFull
+    ? await cachedHypePhrase(fullPhraseCache, key, eventName, { startsIn: minutesToStart(row.event_time), squadFull: true })
+    : "";
 
   // Both the "Mentioned:" block and the reminder's nudge want whoever hasn't answered, so it's
   // filtered once. A locked squad recruits for nothing, so it skips the read and both fall away.
@@ -337,7 +350,10 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
   // answer. Done after the ack so a cache-miss AI call doesn't block the response.
   const reminderMessageId = getReminderMessageId(chatId, messageId);
   if (reminderMessageId) {
-    const phrase = await cachedHypePhrase(reminderPhraseCache, key, eventName);
+    const phrase = await cachedHypePhrase(reminderPhraseCache, key, eventName, {
+      startsIn: minutesToStart(row.event_time),
+      squadFull: isFull,
+    });
     const updatedReminderText = buildReminderText(row, joining, phrase, pending);
     await ctx.api.editMessageText(chatId, reminderMessageId, updatedReminderText, {
       parse_mode: "HTML",
@@ -444,7 +460,8 @@ export async function sendReminder(api: Api, chatId: number | string, messageId:
   if (getRsvps(chatId, messageId).filter(r => r.status === "join").length < MIN_JOINING_FOR_REMINDER) return;
 
   const eventName = extractEventName(row.base_text);
-  const phrase = await generateHypePhrase(eventName);
+  // No roster read before this call — see the note below on why the snapshot must come after.
+  const phrase = await generateHypePhrase(eventName, { startsIn: minutesToStart(row.event_time) });
   reminderPhraseCache.set(eventKey(chatId, messageId), phrase);
 
   // Read the roster after the phrase call, not before: it takes seconds and fires at the peak RSVP

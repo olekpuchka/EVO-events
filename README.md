@@ -29,9 +29,15 @@ and schedule.
 with the delta, team Elo, the map image, and one AI-written line about that match.
 
 **The AI line** picks its own subject. On a win the model gets every player's full stat line, so the
-shoutout can land on a knife kill, 777 utility damage or a lone Zeus rather than always the top
+shoutout can land on a knife kill, a pile of grenade damage or a lone Zeus rather than always the top
 fragger, and roughly one call in three invites it to tease someone instead. On a loss our roster is
-never sent at all — the opponents become the subject, using their real numbers.
+never sent at all: the subject is either the opposition — one real number of theirs, rolled from
+everything their team did — or the squad as a whole, roasting itself. Never one of us by name.
+
+**Its tone is rolled too**, not left to the model: a win comes out deadpan or shamelessly loud, a
+loss is played as straight-faced melodrama, and a hype line is a tactical briefing, a commentator
+losing his voice, or quiet menace. Hype also knows roughly how long until kick-off — in words, never
+a number, since the real time is printed right above it.
 
 Times display in both 🇺🇦 Kyiv and 🇪🇺 CET. Slash commands are hidden from the group by Telegram, and
 every hint, error and confirmation is sent privately, so the chat stays clean.
