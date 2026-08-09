@@ -47,6 +47,11 @@ ${COMMANDS.map(({ command, key }) => `/${command} — ${escapeHtml(t(key))}`).jo
 <b>Вперше тут?</b>
 Надішли /unmute, щоб потрапити в список згадувань.
 Надішли /faceit ТвійНікнейм, щоб з'являтися в результатах матчів.`,
+  // Sent to the group, not via sendEphemeral: an introduction is for everyone, not the joiner.
+  // escapeHtml because a group title is user-set text.
+  welcome: (mentions, chatTitle) => `👋 <b>Вітаємо, ${mentions} в ${escapeHtml(chatTitle)}!</b>
+
+Надішли /help — покажу, як усе працює.`,
   alreadyJoining: "🍌 Ти вже в грі!",
   alreadyNotJoining: "❌ Ти вже не береш участь!",
   squadFull: (max) => `🔒 Сквад уже повний (${max}/${max})!`,

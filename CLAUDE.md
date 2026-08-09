@@ -8,7 +8,7 @@ src/config.ts       every process.env read in the project
 src/log.ts          timestamps on console
 src/types.ts        shared row + API shapes
 src/adapters/       one module per external system: db (SQLite), faceit (HTTP), ai (DeepSeek)
-src/view/           data → strings: html, i18n, render, eventtime, prompt, phrase
+src/view/           data → strings: html, i18n, commands, render, eventtime, prompt, phrase
 src/handlers/       Telegram entry points: events, results, guards
 ```
 
@@ -76,6 +76,26 @@ but its sender. Such a message arrives with **`message_id: 0`**, which `ctx.dele
 rejects — a handler must never delete its own trigger directly. Use `deleteTrigger()` from the
 same file: it skips an ephemeral trigger and still removes a plainly-sent one (`@all`, which can
 never be ephemeral, or a client ignoring the flag).
+
+## Welcome message
+
+`welcomeJoiners` hooks `message:new_chat_members`, a **service message**, so it rides the `message`
+update `allowed_updates` already admits — `chat_member` is the other way in, and Telegram withholds
+it unless it's named there. No `groupOnly()`: the update's `from` is whoever did the adding, not
+the joiner.
+
+It deliberately does **not** `trackMember` the joiner. `notifications_enabled` defaults to 1, so
+tracking someone *is* opting them into `@all` — joining the group stays separate from consenting
+to be mentioned. Don't add the call as a convenience.
+
+It sends with a bare `ctx.reply` like `mentionAll` and `sendReminder` do: an introduction is for
+the group, and `sendEphemeral` would show it to the joiner alone. Telegram's own "X joined" notice
+is left in place — judged not worth the surprise of deleting it.
+
+The greeting names the group from `ctx.chat.title`, which rides the same update — no `getChat`
+call. It's asserted non-null because grammY's filter narrows the *message*, not the chat, so TS
+still admits a private chat a join can't arrive in. Escaped like any user-set text: whoever renames
+the group isn't necessarily the person being welcomed.
 
 ## Rich messages
 

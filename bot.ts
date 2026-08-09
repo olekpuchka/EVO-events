@@ -1,7 +1,7 @@
 import "./src/log.ts"; // first — ESM runs imports in order, so startup warnings are stamped too
 import { Bot } from "grammy";
 import type { BotCommand } from "@grammyjs/types";
-import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, endEvent, registerFaceit, claimBotPin, unpinEventMessage, showHelp } from "./src/handlers/events.ts";
+import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, endEvent, registerFaceit, claimBotPin, unpinEventMessage, showHelp, welcomeJoiners } from "./src/handlers/events.ts";
 import { autoPostResult } from "./src/handlers/results.ts";
 import { getDueUnpins, getDueReminders, deleteScheduledReminder, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/adapters/db.ts";
 import { t } from "./src/view/i18n.ts";
@@ -166,6 +166,10 @@ bot.on("message:pinned_message", async (ctx) => {
   if (pinned === undefined || !claimBotPin(ctx.chat.id, pinned)) return;
   try { await ctx.deleteMessage(); } catch {}
 });
+
+// ─── Welcome new members ──────────────────────────────────────────────────────
+
+bot.on("message:new_chat_members", welcomeJoiners);
 
 // ─── Error handler ────────────────────────────────────────────────────────────
 
