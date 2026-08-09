@@ -42,10 +42,21 @@ inside the project locally.
 Telegram's command registry is published from `bot.ts` on every boot. BotFather is **not** the
 source of truth — anything set there is overwritten on the next deploy.
 
-A command lives in **two** places: its `bot.command(...)` handler and the `GROUP_COMMANDS` list.
-Adding or renaming one means changing both, plus a `cmd*` key in `src/view/i18n.ts`. `LABELS` is
-declared with `satisfies`, not an annotation, so `t()` takes `keyof typeof LABELS` — a missing or
-misspelled key fails typecheck instead of reaching the group.
+A command lives in **two** places: its `bot.command(...)` handler and the `COMMANDS` list in
+`src/view/commands.ts`. Adding or renaming one means changing both, plus a `cmd*` key in
+`src/view/i18n.ts`. `LABELS` is declared with `satisfies`, not an annotation, so `t()` takes
+`keyof typeof LABELS` — a missing or misspelled key fails typecheck instead of reaching the group,
+and `COMMANDS` is checked against that same `LabelKey`.
+
+`COMMANDS` feeds **both** the published menu and the command block in `/help`, which is why
+`helpBody` is a function. A hand-written list would be a fourth place to update, and prose is
+where typecheck can't reach — a renamed command would leave a stale line in `/help` with CI green.
+Two consequences: `helpBody` is annotated `(): string` to break the inference cycle (`LABELS` →
+`t` → `keyof typeof LABELS`), and `commands.ts` imports `LabelKey` as a **type only**, since
+i18n.ts imports the list at runtime.
+
+Commands print **unwrapped** there, not in `<code>` — Telegram only makes a bare `/command`
+tappable.
 
 That cost is why a secondary action is an **argument**, not a command: `/faceit off` unlinks, and
 `/faceit` with no argument reports the current link. Both live inside the one handler, so neither

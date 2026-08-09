@@ -53,10 +53,11 @@ every hint, error and confirmation is sent privately, so the chat stays clean.
 | `/faceit <nickname>` | Link a FACEIT account. A typo comes back as tap-to-copy suggestions |
 | `/faceit` | Show which account you're linked to |
 | `/faceit off` | Unlink |
-| `/help` | The `@all` syntax — the one thing the `/` menu can't list, since `@all` isn't a command |
+| `/help` | The `@all` syntax — the one thing the `/` menu can't list, since `@all` isn't a command — plus every command and where a newcomer starts |
 
 Commands work in groups only and are case-insensitive. The `/` menu is published on every boot and
-**overwrites whatever is in BotFather**.
+**overwrites whatever is in BotFather**. `/help` prints its list from that same registry, so the
+two can't disagree.
 
 ## Running it
 

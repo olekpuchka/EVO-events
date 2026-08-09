@@ -5,6 +5,7 @@ import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendRem
 import { autoPostResult } from "./src/handlers/results.ts";
 import { getDueUnpins, getDueReminders, deleteScheduledReminder, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/adapters/db.ts";
 import { t } from "./src/view/i18n.ts";
+import { COMMANDS } from "./src/view/commands.ts";
 import { BOT_TOKEN, FACEIT_API_KEY, DEEPSEEK_API_KEY, FACEIT_POLL_MINUTES } from "./src/config.ts";
 
 // State the config up front — a missing FACEIT key otherwise just 401s forever, silently.
@@ -48,17 +49,11 @@ bot.command("help", showHelp);
 // Telegram's command registry lives here rather than in BotFather, so descriptions ship with the
 // deploy. Group scope only: every command returns early in a DM.
 
-// is_ephemeral has clients hide the invoking "/command" from everyone but its sender, so it never
-// reaches the group at all — better than posting it and deleting it a moment later. Telegram's
-// reply restrictions on ephemeral messages (15s window, reply must itself be ephemeral) apply to
-// replying *to* one, so /cancel's "reply to the event you mean" scoping is unaffected.
-const GROUP_COMMANDS: BotCommand[] = [
-  { command: "cancel", description: t("cmdCancel"), is_ephemeral: true },
-  { command: "mute", description: t("cmdMute"), is_ephemeral: true },
-  { command: "unmute", description: t("cmdUnmute"), is_ephemeral: true },
-  { command: "faceit", description: t("cmdFaceit"), is_ephemeral: true },
-  { command: "help", description: t("cmdHelp"), is_ephemeral: true },
-];
+const GROUP_COMMANDS: BotCommand[] = COMMANDS.map(({ command, key, is_ephemeral }) => ({
+  command,
+  description: t(key),
+  is_ephemeral,
+}));
 
 // Re-published on every boot: idempotent, and it makes the registry a deploy artifact.
 // Each scope is settled on its own so a flood-wait on one still lets the other land.

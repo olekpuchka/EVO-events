@@ -3,6 +3,9 @@
 // the phrase checks only ever ran for UA. Dropping it also drops the trap where a missing key
 // warned to the console and shipped English into the group.
 
+import { COMMANDS } from "./commands.ts";
+import { escapeHtml } from "./html.ts";
+
 type Label = string | ((...args: any[]) => string);
 
 // `satisfies`, not an annotation: it checks every value is a Label while keeping the key
@@ -28,14 +31,18 @@ const LABELS = {
   cmdHelp: "Як користуватися ботом",
   // One block per form, each a bold header over its own description, blank line between. The
   // two used to share a paragraph and the second wrapped straight onto the first — unreadable.
-  helpBody: `<b>@all CS 22:00</b>
+  // The command list comes from COMMANDS so it can't fall behind the menu.
+  // escapeHtml because a cmd* label also feeds setMyCommands, which takes plain text.
+  // `: string` breaks the cycle LABELS → t() → keyof typeof LABELS.
+  helpBody: (): string => `<b>@all CS 22:00</b>
 Згадує всіх і закріплює подію з кнопками.
 Нагадування — за 10 хв до старту, відкріплення — на початку.
 
 <b>@all CS</b>
 Без часу — тільки згадка, нічого не закріплюється.
 
-Усі команди — у меню <b>/</b>.
+<b>Команди</b> — вони ж у меню <b>/</b>
+${COMMANDS.map(({ command, key }) => `/${command} — ${escapeHtml(t(key))}`).join("\n")}
 
 <b>Вперше тут?</b>
 Надішли /unmute, щоб потрапити в список згадувань.
@@ -72,9 +79,12 @@ const LABELS = {
   fallbackLoss: "Їхні VAC-чисті акаунти грали підозріло добре 🤔",
 } satisfies Record<string, Label>;
 
+// Exported for commands.ts, which names label keys without importing LABELS.
+export type LabelKey = keyof typeof LABELS;
+
 // A missing key is a typecheck failure, not a runtime warning — worth having when typecheck
 // is the only gate. Every call site passes a literal, so nothing needs a dynamic-key escape.
-export function t(key: keyof typeof LABELS, ...args: any[]): string {
+export function t(key: LabelKey, ...args: any[]): string {
   const entry: Label = LABELS[key];
   return typeof entry === "function" ? entry(...args) : entry;
 }
