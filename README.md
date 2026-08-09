@@ -54,6 +54,7 @@ every hint, error and confirmation is sent privately, so the chat stays clean.
 | `/faceit` | Show which account you're linked to |
 | `/faceit off` | Unlink |
 | `/help` | The `@all` syntax — the one thing the `/` menu can't list, since `@all` isn't a command — plus every command and where a newcomer starts |
+| *someone joins* | A welcome naming them and the group, pointing at `/help`. Joining alone doesn't opt anyone into `@all` — that stays `/unmute` |
 
 Commands work in groups only and are case-insensitive. The `/` menu is published on every boot and
 **overwrites whatever is in BotFather**. `/help` prints its list from that same registry, so the

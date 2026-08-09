@@ -24,6 +24,7 @@ import type { RsvpLike } from "../view/render.ts";
 import type {
   Context,
   Api,
+  Filter,
   HearsContext,
   CommandContext,
   CallbackQueryContext,
@@ -231,6 +232,18 @@ export const cancelEvent = groupOnly(async (ctx: CommandContext<Context>, from) 
 export const showHelp = groupOnly(async (ctx: CommandContext<Context>) => {
   await sendEphemeral(ctx, t("helpBody"), { parse_mode: "HTML" });
 });
+
+// A join is a service message, so it rides the `message` update — `chat_member` would need
+// listing in allowed_updates. No groupOnly: `from` is the adder, not the joiner.
+export async function welcomeJoiners(ctx: Filter<Context, "message:new_chat_members">): Promise<void> {
+  // Skip bots — this bot's own addition is the first join every group sees.
+  const joined = ctx.message.new_chat_members.filter(u => !u.is_bot);
+  if (joined.length === 0) return;
+
+  // No trackMember: joining isn't consent to be in @all — that stays /unmute.
+  console.log(`[welcome] ${joined.length} joined`);
+    await ctx.reply(t("welcome", joined.map(buildMention).join(", "), ctx.chat.title!), { parse_mode: "HTML" });
+}
 
 export const muteNotifications = groupOnly(async (ctx: CommandContext<Context>, from) => {
   const current = getNotificationsStatus(ctx.chat.id, from.id);
