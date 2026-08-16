@@ -27,7 +27,7 @@ const LABELS = {
   cmdCancel: "Скасувати активну подію",
   cmdMute: "Не згадувати мене в @all",
   cmdUnmute: "Згадувати мене в @all",
-  cmdFaceit: "Прив'язати або перевірити акаунт FACEIT",
+  cmdFaceit: "Прив'язати, перевірити або відв'язати акаунт FACEIT",
   cmdHelp: "Як користуватися ботом",
   // One block per form, each a bold header over its own description, blank line between. The
   // two used to share a paragraph and the second wrapped straight onto the first — unreadable.
