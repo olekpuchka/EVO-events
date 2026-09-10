@@ -27,11 +27,13 @@ export async function deleteTrigger(ctx: Context): Promise<void> {
 
 // Reply visible only to the invoking user, so transient feedback never clutters the group.
 // Group chats only; falls back to send-then-delete in private chats or if the send fails.
+// The private-send parameter is nested — it was a flat `receiver_user_id` before
+// @grammyjs/types v5 — and this is the only place that shape appears.
 export async function sendEphemeral(ctx: Context, text: string, opts: ReplyOptions = {}): Promise<void> {
   const isGroup = ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
   if (isGroup && ctx.from?.id) {
     try {
-      await ctx.reply(text, { ...opts, receiver_user_id: ctx.from.id });
+      await ctx.reply(text, { ...opts, ephemeral_message_parameters: { receiver_user_id: ctx.from.id } });
       // The reply is private, but the message that triggered it isn't always — remove it.
       await deleteTrigger(ctx);
       return;

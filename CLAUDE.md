@@ -71,6 +71,12 @@ drops an update carrying no `from`, and hands the handler a narrowed sender. Eve
 `@all` goes through it. `handleRsvp` is the exception — a callback query has no guaranteed `chat`,
 so it checks inline.
 
+The private reply itself is `ephemeral_message_parameters: { receiver_user_id }` on the send, built
+in one place — `sendEphemeral()` in `src/handlers/guards.ts`. It was a flat `receiver_user_id`
+before @grammyjs/types v5; if a send starts silently falling back to send-then-delete, that rename
+is the first thing to check, because the failure logs as `[ephemeral] send failed` and otherwise
+looks like nothing at all.
+
 Every command is published `is_ephemeral`, so Telegram hides the invoking `/command` from everyone
 but its sender. Such a message arrives with **`message_id: 0`**, which `ctx.deleteMessage()`
 rejects — a handler must never delete its own trigger directly. Use `deleteTrigger()` from the
@@ -99,11 +105,13 @@ the group isn't necessarily the person being welcomed.
 
 ## Rich messages
 
-`sendRichMessage` takes real headings, lists and tables — but it has **no `receiver_user_id`**, so
-a rich message can't be sent privately the way `sendEphemeral()` sends everything else. That rules
-it out for anything personal: help, usage hints, errors, confirmations. Use it only for output the
-whole group is meant to see, which today means the match scoreboard. `/help` was tried as a rich
-table and reverted for exactly this reason.
+`sendRichMessage` takes real headings, lists and tables. It used to have **no way to send
+privately** — no `receiver_user_id` — which ruled it out for anything personal and is why `/help`
+was tried as a rich table and reverted. **That constraint is gone**: since @grammyjs/types v5 the
+private-send parameter is the nested `ephemeral_message_parameters` object, and `sendRichMessage`
+accepts it like the other send methods. Nothing has been changed to take advantage of it, so the
+scoreboard is still the only rich message — but the reason `/help` is plain HTML no longer holds,
+and a revisit is now a design question rather than an API limit.
 
 The payload nests: `rich_message: { blocks: [...] }`. grammY's `sendRichMessage(chatId, { blocks })`
 passes that object as the second positional argument, so the `{ blocks }` shape at the call site is
