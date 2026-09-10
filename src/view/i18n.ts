@@ -8,19 +8,26 @@ import { escapeHtml } from "./html.ts";
 
 type Label = string | ((...args: any[]) => string);
 
+// How a command is written inside a message: bare when it takes no argument, so Telegram makes it
+// tappable and one tap runs it; in <code> when it takes one, so it can be copied and edited. The
+// argument is always a placeholder — ТвійНікнейм, ДД-ММ-РРРР — never a real value, since <code> is
+// tap-to-copy and one tap would store somebody else's nickname or birthday.
+//
 // `satisfies`, not an annotation: it checks every value is a Label while keeping the key
 // union narrow, which is what lets t() reject a typo at compile time.
 const LABELS = {
   groupOnly: "Ця команда працює тільки в групових чатах.",
-  noMembers: "Учасників ще не зареєстровано.\n\nЩоб потрапити у список для згадування, потрібно використати <code>/mute</code> або <code>/unmute</code>.",
+  // /unmute only: /mute registers you too, but sets notifications_enabled to 0, and getMembers
+  // filters on 1 — so it leaves you out of the very list this sentence offers to put you in.
+  noMembers: "Учасників ще не зареєстровано.\n\nЩоб потрапити в список згадувань, надішли /unmute.",
   usageAll: "Вкажи назву події та час, наприклад:\n<code>@all CS 22:00</code>",
   mentioned: "Згадані:",
   noActiveEvent: "Немає активної події для скасування.",
-  replyNotAnEvent: "Це повідомлення не є активною подією — можливо, вона вже завершилась. Відповідай на подію, яку хочеш скасувати, або надішли <code>/cancel</code> окремо.",
-  pickEventToCancel: (list) => `Активних подій кілька. Натисни на потрібну нижче, потім <b>відповідай</b> на неї командою <code>/cancel</code> — свайп на телефоні, правий клік → Відповісти на комп'ютері.\n\n${list}`,
+  replyNotAnEvent: "Це повідомлення не є активною подією — можливо, вона вже завершилась. Відповідай на подію, яку хочеш скасувати, або надішли /cancel окремо.",
+  pickEventToCancel: (list) => `Активних подій кілька. Натисни на потрібну нижче, потім <b>відповідай</b> на неї командою /cancel — свайп на телефоні, правий клік → Відповісти на комп'ютері.\n\n${list}`,
   cancelledBy: (mention) => `Скасовано ${mention}`,
   alreadyMuted: "Ти вже не в списку згадувань — @all тебе не згадує.",
-  mutedSuccess: "Тебе замучено. @all більше не згадуватиме тебе в цій групі.\nВикористай /unmute, щоб увімкнути назад.",
+  mutedSuccess: "Тебе замучено. @all більше не згадуватиме тебе в цій групі.\nНадішли /unmute, щоб повернутися.",
   alreadyUnmuted: "Ти вже в списку згадувань — @all тебе згадує.",
   unmutedSuccess: "Тебе додано до списку згадувань. @all тепер згадуватиме тебе в цій групі.",
   eventEnded: "Ця подія вже завершилась.",
@@ -30,11 +37,10 @@ const LABELS = {
   cmdFaceit: "Прив'язати, перевірити або відв'язати акаунт FACEIT",
   cmdBirthday: "Додати, перевірити або прибрати свій день народження",
   cmdHelp: "Як користуватися ботом",
-  // One block per form, each a bold header over its own description, blank line between. The
-  // two used to share a paragraph and the second wrapped straight onto the first — unreadable.
-  // The command list comes from COMMANDS so it can't fall behind the menu.
-  // escapeHtml because a cmd* label also feeds setMyCommands, which takes plain text.
-  // `: string` breaks the cycle LABELS → t() → keyof typeof LABELS.
+  // One bold header per form over its own description; run together they were unreadable. The
+  // command list comes from COMMANDS so it can't fall behind the menu, escapeHtml because a cmd*
+  // label also feeds setMyCommands (plain text only), and `: string` breaks the
+  // LABELS → t() → keyof typeof LABELS cycle.
   helpBody: (): string => `<b>@all CS 22:00</b>
 Згадує всіх і закріплює подію з кнопками.
 Нагадування — за 10 хв до старту, відкріплення — на початку.
@@ -70,33 +76,34 @@ ${COMMANDS.map(({ command, key }) => `/${command} — ${escapeHtml(t(key))}`).jo
   openEvent: "Відкрити подію",
   faceitNotLinked: "🎮 У тебе ще немає прив'язаного акаунта FACEIT.\n\nНадішли <code>/faceit ТвійНікнейм</code>, щоб з'являтися в результатах матчів цієї групи.",
   faceitUnavailable: "FACEIT API недоступний, спробуй пізніше.",
-  faceitNotFound: (nickname) => `Гравця "${nickname}" не знайдено на FACEIT.`,
+  faceitNotFound: (nickname) => `Гравця «${nickname}» не знайдено на FACEIT.`,
   didYouMean: (list) => `Можливо, це хтось із них? Натисни, щоб скопіювати, і надішли.\n\n${list}`,
-  faceitNoStats: (nickname) => `У "${nickname}" немає статистики CS2 на FACEIT.`,
-  faceitLinked: (nickname, eloStr) => `Прив'язано! <b>${nickname}</b> (${eloStr})`,
-  faceitStatus: (nickname, eloStr) => `🎮 Прив'язано до <b>${nickname}</b> (${eloStr})`,
+  faceitNoStats: (nickname) => `У «${nickname}» немає статистики CS2 на FACEIT.`,
+  // "Прив'язано:" confirms the action just taken, "Прив'язано до" reports standing state — the
+  // same split birthdaySaved and birthdayStatus make.
+  faceitLinked: (nickname, eloStr) => `🎮 Прив'язано: <b>${nickname}</b> (${eloStr}).`,
+  faceitStatus: (nickname, eloStr) => `🎮 Прив'язано до <b>${nickname}</b> (${eloStr}).`,
   faceitStatusUnavailable: "🎮 Твій акаунт FACEIT прив'язаний, але деталі зараз не завантажились.",
-  faceitLinkHelp: "Надішли <code>/faceit &lt;нікнейм&gt;</code>, щоб прив'язати інший акаунт, або <code>/faceit off</code>, щоб відв'язати.",
+  faceitLinkHelp: "Надішли <code>/faceit ТвійНікнейм</code>, щоб прив'язати інший акаунт, або <code>/faceit off</code>, щоб відв'язати.",
   faceitUnlinked: "🎮 Відв'язано — твоя статистика більше не з'являтиметься в результатах матчів цієї групи.\n\nНадішли <code>/faceit ТвійНікнейм</code>, щоб прив'язати.",
   unranked: "Без рангу",
   scorePlayer: "Гравець",
   viewOnFaceit: "Дивитись на",
-  // Both the usage hint and what an unparsable date gets back: naming the format is the only
-  // useful thing either can say, so a second label would be the same sentence twice.
-  birthdayUsage: "Надішли <code>/birthday 25-08-1990</code> — день народження у форматі <b>дд-мм-рррр</b>.\n\nДата має існувати і бути в минулому.",
+  // Serves both the usage hint and an unparsable date — naming the format is all either can say.
+  birthdayUsage: "Надішли <code>/birthday ДД-ММ-РРРР</code> — наприклад, 25-08-1990.\n\nДата має існувати і бути в минулому.",
   birthdayNotSet: "🎂 Ти ще не додав свій день народження.",
+  // The age is a check, not decoration: nothing else catches a year typed 2004 instead of 1994.
   birthdaySaved: (date, age) => `🎂 Записано: <b>${date}</b> (зараз тобі ${age}).\n\nУ цей день чат тебе привітає.`,
   birthdayStatus: (date, age) => `🎂 Твій день народження: <b>${date}</b> (зараз тобі ${age}).`,
-  birthdayChangeHelp: "Надішли <code>/birthday 25-08-1990</code>, щоб змінити дату, або <code>/birthday off</code>, щоб прибрати.",
-  birthdayRemoved: "🎂 Прибрано — чат більше не вітатиме тебе автоматично.\n\nНадішли <code>/birthday 25-08-1990</code>, щоб додати знову.",
-  // Sent to the group with a bare sendMessage, like the welcome: a greeting shown only to the
-  // person it is about would be a strange thing to send. The AI toast goes under this line.
+  birthdayChangeHelp: "Надішли <code>/birthday ДД-ММ-РРРР</code>, щоб змінити дату, або <code>/birthday off</code>, щоб прибрати.",
+  birthdayRemoved: "🎂 Прибрано — чат більше не вітатиме тебе автоматично.\n\nНадішли <code>/birthday ДД-ММ-РРРР</code>, щоб додати знову.",
+  // Sent to the group like the welcome — a greeting only its subject can see makes no sense.
+  // The AI toast goes under this line.
   birthdayGreeting: (mention, age) => `🎂 <b>З днем народження, ${mention}!</b> <i>(${age})</i>`,
   fallbackHype: "Банан-сквад, підйом! 🍌",
   fallbackWin: "МИ ПОВЕРНУЛИСЬ 🍌🍌🍌",
   fallbackLoss: "Їхні VAC-чисті акаунти грали підозріло добре 🤔",
-  // Longer than the other three because it replaces a message that is meant to be long: a
-  // one-liner under the greeting header would read as the bot having forgotten to write it.
+  // Longer than the other fallbacks: a one-liner under the greeting header would read as a bug.
   fallbackBirthday: `Сьогодні свято, і воно не в календарі — воно в нашому лоббі.
 
 Бажаємо тобі стабільного пінгу, чесного сабтіку і тіммейтів, які не продають раунд за тридцять секунд до кінця. Хай кожен твій постріл знаходить голову, кожен клатч закривається, а кожна «одна катка» триває рівно стільки, скільки ти сам захочеш.

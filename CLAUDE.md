@@ -125,6 +125,11 @@ are internal halves of it. Three call sites answering "how old are they" separat
 `/birthday` came to confirm one age, report a second and greet with a third — all on the same day,
 for a 29 February member greeted on the 28th.
 
+`/birthday` reports the age as a **check, not decoration**: with no minimum age left to validate
+against, «зараз тобі 21» is the only thing that catches a year typed as 2004 instead of 1994. That
+is also what keeps `ageOn`'s branch live — a member checking in June for a December birthday is not
+due today.
+
 The dates live in a **table of their own**, and that is the whole point. There is no migration step
 here (see **Schema**), so two new columns on `members` would never reach the `members.db` already on
 the volume and every statement naming them would throw at boot. `CREATE TABLE IF NOT EXISTS` adds a
