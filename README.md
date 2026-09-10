@@ -39,7 +39,7 @@ loss is played as straight-faced melodrama, and a hype line is a tactical briefi
 losing his voice, or quiet menace. Hype also knows roughly how long until kick-off — in words, never
 a number, since the real time is printed right above it.
 
-**Birthdays.** Members add their own date with `/birthday 15-03-1990`, and on the day the bot posts
+**Birthdays.** Members add their own date with `/birthday 25-08-1990`, and on the day the bot posts
 a short toast written for them — 70 words at most, the one AI message here that isn't a one-liner.
 The model is told only the age they're turning; the name reaches it as a placeholder and is swapped
 in afterwards. It's told at length to invent nothing else: no remembered clutch, no stat, no match
