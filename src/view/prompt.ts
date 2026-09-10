@@ -7,6 +7,7 @@
 // spoken to. See **The AI call** and **Match phrases** in CLAUDE.md.
 
 import type {
+  BirthdayContext,
   Kind,
   MatchFlow,
   MatchPhraseContext,
@@ -36,7 +37,7 @@ const UA_STYLE =
   " «сабтік порадився з пінгом і вирішив, що ти помер ще за стіною — дякуємо, Valve»," +
   " «п'ятірка в зборі, план геніальний: стрілочки, фейки — і все одно rush B».";
 
-export const SYSTEM_PROMPT =
+const SHORT_SYSTEM_PROMPT =
   "You write ONE short message at a time for a casual CS2 squad's private Telegram group chat." +
   " Output only the message text — no preamble, no quotes, no markdown, no emoji (one emoji is appended programmatically later)." +
   " No words in ALL CAPS, and no profanity." +
@@ -59,6 +60,48 @@ export const SYSTEM_PROMPT =
   " You may use Telegram HTML <b> or <i> on at most ONE short fragment in the whole message, and" +
   " never around a bare number — bolding every stat reads as a scoreboard, not a joke. No other tags." +
   UA_STYLE;
+
+// Can't share the prompt above: every rule there is about brevity, and a toast is a different
+// shape. The danger here is a wrong *memory*, not a wrong number — asked to be warm and specific
+// the model recalls a clutch that never happened, and no check catches that, so it is said three
+// ways below.
+const BIRTHDAY_SYSTEM_PROMPT =
+  "You write ONE birthday message for a member of a casual CS2 squad's private Telegram group chat." +
+  " Output only the message text — no preamble, no quotes, no markdown, no subject line, no signature." +
+  // The exact shape is stated once, in the ask — not restated here. This used to say "two or three
+  // paragraphs" while the ask demanded exactly two, and a latitude granted in one place and refused
+  // in the other is the drift CLAUDE.md warns about under **Match phrases**.
+  " It is short and tight — a joke and a genuine wish, nothing else — laid out in the exact shape" +
+  " the request below asks for. Every line has to earn its place: cut the setup, never the wish." +
+  " No words in ALL CAPS, and no profanity, and no emoji (one is appended programmatically later)." +
+  " The person is referred to by the code P1: write P1 verbatim wherever you name them — it is" +
+  " replaced with their real name before the message is sent. Never write any other player code," +
+  " and never invent a nickname for them or for anyone else." +
+  // The code is swapped for a bare nominative, so a slot needing any other case comes out
+  // ungrammatical: «в Олег день народження» shipped from «в P1 день народження». The model
+  // cannot decline a placeholder, so the fix is to only ever put it where none is needed.
+  " P1 is a placeholder and takes no Ukrainian case ending, so build every sentence around it in" +
+  " the nominative — as the subject, or as a direct address set off by a comma. Never place P1" +
+  " where the grammar would require any other case; rephrase the sentence instead." +
+  " You know two things about this person: that code, and how old they are turning. Nothing else." +
+  " So never recall a specific match, round, clutch, map, score or evening as though it happened —" +
+  " you were not there and it would be invented. Never quote a stat, a rank or an Elo figure, and" +
+  " never write any number other than the age you are given." +
+  " Joke about the things the whole squad shares — the «одну катку» that ends at four in the morning," +
+  " the mic, the plan nobody follows, the ranked ladder — never about this person's skill, and never" +
+  " with contempt. Tease like a close friend at a table, and mean the last paragraph." +
+  " Gaming terms (ADR, HS, AWP, K/D, MVP, FACEIT, CS2) stay in Latin letters exactly as given." +
+  " You may use Telegram HTML <b> or <i> on a few short fragments — never on a whole paragraph. No other tags." +
+  UA_STYLE;
+
+// Keyed by kind so a new one has to state which prompt it speaks under, rather than silently
+// inheriting the short-message rules. adapters/ai.ts indexes this and nothing else.
+export const SYSTEM_PROMPTS: Record<Kind, string> = {
+  hype: SHORT_SYSTEM_PROMPT,
+  win: SHORT_SYSTEM_PROMPT,
+  loss: SHORT_SYSTEM_PROMPT,
+  birthday: BIRTHDAY_SYSTEM_PROMPT,
+};
 
 /* ------------------------------------------------------------------ *
  * Angle roulette. The old prompt listed every angle and asked the
@@ -162,11 +205,45 @@ const LOSS_ANGLES: Angle[] = [
 const LOSS_ANGLE_CLOSE = "поскаржся, що до перемоги забракло одного раунду — і саме в ньому сервер вирішив подумати";
 const LOSS_ANGLE_STOMP = "оголоси, що цю катку ми віддали як благодійність — сили бережемо на наступну";
 
-// Per-kind so one register can be loosened alone; 25 across the board left a loss all setup
-// and no punchline. Only the model enforces it — the hard bound is `max_tokens` in ai.ts.
-const MAX_WORDS: Record<Kind, number> = { hype: 35, win: 35, loss: 35 };
+// Same rules as every other pool — no dated events, no named pros — plus one of its own: an angle
+// may not ask for a memory, or it invites the invented match the system prompt spends three
+// clauses banning. Every one is a format to fill in or a running squad joke.
+const BIRTHDAY_ANGLES: string[] = [
+  "оформи привітання як патчноут: гравця оновлено до нової версії, старі баги не пофіксили, зате додали контенту",
+  "оголоси, що сьогодні йому не можна відмовити в грі — навіть о четвертій ранку, навіть на його улюбленій мапі",
+  "склади список побажань у форматі закупу: здоров'я — full buy, нерви — броня і шолом, терпіння — повна утиліта",
+  "подай його як єдиного, хто щиро вірить у «одну катку», і за це його й люблять",
+  "оформи це як нагородження на сцені мажора: світло, конфеті, овації — а він у капцях і з чаєм",
+  "зачитай офіційну заяву від імені всього скваду: сьогодні всі фраги, всі MVP і весь лут дарують імениннику",
+  "подай минулий рік як сезон: рейтинг качало, але моменти були золоті, і контракт продовжено ще на один",
+  "оголоси, що з сьогодні його ранг у житті підвищено адміністрацією без апеляції та без калібрування",
+  "порівняй його з мапою, яку всі люблять і ніхто ніколи не банить у вето",
+  "уяви себе коментатором, який вітає гравця прямо в ефірі, поки той третю хвилину не може зайти в лоббі",
+  "оформи тост від людини, яка вже трохи святкує і тому каже все чесніше, ніж збиралася",
+  "подай його як живий доказ того, що анти-чит існує: так грати без нього неможливо",
+  "оголоси його персональним святом усього чату — з вихідним, розкладом і обов'язковою вечірньою каткою",
+  "оформи привітання як опис персонажа: характеристики, пасивні здібності й один недолік, який усі вважають фішкою",
+  "подай це як щорічне технічне обслуговування: рік нальоту, деталі оригінальні, гарантію продовжено",
+];
 
-const recentAngles: Record<Kind, string[]> = { hype: [], win: [], loss: [] };
+// Rolled like HYPE_REGISTERS and for the same reason: asked to choose, the model writes the same
+// greeting-card toast every time.
+const BIRTHDAY_REGISTERS = [
+  " Voice: an old friend giving a toast at the table — unhurried, a little sentimental, entirely sincere under the jokes.",
+  " Voice: a commentator calling the day live as if it were a grand final — escalating, breathless, treating an ordinary birthday as the event of the year.",
+  " Voice: a deliberately dry official document — clauses, sections, procedure — that keeps slipping into real warmth and pretending it didn't.",
+];
+
+
+// Per-kind so one register can be loosened alone; 25 across the board left a loss all setup
+// and no punchline. Only the model enforces it — the hard bound is `max_tokens` in ai.ts,
+// which is keyed by the same kinds and has to move with the birthday number.
+//
+// Every entry is a number actually sent to the model — `birthday` once held one the ask never
+// used, two constants claiming to be the same bound.
+const MAX_WORDS: Record<Kind, number> = { hype: 35, win: 35, loss: 35, birthday: 70 };
+
+const recentAngles: Record<Kind, string[]> = { hype: [], win: [], loss: [], birthday: [] };
 
 // One roll, one policy, used by both roulettes here: prefer what hasn't been out lately,
 // fall back to the full pool once everything is stale, remember what went.
@@ -188,6 +265,13 @@ function noteUsed<T>(picked: T, recent: string[], key: string, keep: number): T 
 // A pool is never empty here: every caller appends a close/stomp angle to it.
 const pickAngle = <T extends Angle>(kind: Kind, pool: T[]): T =>
   rollFresh(pool, recentAngles[kind], angleText, Math.min(3, pool.length - 1))!;
+
+// The same roulette for registers, so a new pool doesn't also mean a new global. The pool stays
+// with its prompt; only the freshness memory is keyed, and buckets appear on first use.
+const recentRegisters: Partial<Record<Kind, string[]>> = {};
+
+const pickRegister = (kind: Kind, pool: string[]): string =>
+  rollFresh(pool, (recentRegisters[kind] ??= []), r => r, 1)!;
 
 /* ------------------------------------------------------------------ *
  * What the second attempt is told. A blind re-roll repeated the same
@@ -214,6 +298,7 @@ const RETRY_FIX: Record<RejectReason, string> = {
     " banana, mid, ramp, a bombsite — is invented. Say what happened without saying where.",
   language: "it was not in Ukrainian. Write every word of the message in natural spoken Ukrainian.",
   empty: "it came back empty. Answer with the message text itself and nothing else.",
+  "too-long": "it was far too long to send. Write a considerably shorter one, comfortably inside the word limit you were given.",
 };
 
 // Returns the whole second ask, so this module stays the only place that composes what the
@@ -228,19 +313,24 @@ export const retryAsk = (prompt: string, reason: RejectReason): string =>
  * cold-start caveat as above.
  * ------------------------------------------------------------------ */
 
-const recentPhrases: Record<Kind, string[]> = { hype: [], win: [], loss: [] };
+// Only kinds that accumulate history get a bucket, and absence *is* the policy — birthday fires
+// once per member per year. A missing key rather than a guard naming a kind: opting in is visible
+// here, where an `if` inside remember() would not be.
+const recentPhrases: Partial<Record<Kind, string[]>> = { hype: [], win: [], loss: [] };
 
 export function remember(kind: Kind, text: string): void {
   const arr = recentPhrases[kind];
+  if (!arr) return;
   arr.push(text);
   while (arr.length > 3) arr.shift();
 }
 
 function recentBlock(kind: Kind): string {
-  if (!recentPhrases[kind].length) return "";
+  const recent = recentPhrases[kind];
+  if (!recent?.length) return "";
   return (
     " Recent messages of this type — yours must differ clearly in wording, structure and opening: " +
-    recentPhrases[kind].map(m => `«${m}»`).join(" ")
+    recent.map(m => `«${m}»`).join(" ")
   );
 }
 
@@ -586,8 +676,6 @@ const HYPE_REGISTERS = [
   " Deliver it quietly ominous, like someone who already knows exactly how the evening ends.",
 ];
 
-const recentRegisters: string[] = [];
-
 // Bucketed into words, never a number: a hype message has an empty safe-list, so «за 20
 // хвилин» would be an unsourced stat.
 function startsInLine(minutes: number | null | undefined): string {
@@ -618,7 +706,7 @@ export function hypePrompt(eventName: string | null, { startsIn, squadFull }: Hy
         : " Lean on that timing if it gives you a joke, but only in words — never a number of" +
           " minutes and never a clock time, both of which are already shown above your message.") +
       (squadFull ? " All five are in and the squad is locked — this is the last word before the match, not a recruitment call." : "") +
-      rollFresh(HYPE_REGISTERS, recentRegisters, r => r, 1) +
+      pickRegister("hype", HYPE_REGISTERS) +
       ` Build to the punchline instead of opening with it.` +
       // No roster is sent, so a P-code here is always invented — caught, but only after a
       // wasted call and a retry.
@@ -632,6 +720,49 @@ export function hypePrompt(eventName: string | null, { startsIn, squadFull }: Hy
       allowCallouts: true,
       players: [],
       safeNumbers: new Set(),
+      allowedScorelines: null,
+      map: null,
+      // Unenforced, as it always has been for the short kinds — see the note on the field.
+      maxWords: null,
+    },
+  };
+}
+
+// P1 exactly as a win message uses it: the swap in phrase.ts puts the real name back, keeping a
+// Latin username away from the model's transliteration reflex, and any *other* code is rejected.
+// `facts` is empty because there are none — the age is the only number in play.
+export function birthdayPrompt(name: string, { age }: BirthdayContext): PhraseRequest {
+  const angle = pickAngle("birthday", BIRTHDAY_ANGLES);
+  return {
+    prompt:
+      `Someone in the squad is having a birthday today. They are referred to as P1 and they are turning ${age}.` +
+      ` Write ONE short, funny, warm birthday message to them, for the whole group to read.` +
+      ` Angle — commit to it fully: ${angle}.` +
+      pickRegister("birthday", BIRTHDAY_REGISTERS) +
+      // Sentences, not words, are what the model can actually count — see **Birthday phrases** in
+      // CLAUDE.md. The word ceiling is enforced by `maxWords` below; this is what shapes the message.
+      ` Exactly two short paragraphs separated by a blank line — the joke, then the wish — ONE` +
+      ` sentence each, so TWO sentences in the whole message, and never more than` +
+      ` ${MAX_WORDS.birthday} words. Keep both sentences short: say one thing well and stop.` +
+      ` Address P1 directly, and use the code P1 rather than «ти» at least twice so it reads as` +
+      ` addressed to them by name.` +
+      // Only the prompt can say this: `attributable` ignores 1–2 digit integers, so «17 років у
+      // грі» ships unchallenged where an invented ADR of 847 is rejected.
+      ` The number ${age} is the only number you may write anywhere in the message.` +
+      ` Do not open with «З днем народження» — that line is printed above your message already.` +
+      ` End on a real wish, not a punchline.`,
+    checks: {
+      // No Elo figures are given, so any mention of Elo is invented.
+      allowElo: false,
+      // Nothing has been played, so «rush B» is a running joke, not a claim about a round —
+      // the same reason hype allows them.
+      allowCallouts: true,
+      players: [{ nickname: name, facts: "" }],
+      // The one kind with the ceiling enforced: asking alone doesn't hold it, and the tail still
+      // reached 77 against a 70 ask.
+      maxWords: MAX_WORDS.birthday,
+      safeNumbers: new Set([String(age)]),
+      // No score is in play at all, so a digit pair is a clock time or a joke, not a scoreline.
       allowedScorelines: null,
       map: null,
     },
@@ -711,6 +842,7 @@ export function matchPrompt(
       // in the prompt above and everything else would be invented.
       allowedScorelines: flow?.match(/\d+\s*:\s*\d+/g) ?? [],
       map: map ?? null,
+      maxWords: null,
     },
   };
 }

@@ -11,5 +11,6 @@ export const COMMANDS = [
   { command: "mute", key: "cmdMute", is_ephemeral: true },
   { command: "unmute", key: "cmdUnmute", is_ephemeral: true },
   { command: "faceit", key: "cmdFaceit", is_ephemeral: true },
+  { command: "birthday", key: "cmdBirthday", is_ephemeral: true },
   { command: "help", key: "cmdHelp", is_ephemeral: true },
 ] satisfies readonly { command: string; key: LabelKey; is_ephemeral: boolean }[];

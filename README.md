@@ -39,6 +39,13 @@ loss is played as straight-faced melodrama, and a hype line is a tactical briefi
 losing his voice, or quiet menace. Hype also knows roughly how long until kick-off — in words, never
 a number, since the real time is printed right above it.
 
+**Birthdays.** Members add their own date with `/birthday 15-03-1990`, and on the day the bot posts
+a short toast written for them — 70 words at most, the one AI message here that isn't a one-liner.
+The model is told only the age they're turning; the name reaches it as a placeholder and is swapped
+in afterwards. It's told at length to invent nothing else: no remembered clutch, no stat, no match
+that never happened. Greetings go out from 09:00 🇺🇦 Kyiv, and a 29 February birthday is greeted on
+the 28th in a non-leap year.
+
 Times display in both 🇺🇦 Kyiv and 🇪🇺 CET. Slash commands are hidden from the group by Telegram, and
 every hint, error and confirmation is sent privately, so the chat stays clean.
 
@@ -53,6 +60,9 @@ every hint, error and confirmation is sent privately, so the chat stays clean.
 | `/faceit <nickname>` | Link a FACEIT account. A typo comes back as tap-to-copy suggestions |
 | `/faceit` | Show which account you're linked to |
 | `/faceit off` | Unlink |
+| `/birthday <dd-mm-yyyy>` | Save your birthday, so the group gets a toast on the day. `5-3-1990` works too |
+| `/birthday` | Show the date you saved |
+| `/birthday off` | Remove it |
 | `/help` | The `@all` syntax — the one thing the `/` menu can't list, since `@all` isn't a command — plus every command and where a newcomer starts |
 | *someone joins* | A welcome naming them and the group, pointing at `/help`. Joining alone doesn't opt anyone into `@all` — that stays `/unmute` |
 
@@ -117,7 +127,7 @@ src/
   types.ts          shared SQLite row and FACEIT response shapes
   adapters/         one module per external system — db, faceit, ai
   view/             data → strings; no I/O, no Telegram context
-  handlers/         Telegram entry points — events, results, guards
+  handlers/         Telegram entry points — events, results, birthdays, guards
 ```
 
 One rule holds it together: **exactly one module talks to each external system.** Nothing outside
@@ -151,8 +161,9 @@ git commit -am "feat: ..."                             # change and bump togethe
 ```
 
 [CLAUDE.md](CLAUDE.md) documents the decisions behind the non-obvious parts, and the traps worth
-knowing before you change them: there are no schema migrations, the AI prompt and its output checks
-are deliberately split across three modules, and several behaviours that read as bugs are intentional.
+knowing before you change them: there are no schema migrations (which is why birthdays live in a
+table of their own), the AI prompt and its output checks are deliberately split across three modules,
+and several behaviours that read as bugs are intentional.
 
 ## License
 
