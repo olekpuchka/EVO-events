@@ -43,7 +43,7 @@ export const registerBirthday = groupOnly(async (ctx: CommandContext<Context>, f
   const birthDate = parseBirthday(arg, today);
   if (!birthDate) {
     // The typed date is never echoed back: it failed to parse, so it is arbitrary user text and
-    // saying "15-03-19900 is not a date" adds nothing the format line doesn't.
+    // saying "25-08-19900 is not a date" adds nothing the format line doesn't.
     await sendEphemeral(ctx, t("birthdayUsage"), { parse_mode: "HTML" });
     return;
   }

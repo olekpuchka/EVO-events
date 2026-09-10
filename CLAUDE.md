@@ -107,20 +107,23 @@ the group isn't necessarily the person being welcomed.
 
 ## Birthdays
 
-`/birthday 15-03-1990` stores a date, `/birthday` reports it, `/birthday off` removes it. Members
+`/birthday 25-08-1990` stores a date, `/birthday` reports it, `/birthday off` removes it. Members
 type and read **dd-mm-yyyy**; the database stores ISO `YYYY-MM-DD`, because ISO sorts and its last
 five characters are the `MM-DD` the daily sweep matches on — `substr(birth_date, 6)` in `db.ts` is
 that slice. `view/birthday.ts` owns both directions and every other date question; it is pure, and
 the clock is the only thing it reads. Day and month may be typed unpadded (`5-3-1990`) — the stored
-form is always padded. A date is rejected unless it is a real calendar day, in the past, after 1900,
-and at least `MIN_AGE_YEARS` ago: "not in the future" alone accepted *today*, so a year typed as
-2026 instead of 1996 stored fine and produced a public toast about turning 0.
+form is always padded. A date is rejected unless it is a real calendar day, in the past, and after
+1900.
+
+There is deliberately **no minimum age**. One briefly existed, because "not in the future" alone
+accepts *today* — a year typed as 2026 instead of 1996 stores fine and reads as turning 0. But this
+is one private group of adults: a floor refused nothing real, and only caught a slipped year landing
+inside the last few. The absurd-but-harmless output was judged cheaper than the validation.
 
 **`ageToday` is the only age function anything outside this module calls.** `ageOn` and `ageTurning`
 are internal halves of it. Three call sites answering "how old are they" separately is how
 `/birthday` came to confirm one age, report a second and greet with a third — all on the same day,
-for a 29 February member greeted on the 28th. The validation floor uses it too, so a 29 February
-member turning exactly `MIN_AGE_YEARS` on the stand-in day isn't bounced.
+for a 29 February member greeted on the 28th.
 
 The dates live in a **table of their own**, and that is the whole point. There is no migration step
 here (see **Schema**), so two new columns on `members` would never reach the `members.db` already on

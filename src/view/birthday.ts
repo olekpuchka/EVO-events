@@ -8,10 +8,10 @@
 
 import { DEFAULT_TZ } from "./eventtime.ts";
 
-// Both ends of the plausible range. The floor is what catches a slipped year: "in the past" alone
-// accepted *today*, which stored fine and produced a toast about turning 0.
+// The only bound on the year. No minimum age: this is one private group of adults, and a floor
+// there refused nothing real — it only ever caught a slipped year, and only one landing inside
+// the last few. A mistyped current year is accepted and reads as "turning 0"; that is the cost.
 const EARLIEST_YEAR = 1900;
-const MIN_AGE_YEARS = 13;
 
 // Unpadded day and month allowed — `5-3-1990` is what people type. Stored padded either way.
 const TYPED = /^(\d{1,2})-(\d{1,2})-(\d{4})$/;
@@ -27,7 +27,6 @@ export function parseBirthday(input: string, today: string): string | null {
   const date = new Date(`${iso}T00:00:00Z`);
   if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== iso) return null;
   if (Number(yyyy) < EARLIEST_YEAR || iso > today) return null;
-  if (ageToday(iso, today) < MIN_AGE_YEARS) return null;
   return iso;
 }
 

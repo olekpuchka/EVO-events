@@ -48,7 +48,7 @@ ${COMMANDS.map(({ command, key }) => `/${command} — ${escapeHtml(t(key))}`).jo
 <b>Вперше тут?</b>
 Надішли /unmute, щоб потрапити в список згадувань.
 Надішли /faceit ТвійНікнейм, щоб з'являтися в результатах матчів.
-Надішли /birthday 15-03-1990, щоб чат тебе привітав.`,
+Надішли /birthday 25-08-1990, щоб чат тебе привітав.`,
   // Sent to the group, not via sendEphemeral: an introduction is for everyone, not the joiner.
   // escapeHtml because a group title is user-set text.
   welcome: (mentions, chatTitle) => `👋 <b>Вітаємо, ${mentions} в ${escapeHtml(chatTitle)}!</b>
@@ -83,16 +83,12 @@ ${COMMANDS.map(({ command, key }) => `/${command} — ${escapeHtml(t(key))}`).jo
   viewOnFaceit: "Дивитись на",
   // Both the usage hint and what an unparsable date gets back: naming the format is the only
   // useful thing either can say, so a second label would be the same sentence twice.
-  // Names the age floor, not just "in the past": a mistyped year like 15-03-2016 satisfies both of
-  // the rules the old wording stated and was still refused, and the typed date is deliberately
-  // never echoed back — so the member had nothing to go on. That floor is what catches a slipped
-  // year, which is the likeliest mistake here.
-  birthdayUsage: "Надішли <code>/birthday 15-03-1990</code> — день народження у форматі <b>дд-мм-рррр</b>.\n\nДата має існувати і бути щонайменше 13 років тому.",
+  birthdayUsage: "Надішли <code>/birthday 25-08-1990</code> — день народження у форматі <b>дд-мм-рррр</b>.\n\nДата має існувати і бути в минулому.",
   birthdayNotSet: "🎂 Ти ще не додав свій день народження.",
   birthdaySaved: (date, age) => `🎂 Записано: <b>${date}</b> (зараз тобі ${age}).\n\nУ цей день чат тебе привітає.`,
   birthdayStatus: (date, age) => `🎂 Твій день народження: <b>${date}</b> (зараз тобі ${age}).`,
-  birthdayChangeHelp: "Надішли <code>/birthday 15-03-1990</code>, щоб змінити дату, або <code>/birthday off</code>, щоб прибрати.",
-  birthdayRemoved: "🎂 Прибрано — чат більше не вітатиме тебе автоматично.\n\nНадішли <code>/birthday 15-03-1990</code>, щоб додати знову.",
+  birthdayChangeHelp: "Надішли <code>/birthday 25-08-1990</code>, щоб змінити дату, або <code>/birthday off</code>, щоб прибрати.",
+  birthdayRemoved: "🎂 Прибрано — чат більше не вітатиме тебе автоматично.\n\nНадішли <code>/birthday 25-08-1990</code>, щоб додати знову.",
   // Sent to the group with a bare sendMessage, like the welcome: a greeting shown only to the
   // person it is about would be a strange thing to send. The AI toast goes under this line.
   birthdayGreeting: (mention, age) => `🎂 <b>З днем народження, ${mention}!</b> <i>(${age})</i>`,
