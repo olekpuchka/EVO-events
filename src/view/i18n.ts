@@ -48,7 +48,7 @@ ${COMMANDS.map(({ command, key }) => `/${command} — ${escapeHtml(t(key))}`).jo
 <b>Вперше тут?</b>
 Надішли /unmute, щоб потрапити в список згадувань.
 Надішли /faceit ТвійНікнейм, щоб з'являтися в результатах матчів.
-Надішли /birthday 25-08-1990, щоб чат тебе привітав.`,
+Надішли /birthday ДД-ММ-РРРР, щоб чат привітав тебе з днем народження.`,
   // Sent to the group, not via sendEphemeral: an introduction is for everyone, not the joiner.
   // escapeHtml because a group title is user-set text.
   welcome: (mentions, chatTitle) => `👋 <b>Вітаємо, ${mentions} в ${escapeHtml(chatTitle)}!</b>
