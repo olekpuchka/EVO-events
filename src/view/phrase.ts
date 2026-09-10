@@ -17,7 +17,12 @@ const EMOJIS: Record<Kind, string[]> = {
   hype: ["🔥", "⚔️", "😈", "🚀", "💣", "👊", "🍿", "🎮", "🫡"],
   win: ["🏆", "👑", "🔥", "😎", "💪", "🥂", "🚀", "📈", "🥇", "🎉"],
   loss: ["🤡", "💀", "🤷", "😴", "🫠", "📉", "🕯️", "🧘", "☕", "😮‍💨"],
+  birthday: ["🎂", "🎉", "🥳", "🎁", "🍰", "🥂", "🎈", "🍾"],
 };
+
+// Which kinds keep their line breaks. In a one-liner a stray newline is padding, not structure,
+// so the collapse below flattens it — but it turned a birthday toast into a single block.
+const MULTILINE: Record<Kind, boolean> = { hype: false, win: false, loss: false, birthday: true };
 
 const pickEmoji = (kind: Kind): string => EMOJIS[kind][Math.floor(Math.random() * EMOJIS[kind].length)];
 
@@ -72,7 +77,31 @@ const TERM_RX: [RegExp, string][] = TERM_FIX.map(([canon, spellings]) => [
 const PREAMBLE =
   /^(?:звісно|гаразд|окей|добре|sure|okay|of course)?[,\s]*(?:ось|here'?s|here is)\s+(?:the\s+|твоє\s+|ваше\s+)?(?:повідомленн\p{L}*|message)(?:\s+(?:в|у)\s+заданому\s+\p{L}+|\s+(?:as|you)\s+\p{L}+(?:\s+\p{L}+)?)?\s*:\s+/iu;
 
-function sanitize(text: string, map: string | null): string {
+// Drop every <b>/<i> tag not part of a properly nested pair, so what ships always parses. A stack,
+// because the per-tag regexes this replaces saw one tag at a time: «<b>a <i>b</i> c</b>» read as
+// an unclosed <b> and lost the bold, and with an earlier <b> in the message it kept the orphaned
+// </b> — which Telegram rejects with a 400. A close that doesn't match the innermost open is
+// dropped, not paired: crossed tags are rejected just as hard.
+const TAG = /<(\/?)([bi])>/g;
+
+function balanceTags(text: string): string {
+  const open: { tag: string; index: number }[] = [];
+  const drop = new Set<number>();
+  for (let m: RegExpExecArray | null; (m = TAG.exec(text)) !== null; ) {
+    if (!m[1]) {
+      open.push({ tag: m[2], index: m.index });
+    } else if (open.at(-1)?.tag === m[2]) {
+      open.pop();
+    } else {
+      drop.add(m.index); // closes nothing, or closes across another tag
+    }
+  }
+  for (const { index } of open) drop.add(index); // opened and never closed
+  if (!drop.size) return text;
+  return text.replace(TAG, (whole, _slash, _tag, offset: number) => (drop.has(offset) ? "" : whole));
+}
+
+function sanitize(text: string, map: string | null, multiline: boolean): string {
   let r = text
     // Quotes first: the preamble strip is anchored, and a reply wrapped in «…» hid it behind them.
     .replace(/["«»„“”‘‚]/g, "")
@@ -88,11 +117,9 @@ function sanitize(text: string, map: string | null): string {
     // the one term with a plural, kept lowercase: "MVPs", never "MVPS"
     .replace(/(?<![\p{L}\p{N}])mvp(s?)(?![\p{L}\p{N}])/giu, (_, s) => `MVP${s ? "s" : ""}`)
     .replace(/<\/\d+>/g, "")
-    .replace(/^<i>(.*)<\/i>$/, (_, inner) => (inner.includes("</i>") ? `<i>${inner}</i>` : inner))
-    .replace(/<b>(?![^<]*<\/b>)/g, "")
-    .replace(/<i>(?![^<]*<\/i>)/g, "")
-    .replace(/<\/b>/g, (m, off, s) => (s.slice(0, off).includes("<b>") ? m : ""))
-    .replace(/<\/i>/g, (m, off, s) => (s.slice(0, off).includes("<i>") ? m : ""));
+    .replace(/^<i>(.*)<\/i>$/, (_, inner) => (inner.includes("</i>") ? `<i>${inner}</i>` : inner));
+
+  r = balanceTags(r);
 
   // strip any emoji the model added — one is appended in code instead
   r = r.replace(/[\p{Extended_Pictographic}\p{Emoji_Modifier}\u{FE0F}\u{200D}]/gu, "");
@@ -102,7 +129,11 @@ function sanitize(text: string, map: string | null): string {
     r = r.replace(new RegExp(`(?<![\\p{L}\\p{N}])${escapeRx(map)}(?![\\p{L}\\p{N}])`, "giu"), map);
   }
 
-  return r.replace(/\s{2,}/g, " ").trim();
+  // Spaces collapse either way; on a multiline kind a paragraph break normalises to one blank
+  // line, which is what Telegram renders as a paragraph.
+  return multiline
+    ? r.replace(/[^\S\n]+/g, " ").replace(/ ?\n ?/g, "\n").replace(/\n{3,}/g, "\n\n").trim()
+    : r.replace(/\s{2,}/g, " ").trim();
 }
 
 /* ------------------------------------------------------------------ *
@@ -110,6 +141,12 @@ function sanitize(text: string, map: string | null): string {
  * text, in the group. A rejection is not an error — the caller asks
  * again, and only falls back if the second reply fails too.
  * ------------------------------------------------------------------ */
+
+// Telegram refuses a sendMessage over 4096 characters, and the birthday sweep reads that 400 as a
+// dead chat — costing a greeting for a year. A transport bound, not the length policing CLAUDE.md
+// rules out, so it doesn't move with the word ask: a backstop against a runaway completion, well
+// clear of any real message and leaving room for the header and for entity expansion.
+const MAX_CHARS = 3500;
 
 const ELO_MENTION = /(?<![\p{L}\p{N}])(elo|ело)(?![\p{L}\p{N}])/iu;
 
@@ -146,14 +183,20 @@ const attributable = (n: string): boolean => {
 // invented outright and a real one lifted off a teammate's line. Judging *every*
 // number was too blunt and binned good messages over "15 хвилин" and over an ADR
 // rounded from 47.3 to 47, so `attributable` keeps a joke's own counts out of it.
+//
+// Compared as numbers: «36.0» and «36» are one figure spelled two ways, and a string match
+// rejected the second spelling of a number the prompt had itself supplied.
 function unsourcedStat(text: string, players: PromptPlayer[], safe: Set<string>): boolean {
   const named = new Set([...text.matchAll(CODE)].map(m => Number(m[1])));
-  const mine = new Set(
-    players.flatMap((p, i) => (named.has(i + 1) ? p.facts.match(STAT_NUM) ?? [] : []))
+  const sourced = new Set(
+    [
+      ...players.flatMap((p, i) => (named.has(i + 1) ? p.facts.match(STAT_NUM) ?? [] : [])),
+      ...safe,
+    ].map(Number)
   );
   return (text.match(STAT_NUM) ?? [])
     .filter(attributable)
-    .some(n => !mine.has(n) && !safe.has(n));
+    .some(n => !sourced.has(Number(n)));
 }
 
 // The map is given, the position never is, so a callout is always invented — it put their coach
@@ -182,14 +225,17 @@ function wrongLanguage(text: string): boolean {
 export function finalizePhrase(
   text: string,
   kind: Kind,
-  { allowElo, allowCallouts, players, safeNumbers, allowedScorelines, map }: PhraseChecks
+  { allowElo, allowCallouts, players, safeNumbers, allowedScorelines, map, maxWords }: PhraseChecks
 ): PhraseVerdict {
-  let result = sanitize(text, map);
+  let result = sanitize(text, map, MULTILINE[kind]);
 
   // Cheapest first, and all of these read better before the swap: a nickname could
   // itself contain "elo", a digit pair, or an English word that trips the language
   // count. Only the code checks need substitution to have happened.
   if (!result) return { rejected: "empty" };
+  if (result.length > MAX_CHARS) return { rejected: "too-long" };
+  // Counted before the emoji, so the budget is all message. Shares `too-long` with the cap above.
+  if (maxWords !== null && result.split(/\s+/).length > maxWords) return { rejected: "too-long" };
   if (!allowElo && ELO_MENTION.test(result)) return { rejected: "elo" };
   if (wrongLanguage(result)) return { rejected: "language" };
   if (badScoreline(result, allowedScorelines)) return { rejected: "scoreline" };
@@ -202,7 +248,10 @@ export function finalizePhrase(
   let unknownCode = false;
   result = result.replace(CODE, (whole, digits) => {
     const nick = players[Number(digits) - 1]?.nickname;
-    if (nick) return nick;
+    // Stripped because this runs *after* sanitize and balanceTags — nothing checks it again, and
+    // escapeAiHtml turns `&lt;/i&gt;` back into a real tag. A FACEIT nickname can't contain one; a
+    // birthday swaps in a Telegram first name, which is arbitrary user text.
+    if (nick) return nick.replace(/[<>]/g, "");
     unknownCode = true; // a code we never issued → hallucinated, don't ship it
     return whole;
   });

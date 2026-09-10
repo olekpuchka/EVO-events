@@ -8,8 +8,8 @@ src/config.ts       every process.env read in the project
 src/log.ts          timestamps on console
 src/types.ts        shared row + API shapes
 src/adapters/       one module per external system: db (SQLite), faceit (HTTP), ai (DeepSeek)
-src/view/           data → strings: html, i18n, commands, render, eventtime, prompt, phrase
-src/handlers/       Telegram entry points: events, results, guards
+src/view/           data → strings: html, i18n, commands, render, eventtime, birthday, prompt, phrase
+src/handlers/       Telegram entry points: events, results, birthdays, guards
 ```
 
 **Exactly one module talks to each external system**: nothing outside `adapters/faceit.ts` calls
@@ -60,7 +60,9 @@ tappable.
 
 That cost is why a secondary action is an **argument**, not a command: `/faceit off` unlinks, and
 `/faceit` with no argument reports the current link. Both live inside the one handler, so neither
-spends a menu row or a second pair of descriptions. Reach for an argument first.
+spends a menu row or a second pair of descriptions. Reach for an argument first. `/birthday` is
+built to the same three-way shape — no argument reports, `off` removes, anything else is a date —
+and deliberately so: two commands with the same grammar are one thing to learn.
 
 Only `all_group_chats` is published; the `default` scope is cleared alongside it. That is what
 leaves DMs with no menu, and it's deliberate — every command returns early in a private chat.
@@ -102,6 +104,202 @@ The greeting names the group from `ctx.chat.title`, which rides the same update 
 call. It's asserted non-null because grammY's filter narrows the *message*, not the chat, so TS
 still admits a private chat a join can't arrive in. Escaped like any user-set text: whoever renames
 the group isn't necessarily the person being welcomed.
+
+## Birthdays
+
+`/birthday 15-03-1990` stores a date, `/birthday` reports it, `/birthday off` removes it. Members
+type and read **dd-mm-yyyy**; the database stores ISO `YYYY-MM-DD`, because ISO sorts and its last
+five characters are the `MM-DD` the daily sweep matches on — `substr(birth_date, 6)` in `db.ts` is
+that slice. `view/birthday.ts` owns both directions and every other date question; it is pure, and
+the clock is the only thing it reads. Day and month may be typed unpadded (`5-3-1990`) — the stored
+form is always padded. A date is rejected unless it is a real calendar day, in the past, after 1900,
+and at least `MIN_AGE_YEARS` ago: "not in the future" alone accepted *today*, so a year typed as
+2026 instead of 1996 stored fine and produced a public toast about turning 0.
+
+**`ageToday` is the only age function anything outside this module calls.** `ageOn` and `ageTurning`
+are internal halves of it. Three call sites answering "how old are they" separately is how
+`/birthday` came to confirm one age, report a second and greet with a third — all on the same day,
+for a 29 February member greeted on the 28th. The validation floor uses it too, so a 29 February
+member turning exactly `MIN_AGE_YEARS` on the stand-in day isn't bounced.
+
+The dates live in a **table of their own**, and that is the whole point. There is no migration step
+here (see **Schema**), so two new columns on `members` would never reach the `members.db` already on
+the volume and every statement naming them would throw at boot. `CREATE TABLE IF NOT EXISTS` adds a
+*new* table to an old database perfectly well — it is the one shape of schema change this setup can
+take, and it is why hype phrases are in memory but birthdays are not.
+
+`/birthday <date>` calls `trackMember`, exactly as `/faceit` does: the greeting reads the name from
+the `members` row, and the sweep's `JOIN` drops anyone without one. Unlike `welcomeJoiners`, this is
+an explicit setup command, and `trackMember` leaves an existing `notifications_enabled` alone — so
+it creates a row for a newcomer without un-muting anyone who chose to be muted.
+
+**The sweep runs on every scheduler tick and gates on `hour >= GREET_FROM_HOUR`, not equality.** A tick
+can be missed and the container restarts on every deploy; a greeting that silently skips a *year* is
+the one failure worth engineering out. What stops it repeating is `greeted_on` on the row, written
+only after the send lands — so a failed send retries for the rest of the day rather than waiting
+twelve months.
+
+That retry is bounded by kind of failure, and has to be: the AI call runs *before* the send, so a
+chat the bot can no longer post to would regenerate a whole toast every 60s until midnight. A
+permanent Telegram 4xx (kicked, chat gone, migrated) is marked greeted anyway and given up on; 429
+and everything else stays on the retry side. Same split `results.ts` makes with `transientFail`.
+`markBirthdayGreeted` therefore means two things — "greeted" and "gave up on this chat" — so the
+log line says which; it used to print `greeted (36)` directly under `giving up`.
+
+A **transient** failure retries forever by design, so the cost is bounded instead of the retry:
+`phraseCache` holds the generated toast for the day, and a retry pays for the send alone. An hour
+of Telegram trouble was ~60 DeepSeek completions for one member before that. The fallback is
+deliberately *not* cached — pinning it would keep shipping the canned toast after the API recovered.
+
+The AI call sits between the roster snapshot and the send, so three things are re-checked after it.
+
+**Membership**, first, because it is the cheapest and the AI call is the expensive one. Nothing
+removes a member's rows when they leave — no `left_chat_member` handler, no `DELETE` anywhere — so
+a departed member would be toasted publicly every year and could never clear it themselves
+(`/birthday off` is `groupOnly` and keyed on the sender). Gone means `left`, `kicked`, **or
+`restricted` with `is_member: false`** — that last reads as present if you only compare the status
+string. An errored check counts as still here. It **skips the tick, it does not settle the day**: one
+reading is a fact about this minute, and someone removed and back within the hour would otherwise
+lose their year silently.
+
+**The row, and that it is still due *today*** — not merely still switched on. A date moved mid-write
+would otherwise be greeted on the wrong day *and* mark the day spent, swallowing the real birthday.
+
+**The age**, re-derived from that row. A corrected year keeps the day but changes the age, which is
+inside the toast as well as the header; the phrase is dropped and rewritten next tick rather than
+shipping the two disagreeing.
+
+`phraseCache` is pruned against the live due list at the top of each sweep: an entry whose member is
+still failing at Kyiv midnight drops out of the due list and would otherwise sit there until the
+next redeploy.
+
+**`greeted_on` records the day the last greeting went out, not the year, and an edit never touches
+it.** That is the whole guard: the sweep knows what today is, so "have we greeted them for today?"
+is a direct comparison no edit can confuse, and `setBirthday` is a plain upsert.
+
+Storing a *year* and deciding at write time whether an edit invalidated it produced four separate
+duplicate-toast bugs — re-saving the same date, a corrected year, the 29 February stand-in
+(`02-28` and `02-29` are one day in a non-leap year), and finally editing away from today and back,
+which cleared the year with nothing left to restore. **A write-time decision could not see enough.**
+Recording the day removes the decision, and a genuine date move now correctly greets on the new
+day, which the year-based rule refused.
+
+`/birthday off` clears the **`active` flag rather than the row** — the only reason the column
+exists. A `DELETE` takes `greeted_on` with it, so off-then-same-date-again came back with no memory
+of the greeting.
+
+Both columns took their final shape **before this table ever shipped**, which is the only reason
+renaming one mid-work was free. Once this merges the no-migrations rule in **Schema** applies here
+like everywhere else: `CREATE TABLE IF NOT EXISTS` does nothing for a table that exists in the
+wrong shape, and every `db.prepare` naming the new column throws at boot before a handler
+registers.
+
+The sweep uses `ageToday` like everything else; everything it sees is due by construction, so the
+branch inside resolves to the age being turned.
+
+**29 February is greeted on the 28th** in a non-leap year. Without `dueMonthDays` those members are
+skipped silently, three years in four. It returns two values always, so `db.ts` prepares one
+statement with two placeholders and a day with no stand-in passes its own value twice.
+
+The greeting is a bare `api.sendMessage` — the header line carries the `<a>` mention and the AI toast
+sits under it. Not `sendRichMessage`: that would render the mention as literal text (see **Rich
+messages**), and the mention is the point.
+
+## Birthday phrases
+
+The **one kind that is not a one-liner**, which is why `SYSTEM_PROMPTS` is keyed by `Kind` rather
+than being the single `SYSTEM_PROMPT` it used to be. Every rule in the short-message prompt is about
+brevity — one or two sentences, at most two names, one bold fragment — and a multi-paragraph toast
+is the opposite shape. Adding a kind now forces a decision about which prompt it speaks under instead of
+silently inheriting those rules.
+
+`LIMITS` in `adapters/ai.ts` holds `maxTokens` and `timeoutMs` **in one entry per kind**, because
+the two move together: a completion cut off at `maxTokens` comes back truncated, one past
+`timeoutMs` not at all, and a kind must not get a budget while inheriting someone else's clock.
+Birthday runs 512/30s against the short kinds' 512/15s — same budget, a roomier clock, since nobody
+waits on that call. The timeout is per request, so `maxRetries: 0` still stands.
+
+The budget is sized off the **ask**, not the average: 70 words is ~260 tokens at this project's
+measured 2.5–3.7 per Ukrainian word, so it sits near double. Nothing inspects `finish_reason`, so an
+overshoot ships truncated with no check able to catch it — headroom is the only defence. Every entry
+in `MAX_WORDS` is a number actually sent to the model; `birthday` once held one the ask never used.
+**Both were far larger when the ask was 400–500 words** — they follow it down as well as up.
+
+`FALLBACKS` is keyed by kind for a smaller reason: `generate` looks its own up rather than taking
+one as a fourth parameter, which is one fewer place a caller can pair a kind with the wrong
+fallback.
+
+The standing danger here is **not a wrong number but a wrong memory**. The squad stores nothing about
+a person but a date, so asked to be warm and specific the model will happily recall a clutch that
+never happened — and no check can catch that, since a fabricated round carries no digits. Hence the
+rule stated three ways in the system prompt, and hence **no angle in `BIRTHDAY_ANGLES` asks for a
+memory**: every one is a format to fill in or a running squad joke, never a story to recall. The age
+is the only number on the safe list, so any other figure is an `unsourced-stat` rejection.
+
+`unsourcedStat` compares those figures **as numbers, not strings**: «36.0» and «36» are one figure
+spelled two ways, and a string match rejected the second spelling of a number the prompt had itself
+supplied. It was briefly patched by putting `${age}.0` on the safe list *and* naming the allowed
+spellings in the prompt — a sentence written to appease a regex is a sign the regex needs fixing.
+
+Note what the checks **cannot** do: `attributable` ignores 1–2 digit integers, so an invented
+«17 років у грі» ships where an invented ADR of 847 is rejected. On this kind the small numbers are
+the dangerous ones, and only the prompt stands behind them.
+
+The code swap in `phrase.ts` **strips `<` and `>` from whatever it substitutes**, because it runs
+*after* `sanitize` and `balanceTags` — nothing checks it again, and `escapeAiHtml` turns
+`&lt;/i&gt;` back into a real tag. Every other kind swaps in a FACEIT nickname, which cannot contain
+one; a birthday swaps in a Telegram **first name**, which is arbitrary user text. A member named
+`</i>` shipped an unmatched tag, and the sweep read the resulting 400 as a dead chat.
+
+`P1` works as it does in a win message, but it **takes no Ukrainian case ending** and the swap puts
+a bare nominative in its place — «в P1 день народження» shipped as «в Олег день народження». The
+prompt therefore says to build every sentence around P1 in the nominative and rephrase rather than
+decline it. Nothing can fix it afterwards: the code carries no case to restore.
+
+**Words are not a unit the model can count. Sentences are.** It overshot every word figure it was
+given — 78 median against a 70 ask, and 77 against a *lower* 55 ask, which moved nothing. Every real
+gain came from the sentence dial: "two or three sentences" brought the median to 60, and *one
+sentence per paragraph, two in the message* brought it to 58 with the spread closed to 50–70. That
+last step also took the fallback rate from 8% to zero — asked for three, it wrote three long ones
+and blew the budget twice in a row. Reach for the sentence count first, and keep the two consistent:
+a word ceiling the sentence count cannot fit is what produces retries. Twelve runs at the current
+ask: 50–70 words, median 58, two retries, **no fallbacks**.
+
+At a 400–500 ask it behaved the opposite way, landing *under* whatever ceiling it was given. Don't
+carry a calibration across a change — re-measure, and expect the direction of the error to flip.
+
+`maxWords` is `null` for hype, win and loss on purpose. Those have never had a hard limit — see
+**Match phrases** — and switching one on would start rejecting messages that ship fine today, on
+paths a user is waiting for. Birthday can afford it: nobody waits on that call, so a rejection costs
+only a second request.
+
+`balanceTags` in `view/phrase.ts` is what keeps several bold fragments sendable. It replaced a pair
+of per-tag regexes that could only see one tag at a time and read «`<b>a <i>b</i> c</b>`» as an
+unclosed `<b>` — dropping the bold outright, or worse, dropping the open tag while an earlier `<b>`
+in the message kept its `</b>` alive. Telegram rejects an unmatched close tag with a 400. Rare while
+the short kinds are held to one bold fragment, reachable the moment a birthday message is invited to
+use several.
+
+`MULTILINE` in `view/phrase.ts` is what lets those paragraphs survive: `sanitize` collapses all
+whitespace for a one-liner, where a stray newline is padding rather than structure, and a
+multi-paragraph toast through that came out as one block. Blank-line-separated paragraphs are what Telegram renders as
+paragraphs.
+
+`recentPhrases` has **no birthday bucket**, and that absence *is* the policy — it fires once per
+member per year, so there is nothing to repeat within, and three stored toasts would be prepended
+to every later prompt. Said as a missing key rather than as `if (kind ===
+"birthday") return` inside `remember()`: a guard naming a kind leaves an empty bucket four lines
+above it that lies about being maintained, and the next kind opts in by being forgotten in an `if`.
+`MULTILINE` in `phrase.ts` is the same idea done as an exhaustive table — both let a new kind fail
+loudly rather than inherit a default.
+
+Registers go through `pickRegister(kind, pool)`, mirroring `pickAngle`. The pool stays beside the
+prompt that uses it; only the freshness memory is keyed, and buckets appear on first use, since win
+and loss roll their register inside `closingInstruction` rather than from a pool. Birthday briefly
+had a second module-level array next to hype's — two globals differing in nothing but name.
+
+`allowCallouts` is `true`, the same as hype and for the same reason: nothing has been played, so
+«точку B» is a running joke about our plans, not a claim about a round.
 
 ## Rich messages
 
@@ -173,8 +371,15 @@ Which is why **every rejection is logged** with its reason (`[ai] win rejected (
 an empty reply logged separately. Without that, a check misfiring and the API being down look
 identical from the outside — the exact trap that let `thinking` sit switched on unnoticed.
 
-**Fallbacks are for having no AI result, not for policing output.** That's why a phrase has no length
-limit: a good long message ships, and `max_tokens` is the only bound on how long. The checks that do
+**Fallbacks are for having no AI result, not for policing output.** That's why a phrase has no
+*stylistic* length limit: a good long message ships. The one length check that does exist,
+`MAX_CHARS` in `view/phrase.ts`, is a transport bound rather than a style one (the birthday word
+ceiling shares its `too-long` reason but is a separate, per-kind check — see **Birthday phrases**) — Telegram refuses a
+`sendMessage` over 4096 characters outright, and `handlers/birthdays.ts` reads that 400 as a chat it
+can no longer post to, costing the member their greeting for a year, silently. A phrase past the cap
+cannot be delivered at all, which is a different thing from being merely long. It sits well clear of
+the largest real message and is unreachable for every kind at the asks they carry today — it is a
+backstop against a runaway completion, not a length policy, and so does not move with the ask. The checks that do
 reject — an invented or borrowed stat, a scoreline we didn't supply, a `P`-code we never issued, Elo
 when no Elo numbers were given, English in a UA message, a **callout** — each catch something that
 would read as fact or as broken text in the group, and each gets that second attempt first.
@@ -309,9 +514,10 @@ it shipped with. "Commit to it fully" wins that argument every time, so the guar
 than the joke. The same reasoning is why the tone line says "the end of an era" rather than naming a
 tragedy — whatever the prompt reaches for as a comparison, the model will try to top.
 
-`MAX_WORDS` in `view/prompt.ts` is one object keyed by kind — 35 across the board today, kept
-per-kind so one register can be loosened alone. Nothing enforces it but the model; `max_tokens: 512`
-in `adapters/ai.ts` is the only hard bound, and 35 Ukrainian words measures at **86–131 completion
+`MAX_WORDS` in `view/prompt.ts` is one object keyed by kind — 35 for all three match/hype kinds,
+kept per-kind so one register can be loosened alone. Nothing enforces it for **these** kinds but the
+model (birthday is the exception, and enforces it via `checks.maxWords`); `max_tokens: 512` in
+`adapters/ai.ts` is the only hard bound here, and 35 Ukrainian words measures at **86–131 completion
 tokens**, so there is room to raise this a long way before that ceiling matters.
 
 The invitation lives **only** in that roll. A standing "a friendly dig is welcome" in the closing

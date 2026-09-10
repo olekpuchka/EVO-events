@@ -9,6 +9,8 @@ import type {
   EventRow,
   ActiveEventRow,
   FaceitMemberRow,
+  BirthdayRow,
+  DueBirthdayRow,
   DueUnpinRow,
   DueReminderRow,
 } from "../types.ts";
@@ -320,6 +322,84 @@ export function markMatchPosted(chatId: ChatId, matchId: string): void {
 
 export function pruneOldPostedMatches(): void {
   stmtPrunePostedMatches.run();
+}
+
+/* ── Birthdays ──────────────────────────────────────────────────────────────
+ * Its own table, not columns on `members`: there is no migration step here (see **Schema** in
+ * CLAUDE.md), so a new column would never reach the members.db on the volume and every statement
+ * naming it would throw at boot. A whole new table is the one schema change this setup can take. */
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS birthdays (
+    chat_id      TEXT    NOT NULL,
+    user_id      INTEGER NOT NULL,
+    birth_date   TEXT    NOT NULL,
+    greeted_on   TEXT,
+    active       INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (chat_id, user_id)
+  )
+`);
+
+// No index on the MM-DD slice: one row per member per chat makes the scan a handful of rows.
+
+// `greeted_on` is the *day* the last greeting went out, and an edit never touches it — so the
+// sweep's "have we greeted them for today?" is a direct comparison no edit can confuse. Storing a
+// year instead, and deciding at write time whether an edit invalidated it, produced four separate
+// duplicate-toast bugs; see **Birthdays** in CLAUDE.md.
+const stmtSetBirthday = db.prepare(`
+  INSERT INTO birthdays (chat_id, user_id, birth_date)
+  VALUES (?, ?, ?)
+  ON CONFLICT (chat_id, user_id) DO UPDATE SET
+    birth_date = excluded.birth_date,
+    active     = 1
+`);
+
+// `/birthday off` clears the flag, not the row — the only reason `active` exists. A DELETE takes
+// `greeted_on` with it, so off-then-same-date-again came back with no memory of the greeting.
+const stmtClearBirthday = db.prepare(`
+  UPDATE birthdays SET active = 0 WHERE chat_id = ? AND user_id = ?
+`);
+
+const stmtGetBirthday = db.prepare(`
+  SELECT user_id, birth_date FROM birthdays WHERE chat_id = ? AND user_id = ? AND active = 1
+`);
+
+// Two placeholders because 29 February is greeted on the 28th; a day with no stand-in passes its
+// value twice. The JOIN supplies the name, so an untracked member simply isn't greeted.
+const stmtGetDueBirthdays = db.prepare(`
+  SELECT b.chat_id, b.user_id, b.birth_date,
+         m.username, m.first_name, m.last_name
+  FROM birthdays b
+  JOIN members m ON m.chat_id = b.chat_id AND m.user_id = b.user_id
+  WHERE b.active = 1
+    AND substr(b.birth_date, 6) IN (?, ?)
+    AND (b.greeted_on IS NULL OR b.greeted_on <> ?)
+`);
+
+const stmtMarkBirthdayGreeted = db.prepare(`
+  UPDATE birthdays SET greeted_on = ? WHERE chat_id = ? AND user_id = ?
+`);
+
+export function setBirthday(chatId: ChatId, userId: number, birthDate: string): void {
+  stmtSetBirthday.run(String(chatId), userId, birthDate);
+}
+
+export function clearBirthday(chatId: ChatId, userId: number): void {
+  stmtClearBirthday.run(String(chatId), userId);
+}
+
+export function getBirthday(chatId: ChatId, userId: number): BirthdayRow | null {
+  return oneRow<BirthdayRow>(stmtGetBirthday, String(chatId), userId) ?? null;
+}
+
+// Everyone due on `today`, across every chat — the sweep is a scheduler job, not a per-chat one.
+export function getDueBirthdays(monthDays: [string, string], today: string): DueBirthdayRow[] {
+  return allRows<DueBirthdayRow>(stmtGetDueBirthdays, monthDays[0], monthDays[1], today);
+}
+
+// Written only after the send lands, so a failure retries on the next tick.
+export function markBirthdayGreeted(chatId: ChatId, userId: number, today: string): void {
+  stmtMarkBirthdayGreeted.run(today, String(chatId), userId);
 }
 
 const stmtGetFaceitChats = db.prepare(`SELECT DISTINCT chat_id FROM members WHERE faceit_player_id IS NOT NULL`);

@@ -37,6 +37,23 @@ export interface FaceitMemberRow {
   faceit_elo: number | null;
 }
 
+// One member's stored birthday. `birth_date` is ISO `YYYY-MM-DD` — sortable, and its last five
+// characters are the MM-DD the daily sweep matches on. The table's `greeted_on` and `active`
+// columns are deliberately absent: both are written and filtered on in SQL and never read back off
+// a row, so selecting them would be fields to keep in sync for nothing.
+export interface BirthdayRow {
+  user_id: number;
+  birth_date: string;
+}
+
+// A birthday due today, joined with the member row the greeting needs to @-mention them.
+export interface DueBirthdayRow extends BirthdayRow {
+  chat_id: string;
+  username: string | null;
+  first_name: string;
+  last_name: string | null;
+}
+
 export interface DueUnpinRow {
   chat_id: string;
   message_id: number;
@@ -104,7 +121,7 @@ export interface FaceitMatchDetails {
  * Shared by the three modules a phrase passes through: view/prompt.ts builds the
  * text, adapters/ai.ts sends it, view/phrase.ts checks what comes back. */
 
-export type Kind = "hype" | "win" | "loss";
+export type Kind = "hype" | "win" | "loss" | "birthday";
 
 // One of our players as the model sees them. Position is the code it was given —
 // index 0 is P1 — so the nickname and the stat line it may quote can't drift apart.
@@ -129,7 +146,7 @@ export interface PhraseRequest {
 // Why a phrase can't ship. Here rather than in view/phrase.ts because all three modules
 // handle one: phrase.ts decides it, ai.ts logs and retries, prompt.ts corrects.
 export type RejectReason =
-  | "empty" | "elo" | "language" | "scoreline" | "unsourced-stat" | "unknown-code" | "callout";
+  | "empty" | "too-long" | "elo" | "language" | "scoreline" | "unsourced-stat" | "unknown-code" | "callout";
 
 // A judged reply. Named here because view/phrase.ts returns it and adapters/ai.ts
 // forwards it untouched — the `"phrase" in result` narrowing on both sides must agree.
@@ -143,6 +160,11 @@ export interface PhraseChecks {
   allowCallouts: boolean;
   players: PromptPlayer[];
   safeNumbers: Set<string>;
+  // The word ceiling the prompt stated, enforced — or null where the model's own compliance is
+  // the only bound. Null for the three short kinds deliberately: they have never had a hard limit
+  // (see **Match phrases** in CLAUDE.md), and switching one on would start rejecting messages that
+  // ship fine today. Birthday sets it because 70 words is a stated requirement, not a preference.
+  maxWords: number | null;
   // Scorelines the prompt supplied itself, e.g. the half-time score behind a comeback
   // hook — any other one is the final score we banned, or invented. `null` where no
   // score is in play at all (a hype message), so a clock time isn't read as one.
@@ -154,6 +176,12 @@ export interface PhraseChecks {
 export interface HypeContext {
   startsIn?: number | null; // minutes until kick-off, null when the event has no time
   squadFull?: boolean;
+}
+
+// All a birthday message knows. No stats, no history — the squad tracks neither, and
+// inventing either is exactly what the prompt forbids.
+export interface BirthdayContext {
+  age: number;
 }
 
 export interface MatchPhraseContext {

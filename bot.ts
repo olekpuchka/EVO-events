@@ -3,6 +3,7 @@ import { Bot } from "grammy";
 import type { BotCommand } from "@grammyjs/types";
 import { mentionAll, muteNotifications, unmuteNotifications, handleRsvp, sendReminder, cancelEvent, endEvent, registerFaceit, claimBotPin, unpinEventMessage, showHelp, welcomeJoiners } from "./src/handlers/events.ts";
 import { autoPostResult } from "./src/handlers/results.ts";
+import { registerBirthday, postBirthdayGreetings } from "./src/handlers/birthdays.ts";
 import { getDueUnpins, getDueReminders, deleteScheduledReminder, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/adapters/db.ts";
 import { t } from "./src/view/i18n.ts";
 import { COMMANDS } from "./src/view/commands.ts";
@@ -43,6 +44,7 @@ bot.command("mute", muteNotifications);
 bot.command("unmute", unmuteNotifications);
 bot.command("cancel", cancelEvent);
 bot.command("faceit", registerFaceit);
+bot.command("birthday", registerBirthday);
 bot.command("help", showHelp);
 
 // ─── Command menu ─────────────────────────────────────────────────────────────
@@ -139,6 +141,11 @@ async function processSchedules(now: number): Promise<void> {
 // sending it, so two overlapping polls can post the same result twice. Left unawaited so no
 // reminder or unpin waits on it — safe to skip a turn, since fetch bounds a stuck poll at ~5 min.
 let pollingFaceit = false;
+// Same guard, same reason: a greeting is marked sent only once it lands, so a sweep still
+// waiting on its AI call must not have a second one start behind it and greet the same member
+// twice. No interval of its own — the sweep returns on its own hour check, and a row is greeted
+// once a year whatever the tick rate.
+let greetingBirthdays = false;
 const schedulerInterval = setInterval(async () => {
   const now = Math.floor(Date.now() / 1000);
 
@@ -146,6 +153,13 @@ const schedulerInterval = setInterval(async () => {
     lastFaceitPoll = now;
     pollingFaceit = true;
     void pollFaceit().finally(() => { pollingFaceit = false; });
+  }
+
+  if (!greetingBirthdays) {
+    greetingBirthdays = true;
+    void postBirthdayGreetings(bot.api)
+      .catch(err => console.error("[birthday] sweep failed:", (err as Error).message))
+      .finally(() => { greetingBirthdays = false; });
   }
 
   if (now - lastPrune >= PRUNE_INTERVAL) {

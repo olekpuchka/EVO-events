@@ -6,7 +6,7 @@ import { EU_TIMEZONE_MEMBERS } from "../config.ts";
 
 // Poster timezones. Everyone defaults to Kyiv; the members listed in EU_TIMEZONE_MEMBERS
 // (comma-separated Telegram user IDs) type their event times in Central European Time instead.
-const DEFAULT_TZ = 'Europe/Kyiv';
+export const DEFAULT_TZ = 'Europe/Kyiv';
 const EU_TZ = 'CET';
 
 const euTimezoneMembers = new Set(
