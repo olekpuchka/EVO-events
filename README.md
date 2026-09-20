@@ -26,7 +26,8 @@ and schedule.
 `@all CS` with no time just mentions people. Nothing is pinned, nothing is scheduled.
 
 **Match results.** Finished matches post automatically: scoreboard with K/D/A, ADR, per-player Elo
-with the delta, team Elo, the map image, and one AI-written line about that match.
+with the delta, team Elo, the map image, and one AI-written line about that match. Only matches
+**two or more** linked members played in — solo queue stays off the group's feed.
 
 **The AI line** picks its own subject. On a win the model gets every player's full stat line, so the
 shoutout can land on a knife kill, a pile of grenade damage or a lone Zeus rather than always the top
