@@ -608,6 +608,26 @@ replace-per-term chain that had already drifted: `HLTV` was restored while `K/D`
 there, not as another `.replace`. `Cache` is Latin-only on purpose — its transliteration «кеш» is also
 the Ukrainian for *cash*, which the accountancy and bank-heist angles lean on constantly.
 
+## Posting a result
+
+A match is posted only if **`MIN_PLAYERS` (2) or more** linked members were in it. Solo queue is one
+member's business, the scoreboard renders as a one-row table, and the phrase says «ми» about four
+strangers.
+
+Gated in **two** places against one constant, because they count different things.
+`participantIds` in `autoPostResult` spans both teams in the stats and runs *before* the Elo
+fetches, so skipping is free; `resultRows` in `buildMatchResult` is our team alone and is what
+actually renders. Two of us queued onto opposite sides passes the first and fails the second.
+
+The count comes from the **match stats**, never from `matchCounts` in the candidate sweep. That
+tally is built from each member's own recent-match history, and a failed history call — already
+counted as `historyErrors` — would read a real squad game as solo and bury it permanently.
+
+A skipped match is `markMatchPosted`, or its stats get re-fetched on every poll for 24 hours. That
+means it also never reaches `setFaceitElo`, so the next posted match shows a delta spanning both.
+That was already approximate: `getPlayerById` returns Elo at *poll* time, not at match time, so a
+solo game between two squad matches always leaked into the next delta. Not worth a fetch to fix.
+
 ## FACEIT links
 
 Two writers, deliberately not one. `setFaceitAccount` sets the link and expresses a user's explicit

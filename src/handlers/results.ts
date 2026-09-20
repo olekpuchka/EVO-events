@@ -31,6 +31,9 @@ interface RegEntry {
 // The exact block-array type sendRichMessage accepts, so buildResultBlocks stays in sync with grammy.
 type RichBlocks = NonNullable<NonNullable<Parameters<Api["sendRichMessage"]>[1]>["blocks"]>;
 
+// A match posts only if this many of us were in it. Gated twice — see autoPostResult.
+const MIN_PLAYERS = 2;
+
 // The only place FACEIT's stat key spellings appear. Run for our roster and for the
 // opposing one, so both read the same keys through the same coercion.
 function toMatchPlayer(p: FaceitStatPlayer): MatchPlayer {
@@ -114,7 +117,8 @@ async function buildMatchResult(
       };
     });
 
-  if (!resultRows.length) return null;
+  // The caller's gate spans both teams; this one counts our team alone.
+  if (resultRows.length < MIN_PLAYERS) return null;
 
   const rawMap = round.round_stats?.Map ?? "";
   // Prefer FACEIT's official map name; fall back to cleaning the raw id if it's not in the pool.
@@ -275,6 +279,13 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
         }
       }
     }
+    // Before the Elo fetches, and marked posted so the next poll skips it. Counted from the
+    // match stats, not matchCounts — a failed history call would undercount there.
+    if (participantIds.size < MIN_PLAYERS) {
+      markMatchPosted(chatId, matchId);
+      continue;
+    }
+
     const transientFail = new Set<string>();
     await Promise.allSettled(
       [...participantIds]
