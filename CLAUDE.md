@@ -628,6 +628,19 @@ means it also never reaches `setFaceitElo`, so the next posted match shows a del
 That was already approximate: `getPlayerById` returns Elo at *poll* time, not at match time, so a
 solo game between two squad matches always leaked into the next delta. Not worth a fetch to fix.
 
+`buildResultBlocks` is the **only** renderer. A plain-HTML version shipped alongside it as a
+fallback from the day the rich card arrived, and was removed once the rich send had proved reliable
+in the group: it cost two places to edit for every change to the post, and had never needed a change
+itself.
+
+The consequence to know is on the failure path. A rejected send is **not** `markMatchPosted`, so the
+poll retries that match every `FACEIT_POLL_MINUTES` for 24 hours — and `generateMatchPhrase` runs
+inside `buildMatchResult`, *before* the send, so each retry buys another completion for a post
+nobody sees. The fallback used to absorb that. If it ever starts biting, the fix is the
+transient/permanent split `handlers/birthdays.ts` already makes — give up on a permanent 4xx, keep
+retrying a 429 — not a second renderer. The likeliest rejection is the `photo` block: `mapImage` is
+a FACEIT CDN URL that Telegram fetches server-side.
+
 ## FACEIT links
 
 Two writers, deliberately not one. `setFaceitAccount` sets the link and expresses a user's explicit
