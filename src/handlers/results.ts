@@ -146,7 +146,7 @@ async function buildMatchResult(
   return { won, ourScore, theirScore, elo, mapImage, matchId, rows: resultRows, phrase };
 }
 
-// Rich rendering of a match result: header, scoreboard table, AI-commentary blockquote, FACEIT footer.
+// Rich rendering of a match result: header, scoreboard table, FACEIT footer.
 function buildResultBlocks(result: MatchResult): RichBlocks {
   const { won, ourScore, theirScore, elo, matchId, rows, phrase, mapImage } = result;
   const H = (text: RichText, align: RichBlockTableCell["align"] = "center"): RichBlockTableCell => ({ text, is_header: true, align, valign: "middle" });
@@ -169,10 +169,9 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
   // Header first, with the map image below it.
   blocks.push({ type: "paragraph", text: header });
   if (mapImage) blocks.push({ type: "photo", photo: { type: "photo", media: mapImage } });
-  blocks.push(
-    { type: "table", is_striped: true, is_bordered: true, cells },
-    { type: "blockquote", blocks: [{ type: "paragraph", text: { type: "italic", text: stripAiHtml(phrase) } }] },
-  );
+  blocks.push({ type: "table", is_striped: true, is_bordered: true, cells });
+  // TEMP: AI line hidden — uncomment to restore. The phrase is still generated either way.
+  // blocks.push({ type: "blockquote", blocks: [{ type: "paragraph", text: { type: "italic", text: stripAiHtml(phrase) } }] });
   if (matchId) {
     blocks.push({ type: "footer", text: [`🔗 ${t("viewOnFaceit")} `, { type: "url", text: "FACEIT", url: matchRoomUrl(matchId) }] });
   }
