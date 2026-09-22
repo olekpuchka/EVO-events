@@ -3,7 +3,7 @@
 // Telegram UX — and shares no state with the event lifecycle.
 
 import { getFaceitMembers, setFaceitElo, hasPostedMatch, markMatchPosted } from "../adapters/db.ts";
-import { escapeHtml, escapeAiHtml, stripAiHtml } from "../view/html.ts";
+import { stripAiHtml } from "../view/html.ts";
 import { getPlayerById, getRecentMatches, getMatchStats, getMatchDetails, getMapName, getMapImage, matchRoomUrl } from "../adapters/faceit.ts";
 import { generateMatchPhrase } from "../adapters/ai.ts";
 import { t } from "../view/i18n.ts";
@@ -97,7 +97,7 @@ async function buildMatchResult(
 
   const registered = ourTeam.players.filter(p => registeredIds.has(p.player_id));
 
-  // Display rows (sorted by ADR desc), structured so the table and HTML fallback share one source.
+  // Display rows, sorted by ADR desc.
   const resultRows: ResultRow[] = registered
     .sort((a, b) => Number(b.player_stats?.ADR ?? 0) - Number(a.player_stats?.ADR ?? 0))
     .map(p => {
@@ -146,39 +146,9 @@ async function buildMatchResult(
   return { won, ourScore, theirScore, elo, mapImage, matchId, rows: resultRows, phrase };
 }
 
-// Header pieces shared by both renderers so they never drift: win/loss emoji, score, and
-// team Elo when present. The map shows only as the rich card's image below the header
-// (never a name here); it still feeds the AI phrase, and the HTML fallback shows no map.
-function resultHeader({ won, ourScore, theirScore, elo }: MatchResult): { emoji: string; score: string; elo: string | null } {
-  return {
-    emoji: won ? "🍌" : "❌",
-    score: `${ourScore}:${theirScore}`,
-    elo: elo ? `(${elo.ours} Elo vs ${elo.theirs} Elo)` : null,
-  };
-}
-
-// HTML rendering of a match result — the fallback when a rich message can't be sent.
-function renderResultHtml(result: MatchResult): string {
-  const { matchId, rows, phrase } = result;
-  const htmlRows = rows.map(p =>
-    `· <b>${escapeHtml(p.nickname)}</b> (${p.elo}) — ${p.kda} · ${p.adr} ADR`
-  );
-  const { emoji, score, elo } = resultHeader(result);
-  const header = `${emoji} <b>${escapeHtml(score)}</b>` + (elo ? ` ${escapeHtml(elo)}` : "");
-  const matchLink = matchId
-    ? `\n\n🔗 ${t("viewOnFaceit")} <a href="${matchRoomUrl(matchId)}">FACEIT</a>`
-    : "";
-  return (
-    header + "\n\n" +
-    htmlRows.join("\n") +
-    `\n\n<blockquote><i>${escapeAiHtml(phrase)}</i></blockquote>` +
-    matchLink
-  );
-}
-
-// Rich rendering of a match result: header, scoreboard table, AI-commentary blockquote, FACEIT footer.
+// Rich rendering of a match result: header, scoreboard table, FACEIT footer.
 function buildResultBlocks(result: MatchResult): RichBlocks {
-  const { matchId, rows, phrase, mapImage } = result;
+  const { won, ourScore, theirScore, elo, matchId, rows, phrase, mapImage } = result;
   const H = (text: RichText, align: RichBlockTableCell["align"] = "center"): RichBlockTableCell => ({ text, is_header: true, align, valign: "middle" });
   const C = (text: RichText, align: RichBlockTableCell["align"] = "center"): RichBlockTableCell => ({ text, align, valign: "middle" });
   const cells: RichBlockTableCell[][] = [
@@ -190,18 +160,18 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
     ]),
   ];
 
-  const { emoji, score, elo } = resultHeader(result);
-  const header: RichText[] = [`${emoji} `, { type: "bold", text: score }];
-  if (elo) header.push(" ", elo);
+  // The map is never named here — it shows only as the card's image below the header,
+  // and still feeds the AI phrase.
+  const header: RichText[] = [`${won ? "🍌" : "❌"} `, { type: "bold", text: `${ourScore}:${theirScore}` }];
+  if (elo) header.push(" ", `(${elo.ours} Elo vs ${elo.theirs} Elo)`);
 
   const blocks: RichBlocks = [];
   // Header first, with the map image below it.
   blocks.push({ type: "paragraph", text: header });
   if (mapImage) blocks.push({ type: "photo", photo: { type: "photo", media: mapImage } });
-  blocks.push(
-    { type: "table", is_striped: true, is_bordered: true, cells },
-    { type: "blockquote", blocks: [{ type: "paragraph", text: { type: "italic", text: stripAiHtml(phrase) } }] },
-  );
+  blocks.push({ type: "table", is_striped: true, is_bordered: true, cells });
+  // TEMP: AI line hidden — uncomment to restore. The phrase is still generated either way.
+  // blocks.push({ type: "blockquote", blocks: [{ type: "paragraph", text: { type: "italic", text: stripAiHtml(phrase) } }] });
   if (matchId) {
     blocks.push({ type: "footer", text: [`🔗 ${t("viewOnFaceit")} `, { type: "url", text: "FACEIT", url: matchRoomUrl(matchId) }] });
   }
@@ -324,17 +294,12 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
       continue;
     }
 
-    // Prefer the rich scoreboard; fall back to plain HTML if the rich send is rejected.
+    // Not marked posted on failure, so the next poll retries — which regenerates the phrase.
     try {
       await api.sendRichMessage(chatId, { blocks: buildResultBlocks(result) });
     } catch (err) {
-      console.warn("[faceit] rich post failed, falling back to HTML:", (err as Error).message);
-      try {
-        await api.sendMessage(chatId, renderResultHtml(result), { parse_mode: "HTML" });
-      } catch (e) {
-        console.error("[faceit] poll send failed:", (e as Error).message);
-        continue;
-      }
+      console.error("[faceit] poll send failed:", (err as Error).message);
+      continue;
     }
     markMatchPosted(chatId, matchId);
     // Lock in the new Elo baseline now that the delta has been posted, so the next match
