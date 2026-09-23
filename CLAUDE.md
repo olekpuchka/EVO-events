@@ -27,6 +27,12 @@ That keeps `view/` importable on its own, which matters because `adapters/db.ts`
 creates tables **at import time** — importing it, directly or not, creates a database as a side
 effect. Keep pure logic in `view/`.
 
+## Comments
+
+Code comments are tidy, clean and to the point: one line, two at most, stating the fact and at
+most one trap. The *why*, the history and the failure modes belong in the matching section of this
+file, not inline — a comment running past two lines is the signal it has moved here.
+
 ## Config defaults
 
 Every `process.env` read lives in `src/config.ts` — nothing else reaches for the environment.
@@ -610,23 +616,41 @@ the Ukrainian for *cash*, which the accountancy and bank-heist angles lean on co
 
 ## Posting a result
 
-A match is posted only if **`MIN_PLAYERS` (2) or more** linked members were in it. Solo queue is one
+A match is posted only if **`MIN_PLAYERS` (2) or more** linked members were on our team. Solo queue is one
 member's business, the scoreboard renders as a one-row table, and the phrase says «ми» about four
 strangers.
 
-Gated in **two** places against one constant, because they count different things.
-`participantIds` in `autoPostResult` spans both teams in the stats and runs *before* the Elo
-fetches, so skipping is free; `resultRows` in `buildMatchResult` is our team alone and is what
-actually renders. Two of us queued onto opposite sides passes the first and fails the second.
+Gated in **one** place: `resultRows` in `buildMatchResult`, our team alone, before the AI call. A
+second gate on `participantIds` (both teams) used to run first because it sat before the Elo
+fetches and so saved them; once skipped matches needed their Elo too, it caught nothing the first
+didn't. Two of us queued onto opposite sides counts as one.
 
-The count comes from the **match stats**, never from `matchCounts` in the candidate sweep. That
+The count comes from the **match stats**, never from `candidates` in the history sweep. That
 tally is built from each member's own recent-match history, and a failed history call — already
-counted as `historyErrors` — would read a real squad game as solo and bury it permanently.
+counted in `historyFailed` — would read a real squad game as solo and bury it permanently.
 
-A skipped match is `markMatchPosted`, or its stats get re-fetched on every poll for 24 hours. That
-means it also never reaches `setFaceitElo`, so the next posted match shows a delta spanning both.
-That was already approximate: `getPlayerById` returns Elo at *poll* time, not at match time, so a
-solo game between two squad matches always leaked into the next delta. Not worth a fetch to fix.
+**Skipping the post skips nothing else.** The gate sits *after* the Elo fetches, and a skipped
+match is `markMatchPosted` and its players' Elo is still saved. Gating before the fetch was cheaper, but a solo game then never moved the baseline and the next
+squad post showed a delta spanning both. It also waits out the same `transientFail` hold as a
+posted match, so a 429 doesn't commit a half-fetched baseline.
+
+*When* it is saved is the subtle part. `postElo` is live Elo, one value per poll, so whichever
+match saves it first owns the whole swing. A skipped match therefore saves **after the loop**, and
+only for players with no candidate still unmarked in `posted_matches` — held back, send failed,
+stats not ready, whatever the reason. Saved inline, a solo game sorted ahead of a pending squad
+match took that match's swing, and the squad post showed a delta of 0. Deriving "pending" from what
+was marked, rather than recording it at each early `continue`, means a new hold path can't forget
+to. A candidate's players are its history players plus, once read, its stats ones; a member whose
+history call failed counts as pending, since nothing says what they have outstanding.
+
+A *posted* match saves immediately and ignores pending matches: it has just shown the swing, and a
+held match posting later from the old baseline would show it twice.
+
+The delta is still approximate: `getPlayerById` returns Elo at *poll* time, not at match time, so
+matches finished inside one poll share a single `postElo`. The first *posted* one carries the whole
+swing, a solo game's included. And if the match holding a skipped one's save back is later dropped
+(voided, stats never arrive), that save never happens and the next delta spans both — the old
+behaviour, not a wrong number. Not worth a fetch to fix.
 
 `buildResultBlocks` is the **only** renderer. A plain-HTML version shipped alongside it as a
 fallback from the day the rich card arrived, and was removed once the rich send had proved reliable

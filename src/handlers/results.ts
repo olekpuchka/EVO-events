@@ -31,7 +31,7 @@ interface RegEntry {
 // The exact block-array type sendRichMessage accepts, so buildResultBlocks stays in sync with grammy.
 type RichBlocks = NonNullable<NonNullable<Parameters<Api["sendRichMessage"]>[1]>["blocks"]>;
 
-// A match posts only if this many of us were in it. Gated twice — see autoPostResult.
+// A match posts only if this many of us were on our team.
 const MIN_PLAYERS = 2;
 
 // The only place FACEIT's stat key spellings appear. Run for our roster and for the
@@ -117,7 +117,7 @@ async function buildMatchResult(
       };
     });
 
-  // The caller's gate spans both teams; this one counts our team alone.
+  // Counted from the stats: a failed history call would undercount.
   if (resultRows.length < MIN_PLAYERS) return null;
 
   const rawMap = round.round_stats?.Map ?? "";
@@ -178,6 +178,22 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
   return blocks;
 }
 
+// Saves fetched Elo as the baseline for the next delta.
+function commitElo(
+  chatId: number | string,
+  playerIds: Iterable<string>,
+  registeredIds: Map<string, RegEntry>
+): void {
+  for (const pid of playerIds) {
+    const entry = registeredIds.get(pid)!;
+    if (entry.postElo !== null && entry.postElo !== entry.preElo) {
+      setFaceitElo(chatId, entry.userId, pid, entry.postElo);
+      // Live Elo: a second match this poll shows delta 0, not the same swing.
+      entry.preElo = entry.postElo;
+    }
+  }
+}
+
 export async function autoPostResult(api: Api, chatId: number | string): Promise<void> {
   const members = getFaceitMembers(chatId);
   if (!members.length) return;
@@ -190,36 +206,40 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
   );
 
   // Collect candidates: finished, within 24h, not already posted
-  const matchCounts = new Map<string, { count: number; finished_at: number }>();
-  let historyErrors = 0;
-  for (const result of results) {
+  const candidates = new Map<string, { players: Set<string>; finished_at: number }>();
+  const historyFailed: string[] = [];
+  for (const [i, result] of results.entries()) {
+    const pid = members[i].faceit_player_id;
     if (result.status !== "fulfilled") {
-      historyErrors++;
+      historyFailed.push(pid);
       continue;
     }
     for (const match of result.value ?? []) {
       if (match.status !== "finished") continue;
       if (now - match.finished_at > 24 * 60 * 60) continue;
       if (hasPostedMatch(chatId, match.match_id)) continue;
-      const existing = matchCounts.get(match.match_id);
-      if (existing) existing.count++;
-      else matchCounts.set(match.match_id, { count: 1, finished_at: match.finished_at });
+      const existing = candidates.get(match.match_id);
+      if (existing) existing.players.add(pid);
+      else candidates.set(match.match_id, { players: new Set([pid]), finished_at: match.finished_at });
     }
   }
 
-  if (historyErrors) console.error(`[faceit] poll: ${historyErrors}/${members.length} history calls failed`);
-  if (!matchCounts.size) return;
+  if (historyFailed.length) console.error(`[faceit] poll: ${historyFailed.length}/${members.length} history calls failed`);
+  if (!candidates.size) return;
 
   // Map our members → { preElo (DB baseline for the delta), postElo (filled in per match below,
-  // only for members who actually played) }. postElo is NOT persisted until the post succeeds:
-  // if sending fails (e.g. FACEIT 429), preElo must stay the pre-match value or the delta collapses.
+  // only for members who actually played) }. Persisted only once the match is settled, or a
+  // failed send would collapse the delta.
   const registeredIds = new Map<string, RegEntry>(
     members.map(m => [m.faceit_player_id, { userId: m.user_id, preElo: m.faceit_elo, postElo: null }])
   );
 
+  // Players of skipped matches; their Elo is saved after the loop.
+  const skipped = new Set<string>();
+
   // Sort by member count desc, then oldest first so multiple sessions post in chronological order
-  const sortedMatches = [...matchCounts.entries()]
-    .sort((a, b) => b[1].count - a[1].count || a[1].finished_at - b[1].finished_at);
+  const sortedMatches = [...candidates.entries()]
+    .sort((a, b) => b[1].players.size - a[1].players.size || a[1].finished_at - b[1].finished_at);
 
   for (const [matchId, meta] of sortedMatches) {
     let stats: FaceitMatchStats | null = null;
@@ -249,13 +269,8 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
         }
       }
     }
-    // Before the Elo fetches, and marked posted so the next poll skips it. Counted from the
-    // match stats, not matchCounts — a failed history call would undercount there.
-    if (participantIds.size < MIN_PLAYERS) {
-      markMatchPosted(chatId, matchId);
-      continue;
-    }
-
+    // Lets the pending check see players missing from their own history.
+    for (const pid of participantIds) meta.players.add(pid);
     const transientFail = new Set<string>();
     await Promise.allSettled(
       [...participantIds]
@@ -289,8 +304,10 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
       : null;
 
     const result = await buildMatchResult(stats, registeredIds, elo, matchId, matchDetails);
+    // Too few of us: not posted, but the Elo still counts.
     if (!result) {
       markMatchPosted(chatId, matchId);
+      for (const pid of participantIds) skipped.add(pid);
       continue;
     }
 
@@ -302,19 +319,15 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
       continue;
     }
     markMatchPosted(chatId, matchId);
-    // Lock in the new Elo baseline now that the delta has been posted, so the next match
-    // measures its delta from here. Only this match's participants — committing all of
-    // registeredIds would persist Elo fetched for a different (possibly held-back) match.
-    // Skip members whose profile fetch failed (postElo null).
-    for (const pid of participantIds) {
-      const entry = registeredIds.get(pid)!;
-      if (entry.postElo !== null) {
-        setFaceitElo(chatId, entry.userId, pid, entry.postElo);
-        // Advance the baseline so a member's next match this poll shows delta 0
-        // instead of repeating the same swing — postElo is live Elo, one value per batch.
-        entry.preElo = entry.postElo;
-      }
-    }
+    // Saved now: the post has shown the swing.
+    commitElo(chatId, participantIds, registeredIds);
     console.log("[faceit] auto-posted result");
   }
+
+  // Skipped matches save last, skipping players with a match still unposted — it owns the swing.
+  const pending = new Set(historyFailed);
+  for (const [id, c] of candidates) {
+    if (!hasPostedMatch(chatId, id)) for (const pid of c.players) pending.add(pid);
+  }
+  commitElo(chatId, [...skipped].filter(pid => !pending.has(pid)), registeredIds);
 }
