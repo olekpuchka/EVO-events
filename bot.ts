@@ -139,7 +139,7 @@ async function processSchedules(now: number): Promise<void> {
 
 // A poll is guarded because it is not idempotent: autoPostResult marks a match posted only after
 // sending it, so two overlapping polls can post the same result twice. Left unawaited so no
-// reminder or unpin waits on it — safe to skip a turn, since fetch bounds a stuck poll at ~5 min.
+// reminder or unpin waits on it — safe to skip a turn, since each FACEIT call times out after 10s.
 let pollingFaceit = false;
 // Same guard, same reason: a greeting is marked sent only once it lands, so a sweep still
 // waiting on its AI call must not have a second one start behind it and greet the same member

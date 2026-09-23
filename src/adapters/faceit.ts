@@ -12,7 +12,7 @@ const BASE = "https://open.faceit.com/data/v4";
 
 // Public scoreboard URL for a match room.
 export const matchRoomUrl = (matchId: string): string =>
-  `https://www.faceit.com/en/cs2/room/${matchId}/scoreboard`;
+  `https://www.faceit.com/en/cs2/room/${encodeURIComponent(matchId)}/scoreboard`;
 
 function authHeader(): Record<string, string> {
   return { Authorization: `Bearer ${FACEIT_API_KEY}` };
@@ -20,9 +20,12 @@ function authHeader(): Record<string, string> {
 
 const sleep = (ms: number): Promise<void> => new Promise(r => setTimeout(r, ms));
 
+// Per attempt, body included — undici's own default is ~5 min, and one hung call stalls every chat's poll.
+const TIMEOUT_MS = 10_000;
+
 async function faceitGet<T>(url: string, { retries = 2 }: { retries?: number } = {}): Promise<T | null> {
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, { headers: authHeader() });
+    const res = await fetch(url, { headers: authHeader(), signal: AbortSignal.timeout(TIMEOUT_MS) });
     if (res.status === 404) return null;
     if (res.ok) return (await res.json()) as T;
     // Retry rate-limits and transient server errors with backoff; a single 429 otherwise
@@ -53,22 +56,22 @@ export async function searchPlayers(nickname: string, limit = 5): Promise<Faceit
 
 // `retries` is exposed because callers differ: the poll should ride out a 429, a watched command shouldn't.
 export function getPlayerById(playerId: string, opts?: { retries?: number }): Promise<FaceitPlayer | null> {
-  return faceitGet<FaceitPlayer>(`${BASE}/players/${playerId}`, opts);
+  return faceitGet<FaceitPlayer>(`${BASE}/players/${encodeURIComponent(playerId)}`, opts);
 }
 
 export async function getRecentMatches(playerId: string, limit = 5): Promise<FaceitHistoryItem[]> {
   const data = await faceitGet<{ items?: FaceitHistoryItem[] }>(
-    `${BASE}/players/${playerId}/history?game=cs2&limit=${limit}`
+    `${BASE}/players/${encodeURIComponent(playerId)}/history?game=cs2&limit=${limit}`
   );
   return data?.items ?? [];
 }
 
 export function getMatchStats(matchId: string): Promise<FaceitMatchStats | null> {
-  return faceitGet<FaceitMatchStats>(`${BASE}/matches/${matchId}/stats`);
+  return faceitGet<FaceitMatchStats>(`${BASE}/matches/${encodeURIComponent(matchId)}/stats`);
 }
 
 export function getMatchDetails(matchId: string): Promise<FaceitMatchDetails | null> {
-  return faceitGet<FaceitMatchDetails>(`${BASE}/matches/${matchId}`);
+  return faceitGet<FaceitMatchDetails>(`${BASE}/matches/${encodeURIComponent(matchId)}`);
 }
 
 // The FACEIT map-vote entity for the played map, or undefined if not in the pool.
