@@ -27,7 +27,8 @@ and schedule.
 
 **Match results.** Finished matches post automatically: scoreboard with K/D/A, ADR, per-player Elo
 with the delta, team Elo, the map image, and one AI-written line about that match. Only matches
-**two or more** linked members played in — solo queue stays off the group's feed.
+**two or more** linked members played in — solo queue stays off the group's feed, though its Elo
+change still counts, so a later post's delta doesn't include it.
 
 **The AI line** picks its own subject. On a win the model gets every player's full stat line, so the
 shoutout can land on a knife kill, a pile of grenade damage or a lone Zeus rather than always the top
