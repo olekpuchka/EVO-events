@@ -576,6 +576,11 @@ the Dockerfile). `npm outdated` will keep offering 26.x; taking it would typeche
 runtime doesn't have, and `node:sqlite` is exactly the kind of still-moving API where that bites.
 Bump it only when all three Node pins move, and move them together.
 
+`fflate` is **overridden** to 0.7.5 in `package.json`. satori pins it to exactly 0.7.3, which carries
+a ZIP64 infinite-loop advisory, and Dependabot's only fix was to downgrade satori. The card never
+unzips anything, but the override closes the alert on the same patch line satori expects. Drop it
+once a satori release requires 0.7.5 or later on its own.
+
 ## CI
 
 `.github/workflows/ci.yml` runs two jobs on every PR into `main`. `typecheck` is the code gate.
