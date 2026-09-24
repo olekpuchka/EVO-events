@@ -31,3 +31,29 @@ jobs:
 
       - name: Typecheck
         run: npm run typecheck
+
+  # The image is what production runs, and typecheck can't see inside it — a library that won't
+  # load there shipped once and crashed the bot. See **CI** in CLAUDE.md.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the pull request
+        uses: actions/checkout@v7
+
+      - name: Build the image
+        run: docker build -t evo-bot .
+
+      - name: botuser keeps the uid/gid the Alpine image gave it
+        run: |
+          set -eu
+          ids='echo "$(id -u botuser):$(id -g botuser)"'
+          new=$(docker run --rm --entrypoint sh evo-bot -c "$ids")
+          old=$(docker run --rm node:24-alpine sh -c "addgroup -S botgroup && adduser -S botuser -G botgroup && $ids")
+          echo "image: $new, Alpine: $old"
+          [ "$new" = "$old" ]
+
+      - name: The native TLS library loads inside the image
+        run: >
+          docker run --rm
+          -v "$PWD/.github/ci/image-smoke.cjs:/app/.github/ci/image-smoke.cjs:ro"
+          evo-bot node .github/ci/image-smoke.cjs

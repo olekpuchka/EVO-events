@@ -13,6 +13,7 @@ import { access, rm } from "node:fs/promises";
 import { Session, ClientIdentifier, initTLS } from "node-tls-client";
 import { LibraryHandler } from "node-tls-client/dist/utils/native.js";
 import { LibraryDownloader } from "node-tls-client/dist/utils/download.js";
+import { Client } from "node-tls-client/dist/lib/Client.js";
 import { FACEIT_API_KEY } from "../config.ts";
 
 const BASE = "https://open.faceit.com/data/v4";
@@ -123,6 +124,11 @@ let site: Promise<Session> | null = null;
 function siteSession(): Promise<Session> {
   site ??= ensureNativeLibrary()
     .then(() => initTLS())
+    .then(() => {
+      // An idle worker whose library won't load has no request to fail, so the pool emits 'error' —
+      // unheard, that kills the process. Heard, a bad library costs only the scoreboard.
+      Client.getInstance().pool.on("error", err => console.error("[faceit] tls worker failed:", (err as Error).message));
+    })
     .then(() => new Session({
       clientIdentifier: ClientIdentifier.chrome_131,
       timeout: TIMEOUT_MS,
@@ -146,7 +152,8 @@ export async function getMatchScoreboard(matchId: string): Promise<Map<string, S
     await sleep(Math.min(wait + 1, 30) * 1000);
     res = await session.get(url);
   }
-  if (res.status !== 200) throw new Error(`faceit.com ${res.status}`);
+  // Status 0 is the library's own transport error, and its reason is only in the body.
+  if (res.status !== 200) throw new Error(`faceit.com ${res.status}: ${res.body.slice(0, 160)}`);
   const data = await res.json<FaceitScoreboard>();
   const lines = new Map<string, ScoreboardLine>();
   for (const team of data.payload?.cs2?.teams ?? []) {
