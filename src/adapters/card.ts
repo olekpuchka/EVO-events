@@ -38,6 +38,8 @@ function renderOnce(markup: string, map: Uint8Array | null): Promise<Uint8Array 
       console.error(`[card] render failed (${signal ?? code}):`, cause?.trim() ?? "");
       resolve(null);
     });
+    // A child that dies before reading its job raises EPIPE here; unheard, that kills the bot.
+    child.stdin.on("error", e => console.error("[card] job write failed:", e.message));
     child.stdin.end(JSON.stringify({ markup, map: map ? Buffer.from(map).toString("base64") : null }));
   });
 }

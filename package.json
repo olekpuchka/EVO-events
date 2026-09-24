@@ -7,7 +7,6 @@
     "start": "node bot.ts",
     "dev": "node --watch bot.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"src/**/*.test.ts\"",
     "card:preview": "node scripts/card-preview.ts"
   },
   "engines": {

@@ -29,10 +29,11 @@ and schedule.
 
 **Match results.** Finished matches post automatically as a picture: the score across the map, both
 teams' Elo, and a table sorted by FACEIT rating — each player with their Elo and that match's change
-(↑25 / ↓23), their rating (gold from 1.40, green from 1.10) and swing, and their K/D/A and ADR. On a
-win the top rating gets an MVP badge; a rating of 1.5+ sets the row bold. The FACEIT link rides in the
-caption. If the picture can't be drawn, the same result posts as Telegram's own rich table. Only
-matches **two or more** linked members played in — solo queue stays off the group's feed.
+(↑25 / ↓23), their rating (gold from 1.80, green from 1.30, white from 0.90, red below) and swing,
+and their K/D/A and ADR. On a win the top rating gets a gold MVP star and is the only bold row. The
+FACEIT link rides in the caption. If the picture can't be drawn, the same result posts as Telegram's
+own rich table. Only matches **two or more** linked members played in — solo queue stays off the
+group's feed.
 
 Rating, swing and the exact per-match Elo change come from faceit.com's own scoreboard, which the
 open FACEIT API doesn't carry. That fetch is **best-effort**: when it fails, the post still goes out,
@@ -87,8 +88,8 @@ node --env-file=.env bot.ts
 
 The SQLite file is created at `app/data/` on first run (gitignored). The first match post also
 downloads `node-tls-client`'s native library into your temp directory; the Docker image ships it
-pre-installed instead. `npm run dev` restarts on change; `npm run typecheck` and `npm test` are the
-checks. `npm run card:preview` draws a sample result card into `card-preview/` (`card.html` and
+pre-installed instead. `npm run dev` restarts on change; `npm run typecheck` is the
+check. `npm run card:preview` draws a sample result card into `card-preview/` (`card.html` and
 `card.png`); add `-- --send=<chat id>` with `BOT_TOKEN` set to post it to a chat.
 
 **The mention list starts empty.** The Bot API cannot enumerate a group's members, so people add
@@ -151,8 +152,8 @@ manually from the Actions tab against the commit SHA you want.
 
 ## Contributing
 
-Branch, open a PR against `main`, let [CI](.github/workflows/ci.yml) typecheck and test it. Merging
-deploys to production, so keep `main` green — run `npm run typecheck` and `npm test` before you push.
+Branch, open a PR against `main`, let [CI](.github/workflows/ci.yml) typecheck it. Merging
+deploys to production, so keep `main` green — run `npm run typecheck` before you push.
 
 Since the merge is the release, fold the version bump into the change's own commit rather than a
 separate `chore: release`:

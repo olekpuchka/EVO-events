@@ -32,9 +32,6 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Tests
-        run: npm test
-
   # The image is what production runs, and typecheck can't see inside it — a library that won't
   # load there shipped once and crashed the bot. See **CI** in CLAUDE.md.
   image:

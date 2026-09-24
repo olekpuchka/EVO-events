@@ -496,9 +496,9 @@ The path is `buildMatchResult` → `cardMarkup` (`view/card.ts`, pure, reading t
 directly) → `renderCard` (`adapters/card.ts`) → a **child process** running `card-worker.ts`: satori
 turns the markup into SVG, resvg turns that into PNG. No browser — headless Chromium alone would not
 fit the container's **0.25 CPU / 250 MB**. The markup is the flexbox subset satori speaks, so every
-element with children is `display:flex`; `card.test.ts` checks that, since satori otherwise fails at
-render time. `ResultRow` carries the Elo as figures too (`eloAfter`, `eloChange`) so the card never
-parses the rich table's "2035 Elo ↑25" string.
+element with children is `display:flex` — satori fails at render time otherwise, and nothing checks
+it before then. `ResultRow` carries the Elo as figures too (`eloAfter`, `eloChange`) so the card
+never parses the rich table's "2035 Elo ↑25" string.
 
 **One child per card, on purpose.** `@resvg/resvg-js` leaks native memory on every render that
 contains a raster image — ~6 MB a card, 1.25 GB after 200, and neither `gc()` nor `MALLOC_ARENA_MAX`
@@ -521,23 +521,40 @@ The card draws no emoji — FACEIT nicknames can't carry one — so there are no
 
 **The table is the point of the card.** The player cell is the nickname in bold, and under it the
 Elo after the match (no "Elo" word, not bold) beside the match's change — `↑25` green / `↓23` red,
-bold. A **Rating** is coloured by its own tier — gold from 1.40, green from 1.10 (FACEIT's platform
-average), grey below — and a rating of **1.5 or more sets the row bold**, as FACEIT itself marks a
-standout game. On a **win the highest rating gets an MVP badge**, ties sharing it; a loss has none.
-**Swing** is green or red by its sign; a zero (`+0.00%`) stays neutral. The top **ADR** is marked gold by colour alone: bolding
-leaders made the leader's whole row read as bold. No scoreboard from faceit.com, no Rating or Swing
-column and no MVP — the rich table's rule.
+bold. Bold is set on the elements meant to be bold, never on a whole cell and undone inside it.
 
-**There is no header row.** The score is set at 92 px across a 190 px map banner, green for a win and
-red for a loss, with the team Elo pair small under it; the map is dimmed so the figures read on any
-map. Without a map the band is plain. A long nickname shrinks from 25 px to 15 px before an ellipsis
-clips it (`nickSize`, `nickRoom`); the room is worked out from the player column's real width, which
-is far wider without Rating and Swing. The widths are DejaVu Sans Bold's by class of letter, tuned on
-real nicknames — `TheR0gue0ne` was clipped at 11 characters by the first guess.
+A **Rating** is drawn as FACEIT draws it: the figure bold in its tier's colour on a chip tinted with
+it, over a bar filled linearly from 0.6 to 1.6 — a range read off FACEIT's own chips, not published.
+Gold from 1.80, green from 1.30, white from 0.90, red below. A chip's tint is blended **solid** onto
+one base (`blend`), not left translucent: over striped rows a translucent chip came out a different
+shade on every other row.
+
+The card has **one** green and red — FACEIT's own, `#6ADE43` and `#FF2727`, read from its
+scoreboard's styles — shared by the ratings, the score, the swing and the Elo arrows; the ratings
+briefly had a palette of their own, and two reds side by side read as a mistake. **Gold is two things
+on FACEIT, and so here**: a 1.80+ rating is an orange-to-yellow gradient (`#FF7601` → `#FCD529`)
+across its figure, bar and chip, sampled from a FACEIT chip; the MVP star is a solid `#F3B346`. The
+gradient figure is `background-clip:text`, which satori supports.
+
+On a **win the highest rating gets a gold MVP star**, ties sharing it, and **only the MVP's row is
+bold**; a loss has neither. The star is inline SVG, not a glyph: FACEIT's has rounded points, which a
+same-colour round-joined stroke gives and a font's ★ cannot. **Swing** is green or red by its sign; a
+zero (`+0.00%`) is grey, like an Elo `±0`. **ADR** is plain. No scoreboard from faceit.com, no Rating
+or Swing column and no MVP — the rich table's rule.
+
+**There is no header row.** The score is set at 92 px across a 190 px map banner, green for a win
+and red for a loss, with the team Elo pair small and bold under it; the map is dimmed so the figures
+read on any map. Without a map the band is plain. A long nickname shrinks from 25 px to 15 px before
+an ellipsis clips it (`nickSize`, `nickRoom`); the room is worked out from the player column's real
+width, which is far wider without Rating and Swing. The widths are DejaVu Sans Bold's by class of
+letter, tuned on real nicknames — `TheR0gue0ne` was clipped at 11 characters by the first guess.
 
 All of that was settled against mocks in the group, and these were tried and dropped: level badges,
-a ПЕРЕМОГА/ПОРАЗКА word, a separate header row, K/D, HS% and MVPs as columns, the Elo stacked at the
-cell's right edge, a tinted pill or a chip round it, filled ▲/▼, a bold top-ADR row, and 🔥 on a 1.5.
+an "MVP" text pill, the star beside the rating chip rather than the nickname, a ПЕРЕМОГА/ПОРАЗКА
+word, a separate header row, K/D, HS% and MVPs as columns, the Elo stacked at the cell's right edge,
+a tinted pill or a chip round the Elo, filled ▲/▼, 🔥 on a 1.5, bolding every row rated 1.5 or more
+(whatever the result), and marking the top ADR bold or gold — beside the MVP star, a gold ADR read
+as part of the MVP.
 
 **The rich table is the fallback**: a failed render (timeout, crash, missing font) sends it instead,
 so a post is never lost to the renderer. `npm run card:preview` writes a sample `card.html` and
@@ -561,10 +578,8 @@ Bump it only when all three Node pins move, and move them together.
 
 ## CI
 
-`.github/workflows/ci.yml` runs two jobs on every PR into `main`. `typecheck` is the code gate: it
-typechecks and runs `npm test` — `node:test` files beside the pure `view/` module they cover, since
-anything reaching `adapters/db.ts` opens a database on import. Deploy typechecks again before
-shipping, so a red one means the merge would fail to deploy too.
+`.github/workflows/ci.yml` runs two jobs on every PR into `main`. `typecheck` is the code gate.
+Deploy typechecks again before shipping, so a red one means the merge would fail to deploy too.
 
 `image` builds the real Docker image, because typecheck can't see inside it: 1.15.0 passed CI with
 a native library that couldn't load in production. It checks that `botuser` still has the uid/gid

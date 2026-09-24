@@ -5,7 +5,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Api, InputFile } from "grammy";
-import { cardMarkup, cardCaption, MAP_SRC } from "../src/view/card.ts";
+import { cardMarkup, cardCaption, COLOR, MAP_SRC } from "../src/view/card.ts";
 import { fetchMapImage, matchRoomUrl } from "../src/adapters/faceit.ts";
 import { renderCard } from "../src/adapters/card.ts";
 import { BOT_TOKEN } from "../src/config.ts";
@@ -60,8 +60,8 @@ writeFileSync(resolve(out, "card.html"), `<!doctype html><meta charset="utf-8"><
 <style>
 @font-face{font-family:DejaVu;font-weight:400;src:url("file://${fonts}/DejaVuSans.ttf")}
 @font-face{font-family:DejaVu;font-weight:700;src:url("file://${fonts}/DejaVuSans-Bold.ttf")}
-body{margin:24px;background:#0e1116;color:#e8e8e8;font-family:DejaVu,sans-serif}
-p{font-size:14px}a{color:#ff5500}
+body{margin:24px;background:${COLOR.bg};color:${COLOR.text};font-family:DejaVu,sans-serif}
+p{font-size:14px}a{color:${COLOR.muted}}
 </style>
 ${markup.replace(`src="${MAP_SRC}"`, `src="${mapSrc}"`)}
 <p>${cardCaption(matchRoomUrl(result.matchId))}</p>
