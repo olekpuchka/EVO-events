@@ -189,7 +189,7 @@ function table(result: MatchResult): string {
       `<div style="${cellStyle(PLAYER_FLEX, true, "")}">${playerCell(row, hot, room)}</div>${cells}</div>`;
   }).join("");
 
-  return `<div style="display:flex;flex-direction:column;margin:16px;border:1px solid ${COLOR.line};border-radius:10px">${head}${body}</div>`;
+  return `<div style="display:flex;flex-direction:column;margin:16px;border:1px solid ${COLOR.line};border-radius:10px;overflow:hidden">${head}${body}</div>`;
 }
 
 // The whole card. `withMap` is false when the map image could not be had — the banner goes plain.
