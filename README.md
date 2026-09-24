@@ -4,15 +4,16 @@ A Telegram bot that organizes CS2 sessions for a group of friends: it mentions e
 RSVPs on a pinned message, reminds the squad before the match, and posts the FACEIT scoreboard
 afterwards — rating, swing and the Elo each player won or lost.
 
-Built for one group of about five players, and every decision assumes that: no admin panel, no test
-suite, one SQLite file on one volume.
+Built for one group of about five players, and every decision assumes that: no admin panel, one
+SQLite file on one volume.
 
 Interface language is **Ukrainian**. Code and comments are English.
 
 **Stack:** TypeScript on Node 24 (run directly, no build step — Node strips the types),
 [grammY](https://grammy.dev/) for Telegram, built-in `node:sqlite` for storage,
 [node-tls-client](https://github.com/Sahil1337/node-tls-client) for faceit.com's own scoreboard, and
-DeepSeek for birthday toasts. Three runtime dependencies total.
+DeepSeek for birthday toasts, and [satori](https://github.com/vercel/satori) with
+[resvg](https://github.com/thx/resvg-js) to draw the result card.
 
 ## What it does
 
@@ -26,10 +27,12 @@ and schedule.
 
 `@all CS` with no time just mentions people. Nothing is pinned, nothing is scheduled.
 
-**Match results.** Finished matches post automatically: the score, both teams' Elo, the map image,
-and a three-column table sorted by FACEIT rating — each player with their Elo and that match's
-change, their rating and swing, and their K/D/A and ADR. Only matches **two or more** linked members
-played in — solo queue stays off the group's feed.
+**Match results.** Finished matches post automatically as a picture: the score across the map, both
+teams' Elo, and a table sorted by FACEIT rating — each player with their Elo and that match's change
+(↑25 / ↓23), their rating (gold from 1.40, green from 1.10) and swing, and their K/D/A and ADR. On a
+win the top rating gets an MVP badge; a rating of 1.5+ sets the row bold. The FACEIT link rides in the
+caption. If the picture can't be drawn, the same result posts as Telegram's own rich table. Only
+matches **two or more** linked members played in — solo queue stays off the group's feed.
 
 Rating, swing and the exact per-match Elo change come from faceit.com's own scoreboard, which the
 open FACEIT API doesn't carry. That fetch is **best-effort**: when it fails, the post still goes out,
@@ -84,7 +87,9 @@ node --env-file=.env bot.ts
 
 The SQLite file is created at `app/data/` on first run (gitignored). The first match post also
 downloads `node-tls-client`'s native library into your temp directory; the Docker image ships it
-pre-installed instead. `npm run dev` restarts on change; `npm run typecheck` is the only check there is.
+pre-installed instead. `npm run dev` restarts on change; `npm run typecheck` and `npm test` are the
+checks. `npm run card:preview` draws a sample result card into `card-preview/` (`card.html` and
+`card.png`); add `-- --send=<chat id>` with `BOT_TOKEN` set to post it to a chat.
 
 **The mention list starts empty.** The Bot API cannot enumerate a group's members, so people add
 themselves with `/unmute` — until someone does, `@all` has nobody to mention and says so.
@@ -146,8 +151,8 @@ manually from the Actions tab against the commit SHA you want.
 
 ## Contributing
 
-Branch, open a PR against `main`, let [CI](.github/workflows/ci.yml) typecheck it. Merging deploys to
-production, so keep `main` green — run `npm run typecheck` before you push.
+Branch, open a PR against `main`, let [CI](.github/workflows/ci.yml) typecheck and test it. Merging
+deploys to production, so keep `main` green — run `npm run typecheck` and `npm test` before you push.
 
 Since the merge is the release, fold the version bump into the change's own commit rather than a
 separate `chore: release`:

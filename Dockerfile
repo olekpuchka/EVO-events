@@ -42,6 +42,8 @@ RUN groupadd --system --gid 101 botgroup && useradd --system --uid 100 --gid bot
 COPY --from=deps /app/node_modules ./node_modules
 COPY bot.ts ./
 COPY src/ ./src/
+# Fonts and emoji the result card is drawn with — the slim image ships no fonts satori can use.
+COPY assets/ ./assets/
 
 # Create data dir and hand it to the non-root user before switching
 RUN mkdir -p /app/data && chown -R botuser:botgroup /app/data

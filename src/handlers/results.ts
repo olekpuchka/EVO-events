@@ -3,9 +3,11 @@
 // Telegram UX — and shares no state with the event lifecycle.
 
 import { getFaceitMembers, hasPostedMatch, markMatchPosted } from "../adapters/db.ts";
-import { getRecentMatches, getMatchStats, getMatchDetails, getMatchScoreboard, getMapImage, matchRoomUrl } from "../adapters/faceit.ts";
+import { getRecentMatches, getMatchStats, getMatchDetails, getMatchScoreboard, getMapImage, fetchMapImage, matchRoomUrl } from "../adapters/faceit.ts";
+import { renderCard } from "../adapters/card.ts";
+import { cardMarkup, cardCaption } from "../view/card.ts";
 import { t } from "../view/i18n.ts";
-import type { Api } from "grammy";
+import { InputFile, type Api } from "grammy";
 import type { RichText, RichBlockTableCell } from "@grammyjs/types";
 import type {
   FaceitMatchStats,
@@ -77,6 +79,8 @@ async function buildMatchResult(
         elo: r?.elo ? `${r.elo.after} Elo${deltaStr}` : null,
         rating: r ? round2(r.rating) : null,
         swing: r ? `${r.swing >= 0 ? "+" : ""}${round2(r.swing * 100)}%` : null,
+        eloAfter: r?.elo?.after ?? null,
+        eloChange: r?.elo?.change ?? null,
       };
     });
 
@@ -121,6 +125,17 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
   blocks.push({ type: "table", is_striped: true, is_bordered: true, is_compact: true, cells });
   blocks.push({ type: "footer", text: [`🔗 ${t("viewOnFaceit")} `, { type: "url", text: "FACEIT", url: matchRoomUrl(matchId) }] });
   return blocks;
+}
+
+// The card as a photo; the rich table when rendering fails, so a post is never lost to it.
+async function sendResult(api: Api, chatId: number | string, result: MatchResult): Promise<void> {
+  const map = result.mapImage ? await fetchMapImage(result.mapImage) : null;
+  const png = await renderCard(cardMarkup(result, map !== null), map);
+  if (!png) {
+    await api.sendRichMessage(chatId, { blocks: buildResultBlocks(result) });
+    return;
+  }
+  await api.sendPhoto(chatId, new InputFile(png, "result.png"), { caption: cardCaption(matchRoomUrl(result.matchId)), parse_mode: "HTML" });
 }
 
 export async function autoPostResult(api: Api, chatId: number | string): Promise<void> {
@@ -185,7 +200,7 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
 
     // Not marked posted on failure, so the next poll retries.
     try {
-      await api.sendRichMessage(chatId, { blocks: buildResultBlocks(result) });
+      await sendResult(api, chatId, result);
     } catch (err) {
       console.error("[faceit] poll send failed:", (err as Error).message);
       continue;

@@ -32,6 +32,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Tests
+        run: npm test
+
   # The image is what production runs, and typecheck can't see inside it — a library that won't
   # load there shipped once and crashed the bot. See **CI** in CLAUDE.md.
   image:
@@ -57,3 +60,9 @@ jobs:
           docker run --rm
           -v "$PWD/.github/ci/image-smoke.cjs:/app/.github/ci/image-smoke.cjs:ro"
           evo-bot node .github/ci/image-smoke.cjs
+
+      - name: The result card renders inside the image
+        run: >
+          docker run --rm
+          -v "$PWD/.github/ci/card-smoke.cjs:/app/.github/ci/card-smoke.cjs:ro"
+          evo-bot node .github/ci/card-smoke.cjs
