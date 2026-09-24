@@ -13,7 +13,7 @@ export const BOT_TOKEN = process.env.BOT_TOKEN || "";
 // Required for /faceit and match results; every request 401s without it.
 export const FACEIT_API_KEY = process.env.FACEIT_API_KEY || "";
 
-// Optional. Unset means built-in phrases instead of AI.
+// Optional. Unset means the built-in birthday toast instead of an AI one.
 export const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
 
 // app/data inside the project; the image overrides this with the absolute /app/data volume mount.

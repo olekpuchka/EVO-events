@@ -42,6 +42,7 @@ db.exec(`
     last_name TEXT,
     notifications_enabled INTEGER NOT NULL DEFAULT 1,
     faceit_player_id  TEXT,
+    -- Unused: the old Elo-delta baseline. Kept so this matches databases already on the volume.
     faceit_elo        INTEGER,
     PRIMARY KEY (chat_id, user_id)
   )
@@ -258,32 +259,23 @@ export function getActiveEvents(chatId: ChatId): ActiveEventRow[] {
   return allRows<ActiveEventRow>(stmtGetActiveEvents, String(chatId));
 }
 
-const stmtSetFaceit = db.prepare(`UPDATE members SET faceit_player_id = ?, faceit_elo = ? WHERE chat_id = ? AND user_id = ?`);
-// Elo goes with the id: it's only a delta baseline, and leaving a stale one behind would make a
-// future re-link measure its first swing from the wrong number.
-const stmtClearFaceit = db.prepare(`UPDATE members SET faceit_player_id = NULL, faceit_elo = NULL WHERE chat_id = ? AND user_id = ?`);
-const stmtSetFaceitElo = db.prepare(`UPDATE members SET faceit_elo = ? WHERE chat_id = ? AND user_id = ? AND faceit_player_id = ?`);
+const stmtSetFaceit = db.prepare(`UPDATE members SET faceit_player_id = ? WHERE chat_id = ? AND user_id = ?`);
+const stmtClearFaceit = db.prepare(`UPDATE members SET faceit_player_id = NULL WHERE chat_id = ? AND user_id = ?`);
 const stmtGetFaceitMembers = db.prepare(`
-  SELECT user_id, faceit_player_id, faceit_elo
+  SELECT faceit_player_id
   FROM members WHERE chat_id = ? AND faceit_player_id IS NOT NULL
 `);
 const stmtGetFaceitAccount = db.prepare(`
-  SELECT user_id, faceit_player_id, faceit_elo
+  SELECT faceit_player_id
   FROM members WHERE chat_id = ? AND user_id = ? AND faceit_player_id IS NOT NULL
 `);
 
-export function setFaceitAccount(chatId: ChatId, userId: number, playerId: string, elo: number | null): void {
-  stmtSetFaceit.run(playerId, elo, String(chatId), userId);
+export function setFaceitAccount(chatId: ChatId, userId: number, playerId: string): void {
+  stmtSetFaceit.run(playerId, String(chatId), userId);
 }
 
 export function clearFaceitAccount(chatId: ChatId, userId: number): void {
   stmtClearFaceit.run(String(chatId), userId);
-}
-
-// Elo only, and only while the link still points where the caller thinks. The poll's roster is a
-// snapshot from its start, so writing the id here would undo a `/faceit off` sent mid-poll.
-export function setFaceitElo(chatId: ChatId, userId: number, playerId: string, elo: number | null): void {
-  stmtSetFaceitElo.run(elo, String(chatId), userId, playerId);
 }
 
 export function getFaceitMembers(chatId: ChatId): FaceitMemberRow[] {

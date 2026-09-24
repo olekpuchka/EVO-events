@@ -2,7 +2,7 @@
 
 A Telegram bot that organizes CS2 sessions for a group of friends: it mentions everyone, collects
 RSVPs on a pinned message, reminds the squad before the match, and posts the FACEIT scoreboard
-afterwards with an AI-written line about how it went.
+afterwards — rating, swing and the Elo each player won or lost.
 
 Built for one group of about five players, and every decision assumes that: no admin panel, no test
 suite, one SQLite file on one volume.
@@ -10,39 +10,33 @@ suite, one SQLite file on one volume.
 Interface language is **Ukrainian**. Code and comments are English.
 
 **Stack:** TypeScript on Node 24 (run directly, no build step — Node strips the types),
-[grammY](https://grammy.dev/) for Telegram, built-in `node:sqlite` for storage, DeepSeek for the
-phrases. Two runtime dependencies total.
+[grammY](https://grammy.dev/) for Telegram, built-in `node:sqlite` for storage,
+[node-tls-client](https://github.com/Sahil1337/node-tls-client) for faceit.com's own scoreboard, and
+DeepSeek for birthday toasts. Three runtime dependencies total.
 
 ## What it does
 
 **Events.** `@all CS 22:00` mentions everyone on the list, pins a message with 🍌 Joining / ❌ Not
 joining buttons, and schedules the rest. RSVPs update the pinned message in place, and a "Mentioned:"
 block names whoever hasn't answered yet. The squad caps at five — the Joining button disappears at
-5/5 and a hype line locks it in; dropping out reopens the seat. Ten minutes before start, a reminder
+5/5, and dropping out reopens the seat. Ten minutes before start, a reminder
 goes out — only if at least two people are in — naming whoever is still undecided. At start time the
 event unpins and the buttons come off. Several events can be live at once, each with its own RSVPs
 and schedule.
 
 `@all CS` with no time just mentions people. Nothing is pinned, nothing is scheduled.
 
-**Match results.** Finished matches post automatically: scoreboard with K/D/A, ADR, per-player Elo
-with the delta, team Elo, the map image, and one AI-written line about that match. Only matches
-**two or more** linked members played in — solo queue stays off the group's feed, though its Elo
-change still counts, so a later post's delta doesn't include it.
+**Match results.** Finished matches post automatically: the score, both teams' Elo, the map image,
+and a three-column table sorted by FACEIT rating — each player with their Elo and that match's
+change, their rating and swing, and their K/D/A and ADR. Only matches **two or more** linked members
+played in — solo queue stays off the group's feed.
 
-**The AI line** picks its own subject. On a win the model gets every player's full stat line, so the
-shoutout can land on a knife kill, a pile of grenade damage or a lone Zeus rather than always the top
-fragger, and roughly one call in three invites it to tease someone instead. On a loss our roster is
-never sent at all: the subject is either the opposition — one real number of theirs, rolled from
-everything their team did — or the squad as a whole, roasting itself. Never one of us by name.
-
-**Its tone is rolled too**, not left to the model: a win comes out deadpan or shamelessly loud, a
-loss is played as straight-faced melodrama, and a hype line is a tactical briefing, a commentator
-losing his voice, or quiet menace. Hype also knows roughly how long until kick-off — in words, never
-a number, since the real time is printed right above it.
+Rating, swing and the exact per-match Elo change come from faceit.com's own scoreboard, which the
+open FACEIT API doesn't carry. That fetch is **best-effort**: when it fails, the post still goes out,
+without the Rating column and without the Elo lines.
 
 **Birthdays.** Members add their own date with `/birthday 25-08-1990`, and on the day the bot posts
-a short toast written for them — 70 words at most, the one AI message here that isn't a one-liner.
+a short toast written for them — 70 words at most, and the only AI-written message the bot sends.
 The model is told only the age they're turning; the name reaches it as a placeholder and is swapped
 in afterwards. It's told at length to invent nothing else: no remembered clutch, no stat, no match
 that never happened. Greetings go out from 09:00 🇺🇦 Kyiv, and a 29 February birthday is greeted on
@@ -88,8 +82,9 @@ cp .env.example .env          # fill in BOT_TOKEN
 node --env-file=.env bot.ts
 ```
 
-The SQLite file is created at `app/data/` on first run (gitignored). `npm run dev` restarts on
-change; `npm run typecheck` is the only check there is.
+The SQLite file is created at `app/data/` on first run (gitignored). The first match post also
+downloads `node-tls-client`'s native library into your temp directory; the Docker image ships it
+pre-installed instead. `npm run dev` restarts on change; `npm run typecheck` is the only check there is.
 
 **The mention list starts empty.** The Bot API cannot enumerate a group's members, so people add
 themselves with `/unmute` — until someone does, `@all` has nobody to mention and says so.
@@ -106,7 +101,7 @@ Everything is set through environment variables, all read in one place,
 |---|---|
 | `BOT_TOKEN` | Required. The process exits at startup without it |
 | `FACEIT_API_KEY` | Required for match results ([developers.faceit.com](https://developers.faceit.com)). Without it the bot starts, warns, and every poll 401s |
-| `DEEPSEEK_API_KEY` | Optional. Unset means built-in phrases instead of AI |
+| `DEEPSEEK_API_KEY` | Optional, for birthday toasts. Unset means a built-in toast instead of an AI one |
 
 **Everything else** is defaulted, so the bot runs with no configuration at all.
 
@@ -127,7 +122,7 @@ src/
   config.ts         every process.env read in the project
   log.ts            timestamps on console output
   types.ts          shared SQLite row and FACEIT response shapes
-  adapters/         one module per external system — db, faceit, ai
+  adapters/         one module per external system — db, faceit (open API + faceit.com), ai
   view/             data → strings; no I/O, no Telegram context
   handlers/         Telegram entry points — events, results, birthdays, guards
 ```
@@ -164,7 +159,7 @@ git commit -am "feat: ..."                             # change and bump togethe
 
 [CLAUDE.md](CLAUDE.md) documents the decisions behind the non-obvious parts, and the traps worth
 knowing before you change them: there are no schema migrations (which is why birthdays live in a
-table of their own), the AI prompt and its output checks are deliberately split across three modules,
+table of their own), the birthday prompt and its output checks are deliberately split across three modules,
 and several behaviours that read as bugs are intentional.
 
 ## License

@@ -18,7 +18,7 @@ if (!FACEIT_API_KEY) {
   console.warn("[config] FACEIT_API_KEY is not set — /faceit and auto match results will fail (every poll 401s).");
 }
 if (!DEEPSEEK_API_KEY) {
-  console.log("[config] DEEPSEEK_API_KEY is not set — using built-in phrases instead of AI.");
+  console.log("[config] DEEPSEEK_API_KEY is not set — birthday greetings use the built-in toast instead of AI.");
 }
 
 const bot = new Bot(BOT_TOKEN);
@@ -107,9 +107,8 @@ async function pollFaceit(): Promise<void> {
 
 async function processSchedules(now: number): Promise<void> {
   const reminderJobs = getDueReminders(now).map(async ({ chat_id, message_id }) => {
-    // Claim the row before the send, not after: sending awaits an AI phrase, and a tick that
-    // starts meanwhile must not find the same row and send the reminder twice. Claiming early
-    // loses nothing — a failed send was never retried either.
+    // Claim the row before the send, not after: a tick starting mid-send must not find the same
+    // row and send the reminder twice. A failed send was never retried either.
     deleteScheduledReminder(chat_id, message_id);
     try {
       const sent = await sendReminder(bot.api, chat_id, message_id);
@@ -167,8 +166,8 @@ const schedulerInterval = setInterval(async () => {
     try { pruneOldPostedMatches(); } catch (err) { console.error("[prune] failed:", (err as Error).message); }
   }
 
-  // Not serialized: reminder jobs claim their row before the slow send, and repeating an unpin is
-  // idempotent. A lock here would let one stalled AI phrase hold up every other chat's reminder.
+  // Not serialized: reminder jobs claim their row before the send, and repeating an unpin is
+  // idempotent. A lock here would let one stalled send hold up every other chat's reminder.
   await processSchedules(now).catch(err => console.error("[scheduler] failed:", (err as Error).message));
 }, 60_000);
 
