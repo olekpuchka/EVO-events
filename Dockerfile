@@ -20,6 +20,12 @@ ENV EU_TIMEZONE_MEMBERS=""
 # Secrets stay out of the image — ENV is readable via `docker history`. Supply at runtime:
 # BOT_TOKEN and FACEIT_API_KEY (required), DEEPSEEK_API_KEY (optional).
 
+# System CA roots: the Go TLS library verifies against them, unlike Node, which bundles its own —
+# slim ships none, and every faceit.com request then failed its handshake.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
 # node-tls-client's native library, pinned and pre-placed where it looks first — left to itself it
 # downloads an unpinned release at runtime. Fetched with Node: the slim image has no wget or curl.
 ARG TLS_CLIENT_VERSION=1.16.0
