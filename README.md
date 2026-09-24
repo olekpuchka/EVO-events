@@ -29,11 +29,11 @@ and schedule.
 
 **Match results.** Finished matches post automatically as a picture: the score across the map, both
 teams' Elo, and a table sorted by FACEIT rating — each player with their Elo and that match's change
-(↑25 / ↓23), their rating (gold from 1.80, green from 1.30, white from 0.90, red below) and swing,
-and their K/D/A and ADR. On a win the top rating gets a gold MVP star and is the only bold row. The
-FACEIT link rides in the caption. If the picture can't be drawn, the same result posts as Telegram's
-own rich table. Only matches **two or more** linked members played in — solo queue stays off the
-group's feed.
+(↑25 / ↓23 / ±0), their rating (gold from 1.80, green from 1.30, white from 0.90, red below) and
+swing, and their K/D/A and ADR. On a win the top rating gets a gold MVP star and is the only bold
+row. The FACEIT link rides in the caption. If the picture can't be drawn, the same result posts as
+Telegram's own rich table. Only matches **two or more** linked members played in — solo queue stays
+off the group's feed.
 
 Rating, swing and the exact per-match Elo change come from faceit.com's own scoreboard, which the
 open FACEIT API doesn't carry. That fetch is **best-effort**: when it fails, the post still goes out,

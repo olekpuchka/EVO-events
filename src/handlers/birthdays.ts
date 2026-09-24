@@ -146,7 +146,7 @@ export async function postBirthdayGreetings(api: Api): Promise<void> {
     } catch (err) {
       // Transient (429, 5xx, network) retries next tick; a birthday is worth retrying. Permanent
       // settles the day anyway — an unreachable chat would otherwise be retried every 60s until
-      // midnight for a member who is never greeted either way. Same split as `transientFail`.
+      // midnight for a member who is never greeted either way.
       const permanent = err instanceof GrammyError && err.error_code !== 429
         && err.error_code >= 400 && err.error_code < 500;
       console.error(`[birthday] greeting failed${permanent ? " (permanent, giving up)" : ""}:`, (err as Error).message);

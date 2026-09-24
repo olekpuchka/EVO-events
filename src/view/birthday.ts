@@ -74,9 +74,8 @@ const HOUR_FORMAT = new Intl.DateTimeFormat("en-GB", {
 });
 
 // The one clock read in this module.
-export function todayInGroupTz(now: Date = new Date()): { iso: string; year: number; hour: number } {
-  const iso = DAY_FORMAT.format(now);
-  return { iso, year: Number(iso.slice(0, 4)), hour: Number(HOUR_FORMAT.format(now)) };
+export function todayInGroupTz(now: Date = new Date()): { iso: string; hour: number } {
+  return { iso: DAY_FORMAT.format(now), hour: Number(HOUR_FORMAT.format(now)) };
 }
 
 // Which stored `MM-DD` values count as "today". A 29 February birthday exists three years in

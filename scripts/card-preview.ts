@@ -25,9 +25,8 @@ const row = (i: number, nickname: string, rating: number, swing: number, kda: st
   nickname: nicks[i] ?? nickname,
   kda,
   adr,
-  elo: `${after} Elo ${change >= 0 ? "↑" : "↓"}${Math.abs(change)}`,
-  rating: rated ? rating.toFixed(2) : null,
-  swing: rated ? `${swing >= 0 ? "+" : ""}${swing.toFixed(2)}%` : null,
+  rating: rated ? rating : null,
+  swing: rated ? swing : null,
   eloAfter: after,
   eloChange: loss ? -Math.abs(change) : change,
 });

@@ -374,7 +374,9 @@ Terms that must come out in Latin with exact casing live in **one table**, `TERM
 `view/phrase.ts`, alongside the Cyrillic spellings the model reaches for — map names included, since
 de-transliterating «інферно» and re-casing `faceit` are the same operation. It replaced a
 replace-per-term chain that had already drifted. Add new terms there, not as another `.replace`.
-`Cache` is Latin-only on purpose — its transliteration «кеш» is also the Ukrainian for *cash*.
+`Cache` is Latin-only on purpose — its transliteration «кеш» is also the Ukrainian for *cash*. Elo
+has no entry: any spelling of it is rejected outright (`ELO_MENTION`), so there is nothing to
+re-case.
 
 One thing is **stripped rather than rejected**: a leading preamble. A reply opened «Звісно, ось
 повідомлення в заданому стилі: …» and shipped it. The message after the colon was fine, and a
@@ -392,8 +394,9 @@ marker. Every looser version bit — bare stems matched «запит» inside «
 A match is posted only if **`MIN_PLAYERS` (2) or more** linked members were on our team. Solo queue is one
 member's business, and the scoreboard renders as a one-row table.
 
-Gated in **one** place: `registered` in `buildMatchResult`, our team alone, before the scoreboard
-fetch. Two of us queued onto opposite sides counts as one.
+Gated in **one** place: `registered` in `buildMatchResult`, our team alone, before the details and
+scoreboard fetches — a solo game costs one open-API call, its stats, and nothing else. Two of us
+queued onto opposite sides counts as one.
 
 The count comes from the **match stats**, never from `candidates` in the history sweep. That
 tally is built from each member's own recent-match history, and a failed history call — already
@@ -497,8 +500,10 @@ directly) → `renderCard` (`adapters/card.ts`) → a **child process** running 
 turns the markup into SVG, resvg turns that into PNG. No browser — headless Chromium alone would not
 fit the container's **0.25 CPU / 250 MB**. The markup is the flexbox subset satori speaks, so every
 element with children is `display:flex` — satori fails at render time otherwise, and nothing checks
-it before then. `ResultRow` carries the Elo as figures too (`eloAfter`, `eloChange`) so the card
-never parses the rich table's "2035 Elo ↑25" string.
+it before then. `ResultRow` carries figures, not display text — `rating`, `swing`, `eloAfter`,
+`eloChange` — and both renderers print them through the same formatters in `view/card.ts`
+(`formatRating`, `formatSwing`, `eloArrow`), so the card and the fallback cannot disagree. They once
+did: a zero Elo change read `±0` on the card and nothing at all in the rich table.
 
 **One child per card, on purpose.** `@resvg/resvg-js` leaks native memory on every render that
 contains a raster image — ~6 MB a card, 1.25 GB after 200, and neither `gc()` nor `MALLOC_ARENA_MAX`

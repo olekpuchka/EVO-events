@@ -28,7 +28,6 @@ const pickEmoji = (): string => EMOJIS[Math.floor(Math.random() * EMOJIS.length)
 // most of these. One table rather than a replace-per-term chain, which had drifted.
 const TERM_FIX: [canonical: string, spellings: string][] = [
   ["ADR", "adr|адр"],
-  ["Elo", "elo|ело"],
   ["HS", "hs"],
   ["K/D", "k/d"],
   ["AWP", "awp"],

@@ -1,8 +1,8 @@
-import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getUserRsvpStatus, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvents, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitAccount, clearFaceitAccount } from "../adapters/db.ts";
+import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvents, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitAccount, clearFaceitAccount } from "../adapters/db.ts";
 import { buildMention, escapeHtml } from "../view/html.ts";
 import { sendEphemeral, deleteTrigger, groupOnly } from "./guards.ts";
 import { getPlayer, getPlayerById, searchPlayers } from "../adapters/faceit.ts";
-import { t } from "../view/i18n.ts";
+import { t, type LabelKey } from "../view/i18n.ts";
 import { parseEventTime, decorateEventTime, timezoneForUser } from "../view/eventtime.ts";
 import {
   MAX_PLAYERS,
@@ -217,29 +217,21 @@ export async function welcomeJoiners(ctx: Filter<Context, "message:new_chat_memb
     await ctx.reply(t("welcome", joined.map(buildMention).join(", "), ctx.chat.title!), { parse_mode: "HTML" });
 }
 
-export const muteNotifications = groupOnly(async (ctx: CommandContext<Context>, from) => {
-  const current = getNotificationsStatus(ctx.chat.id, from.id);
-  if (current === false) {
-    await sendEphemeral(ctx, t("alreadyMuted"));
-    return;
-  }
-  trackMember(ctx.chat.id, from);
-  setNotifications(ctx.chat.id, from.id, false);
-  console.log("[mute] muted");
-  await sendEphemeral(ctx, t("mutedSuccess"));
-});
+// /mute and /unmute: one body, the opposite setting and replies.
+const setMentions = (enabled: boolean, already: LabelKey, done: LabelKey, tag: string) =>
+  groupOnly(async (ctx: CommandContext<Context>, from) => {
+    if (getNotificationsStatus(ctx.chat.id, from.id) === enabled) {
+      await sendEphemeral(ctx, t(already));
+      return;
+    }
+    trackMember(ctx.chat.id, from);
+    setNotifications(ctx.chat.id, from.id, enabled);
+    console.log(`[${tag}] ${tag}d`);
+    await sendEphemeral(ctx, t(done));
+  });
 
-export const unmuteNotifications = groupOnly(async (ctx: CommandContext<Context>, from) => {
-  const current = getNotificationsStatus(ctx.chat.id, from.id);
-  if (current === true) {
-    await sendEphemeral(ctx, t("alreadyUnmuted"));
-    return;
-  }
-  trackMember(ctx.chat.id, from);
-  setNotifications(ctx.chat.id, from.id, true);
-  console.log("[unmute] unmuted");
-  await sendEphemeral(ctx, t("unmutedSuccess"));
-});
+export const muteNotifications = setMentions(false, "alreadyMuted", "mutedSuccess", "mute");
+export const unmuteNotifications = setMentions(true, "alreadyUnmuted", "unmutedSuccess", "unmute");
 
 // A callback query ID expires (~15s), so a tap replayed after a restart can no longer be
 // answered. Losing the toast is fine; losing the bookkeeping that follows it is not.
@@ -271,21 +263,19 @@ export async function handleRsvp(ctx: CallbackQueryContext<Context>): Promise<vo
     return;
   }
 
-  const currentStatus = getUserRsvpStatus(chatId, messageId, ctx.from.id);
-  if (currentStatus === status) {
+  const userId = ctx.from.id;
+  const before = getRsvps(chatId, messageId);
+  if (before.find(r => r.id === userId)?.status === status) {
     await ack(ctx, status === "join" ? t("alreadyJoining") : t("alreadyNotJoining"));
     return;
   }
 
   // Enforce the squad cap server-side: the "Joining" button is removed at 5/5,
   // but a stale client may still show it. Reject the join instead of going 6/5.
-  if (status === "join") {
-    const joiningNow = getRsvps(chatId, messageId).filter(r => r.status === "join");
-    if (isSquadFull(joiningNow)) {
-      console.log("[rsvp] rejected — squad full");
-      await ack(ctx, t("squadFull", MAX_PLAYERS));
-      return;
-    }
+  if (status === "join" && isSquadFull(before.filter(r => r.status === "join"))) {
+    console.log("[rsvp] rejected — squad full");
+    await ack(ctx, t("squadFull", MAX_PLAYERS));
+    return;
   }
 
   saveRsvp(chatId, messageId, ctx.from, status);
