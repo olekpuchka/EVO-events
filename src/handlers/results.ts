@@ -5,13 +5,12 @@
 import { getFaceitMembers, hasPostedMatch, markMatchPosted } from "../adapters/db.ts";
 import { getRecentMatches, getMatchStats, getMatchDetails, getMatchScoreboard, getMapImage, fetchMapImage, matchRoomUrl } from "../adapters/faceit.ts";
 import { renderCard } from "../adapters/card.ts";
-import { cardMarkup, cardCaption } from "../view/card.ts";
+import { cardMarkup, cardCaption, eloArrow, formatRating, formatSwing } from "../view/card.ts";
 import { t } from "../view/i18n.ts";
 import { InputFile, type Api } from "grammy";
 import type { RichText, RichBlockTableCell } from "@grammyjs/types";
 import type {
   FaceitMatchStats,
-  FaceitMatchDetails,
   FaceitStatPlayer,
   EloPair,
   ResultRow,
@@ -25,13 +24,12 @@ type RichBlocks = NonNullable<NonNullable<Parameters<Api["sendRichMessage"]>[1]>
 const MIN_PLAYERS = 2;
 
 // Rounded to 2 places; toFixed alone takes 1.005 to "1.00".
-const round2 = (n: number): string => (Math.round(Number((n * 100).toPrecision(12))) / 100).toFixed(2);
+const round2 = (n: number): number => Math.round(Number((n * 100).toPrecision(12))) / 100;
 
 async function buildMatchResult(
   stats: FaceitMatchStats,
   registeredIds: Set<string>,
-  matchId: string,
-  matchDetails: FaceitMatchDetails
+  matchId: string
 ): Promise<MatchResult | null> {
   const round = stats.rounds?.[0];
   if (!round) return null;
@@ -54,6 +52,10 @@ async function buildMatchResult(
   // fetch, so a solo game spends none of faceit.com's anonymous rate limit.
   if (registered.length < MIN_PLAYERS) return null;
 
+  // Details (map, team Elo) only for a match that will post; unavailable, it is never posted.
+  const matchDetails = await getMatchDetails(matchId);
+  if (!matchDetails) return null;
+
   // Best-effort: a scoreboard Cloudflare turned away drops Rating and Elo, never the post.
   const board = await getMatchScoreboard(matchId).catch(err => {
     console.error("[faceit] scoreboard fetch failed:", (err as Error).message);
@@ -68,17 +70,12 @@ async function buildMatchResult(
     .map(p => {
       const s = p.player_stats ?? {};
       const r = board?.get(p.player_id);
-      const change = r?.elo?.change;
-      // Non-breaking spaces keep the whole "1234 Elo ↑0" on one line so the cell
-      // never wraps past two lines (nickname + elo) in the narrow scoreboard column.
-      const deltaStr = change ? ` ${change >= 0 ? "↑" : "↓"}${Math.abs(change)}` : "";
       return {
         nickname: p.nickname,
         kda: `${s.Kills ?? "?"}/${s.Deaths ?? "?"}/${s.Assists ?? "?"}`,
         adr: s.ADR ?? "?",
-        elo: r?.elo ? `${r.elo.after} Elo${deltaStr}` : null,
         rating: r ? round2(r.rating) : null,
-        swing: r ? `${r.swing >= 0 ? "+" : ""}${round2(r.swing * 100)}%` : null,
+        swing: r ? round2(r.swing * 100) : null,
         eloAfter: r?.elo?.after ?? null,
         eloChange: r?.elo?.change ?? null,
       };
@@ -96,6 +93,10 @@ async function buildMatchResult(
   return { won, ourScore, theirScore, elo, mapImage, matchId, rows: resultRows };
 }
 
+// Non-breaking spaces keep "1234 Elo ↑25" on one line, so the narrow player cell never wraps past two.
+const eloLine = (after: number, change: number | null): string =>
+  `${after}\u00a0Elo${change !== null ? `\u00a0${eloArrow(change)}` : ""}`;
+
 // Rich rendering of a match result: header, scoreboard table, FACEIT footer.
 function buildResultBlocks(result: MatchResult): RichBlocks {
   const { won, ourScore, theirScore, elo, matchId, rows, mapImage } = result;
@@ -107,8 +108,8 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
   const cells: RichBlockTableCell[][] = [
     [H(t("scorePlayer")), ...(rated ? [H("Rating\nSwing")] : []), H("K/D/A\nADR")],
     ...rows.map(p => [
-      C([{ type: "bold", text: p.nickname }, ...(p.elo ? [`\n${p.elo}`] : [])], "left"),
-      ...(rated ? [C(`${p.rating ?? "?"}\n${p.swing ?? "?"}`)] : []),
+      C([{ type: "bold", text: p.nickname }, ...(p.eloAfter !== null ? [`\n${eloLine(p.eloAfter, p.eloChange)}`] : [])], "left"),
+      ...(rated ? [C(`${p.rating !== null ? formatRating(p.rating) : "?"}\n${p.swing !== null ? formatSwing(p.swing) : "?"}`)] : []),
       C(`${p.kda}\n${p.adr}`),
     ]),
   ];
@@ -174,25 +175,21 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
   const sortedMatches = [...candidates.entries()].sort((a, b) => a[1] - b[1]);
 
   for (const [matchId, finishedAt] of sortedMatches) {
-    let stats: FaceitMatchStats | null = null;
-    let matchDetails: FaceitMatchDetails | null = null;
+    let result: MatchResult | null;
     try {
-      [stats, matchDetails] = await Promise.all([getMatchStats(matchId), getMatchDetails(matchId)]);
+      const stats = await getMatchStats(matchId);
+      if (!stats) {
+        // The details tell a voided match, or one missing stats >30 min, from one still processing.
+        const details = await getMatchDetails(matchId);
+        if (!details || details.status !== "FINISHED" || now - finishedAt > 30 * 60) markMatchPosted(chatId, matchId);
+        continue;
+      }
+      result = await buildMatchResult(stats, registeredIds, matchId);
     } catch (err) {
       console.error("[faceit] poll stats fetch failed:", (err as Error).message);
       continue;
     }
-    if (!stats || !matchDetails) {
-      // Skip permanently if: voided/cancelled, stats missing >30 min, or match details unavailable >30 min
-      if (!matchDetails || matchDetails.status !== "FINISHED" || now - finishedAt > 30 * 60) {
-        markMatchPosted(chatId, matchId);
-      }
-      // else: FINISHED but stats not ready yet — retry next poll
-      continue;
-    }
-
-    const result = await buildMatchResult(stats, registeredIds, matchId, matchDetails);
-    // Too few of us: never posted, so marked done.
+    // Too few of us, or no details: never posted, so marked done.
     if (!result) {
       markMatchPosted(chatId, matchId);
       continue;

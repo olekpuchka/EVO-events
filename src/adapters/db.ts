@@ -119,10 +119,6 @@ const stmtGetRsvps = db.prepare(`
   ORDER BY rowid
 `);
 
-const stmtGetUserRsvp = db.prepare(`
-  SELECT status FROM rsvps WHERE chat_id = ? AND message_id = ? AND user_id = ?
-`);
-
 db.exec(`
   CREATE TABLE IF NOT EXISTS scheduled_unpins (
     chat_id             TEXT    NOT NULL,
@@ -221,10 +217,6 @@ export function saveRsvp(chatId: ChatId, messageId: number, user: User, status: 
 
 export function getRsvps(chatId: ChatId, messageId: number): RsvpRow[] {
   return allRows<RsvpRow>(stmtGetRsvps, String(chatId), messageId);
-}
-
-export function getUserRsvpStatus(chatId: ChatId, messageId: number, userId: number): string | null {
-  return oneRow<{ status: string }>(stmtGetUserRsvp, String(chatId), messageId, userId)?.status ?? null;
 }
 
 export function scheduleUnpin(chatId: ChatId, messageId: number, unpinAt: number): void {

@@ -40,11 +40,9 @@ const plain = (text: string, color = "", hot = false): Cell => ({
 function columns(rated: boolean): Column[] {
   return [
     ...(rated ? [
-      { head: "Rating", flex: 1, cell: (r: ResultRow): Cell => {
-        const rating = parseFloat(r.rating ?? "");
-        return Number.isNaN(rating) ? plain(r.rating ?? "?") : { style: "", body: ratingChip(rating, r.rating!) };
-      } },
-      { head: "Swing", flex: 1.45, cell: (r: ResultRow, hot: boolean) => plain(r.swing ?? "?", swingColor(r.swing ?? "?"), hot) },
+      { head: "Rating", flex: 1, cell: (r: ResultRow): Cell => r.rating === null ? plain("?") : { style: "", body: ratingChip(r.rating) } },
+      { head: "Swing", flex: 1.45, cell: (r: ResultRow, hot: boolean) =>
+        r.swing === null ? plain("?", "", hot) : plain(formatSwing(r.swing), signColor(r.swing), hot) },
     ] : []),
     { head: "K/D/A", flex: 1.3, cell: (r, hot) => plain(r.kda, "", hot) },
     { head: "ADR", flex: 1, cell: (r, hot) => plain(r.adr, "", hot) },
@@ -98,7 +96,7 @@ function blend(hex: string, alpha: number, base: string = COLOR.rowA): string {
 }
 
 // FACEIT's rating chip: the figure bold in its tier's colour on a faint tint, over a bar filled from 0.6 to 1.6.
-function ratingChip(rating: number, text: string): string {
+function ratingChip(rating: number): string {
   const tier = ratingPaint(rating);
   const chip = tier.map(c => blend(c, 0.16));
   const track = tier.map((c, i) => blend(c, 0.22, chip[i]));
@@ -107,19 +105,18 @@ function ratingChip(rating: number, text: string): string {
   const figure = tier.length === 1 ? `color:${tier[0]}` : `background-image:${paint(tier)};background-clip:text;color:transparent`;
   return `<div style="display:flex;flex-direction:column;align-items:center;gap:3px;padding:3px 5px 5px;border-radius:6px;` +
     `background:${paint(chip)}">` +
-    `<div style="display:flex;font-size:26px;font-weight:700;${figure}">${escapeHtml(text)}</div>` +
+    `<div style="display:flex;font-size:26px;font-weight:700;${figure}">${formatRating(rating)}</div>` +
     `<div style="display:flex;width:50px;height:4px;border-radius:2px;background:${paint(track)}">` +
     `<div style="display:flex;width:${fill}%;height:4px;border-radius:2px;background:${paint(tier)}"></div></div></div>`;
 }
 
+// The figures as both renderers print them: "1.62", "+6.80%", "↑25" / "↓23" / "±0".
+export const formatRating = (rating: number): string => rating.toFixed(2);
+export const formatSwing = (swing: number): string => `${swing >= 0 ? "+" : ""}${swing.toFixed(2)}%`;
+export const eloArrow = (change: number): string => change > 0 ? `↑${change}` : change < 0 ? `↓${-change}` : "±0";
+
 // Up green, down red, no change grey — for a swing and an Elo change alike.
 const signColor = (n: number): string => n > 0 ? COLOR.up : n < 0 ? COLOR.down : COLOR.muted;
-
-// A swing as printed, "+6.80%" / "-4.50%"; "?" gets no colour.
-function swingColor(text: string): string {
-  const value = parseFloat(text.replace("−", "-"));
-  return Number.isNaN(value) ? "" : signColor(value);
-}
 
 // The banner: the score large across the map, green for a win and red for a loss, the team Elo
 // pair small under it. Without a map it sits on a plain band of the same height.
@@ -149,7 +146,7 @@ function playerCell(row: ResultRow, mvp: boolean, width: number): string {
       `stroke="${COLOR.best}" stroke-width="2.5" stroke-linejoin="round"/></svg>`
     : "";
   const change = row.eloChange;
-  const arrow = change === null ? "" : change > 0 ? `↑${change}` : change < 0 ? `↓${-change}` : "±0";
+  const arrow = change === null ? "" : eloArrow(change);
   const eloLine = row.eloAfter === null ? "" :
     `<div style="display:flex;align-items:baseline;gap:12px">` +
     `<span style="font-size:22px;color:${COLOR.muted}">${row.eloAfter}</span>` +
@@ -163,7 +160,7 @@ function table(result: MatchResult): string {
   const { rows } = result;
   const rated = rows.some(r => r.rating !== null);
   const cols = columns(rated);
-  const ratings = rows.map(r => parseFloat(r.rating ?? ""));
+  const ratings = rows.map(r => r.rating ?? NaN);
   const top = Math.max(...ratings.filter(Number.isFinite));
   // A win's MVP is its highest rating, ties included; a loss has none.
   const mvp = new Set(result.won && rated ? ratings.flatMap((v, i) => v === top ? [i] : []) : []);

@@ -180,10 +180,10 @@ export interface ResultRow {
   kda: string;
   adr: string;
   // Null when faceit.com had no line for the player: no Elo line, and on every row no Rating column.
-  elo: string | null;
-  rating: string | null;
-  swing: string | null;
-  // The same Elo as figures, for the card: after the match, and the match's change.
+  // Rating and swing (in percentage points) are rounded to 2 places once, where the row is built.
+  rating: number | null;
+  swing: number | null;
+  // Elo after the match, and the match's change.
   eloAfter: number | null;
   eloChange: number | null;
 }
