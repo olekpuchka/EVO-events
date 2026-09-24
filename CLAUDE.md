@@ -452,17 +452,33 @@ next one's `elo` — and `elo_delta` is that match's exact change. The post show
 with the change as the arrow; a player the scoreboard has no Elo for gets no Elo line.
 
 The library loads a Go shared object through koffi. On Linux x64 it looks for
-`os.tmpdir()/tls-client-x64.so` and, if missing, downloads the **ubuntu (glibc)** build from
-bogdanfinn/tls-client's *latest* release — unloadable on Alpine, and unpinned. The Dockerfile
-therefore bakes the **alpine** build, pinned by version and sha256, at that exact path. Bump both
-args together. On a dev machine the download is left to happen once.
+`os.tmpdir()/tls-client-x64.so` and, if missing, downloads the glibc build from
+bogdanfinn/tls-client's *latest* release — unpinned. The Dockerfile therefore bakes that same
+**ubuntu-amd64** build, pinned by version and sha256, at that exact path. Bump both args together.
+On a dev machine the download is left to happen once.
+
+**The image is Debian (`node:24-slim`), not Alpine, because of this library.** 1.15.0 shipped on
+`node:24-alpine` with upstream's *alpine* build, and it would not load: `Error relocating …
+tls-client-x64.so: free: initial-exec TLS resolves to dynamic definition`. A Go library built for
+musl can't be `dlopen`ed into Node that way, whatever the file is called. The slim image has no
+`wget`, `curl` or `pgrep`, so the Dockerfile fetches with Node and the healthcheck is `kill -0 1`.
+
+`botuser` is created with **uid 100 / gid 101** explicitly — what `adduser -S` / `addgroup -S` gave
+it on Alpine. The files already on the `/app/data` volume belong to those ids; a Debian-assigned
+pair would boot unable to write `members.db`. CI builds both and fails if they differ.
+
+That failed load also **crashed the process**, and not through the request. The pool starts several
+workers up front; the one given the request failed it, which `getMatchScoreboard`'s caller caught
+and logged — but the idle ones have no request to fail, so the pool emits `'error'`, and an
+EventEmitter with no listener throws. `siteSession` therefore listens on the pool: a library that
+won't load now logs `[faceit] tls worker failed` once per worker and costs the scoreboard only.
 
 On a failed download the library calls **`process.exit(1)`** from inside `initTLS`, where no
 `.catch` can reach it. `ensureNativeLibrary` runs the same check and download itself first, so a
 failure throws instead and the post just loses Rating and Elo. The library creates the file
 before downloading and keeps it on an HTTP error, so a failure also deletes it — left behind, every
-later check would trust an empty library. It reaches two internals, typed
-by hand in `src/node-tls-client.d.ts` — re-check both on a `node-tls-client` bump.
+later check would trust an empty library. That guard and the pool listener reach three internals,
+typed by hand in `src/node-tls-client.d.ts` — re-check them on a `node-tls-client` bump.
 
 ## FACEIT links
 
@@ -475,16 +491,23 @@ second one was all that stopped it.
 ## Dependencies
 
 `@types/node` is pinned to the **24.x** line on purpose — its major tracks the Node runtime major,
-and Node 24 is pinned in three places (`.nvmrc`, `engines` in `package.json`, `node:24-alpine` in
+and Node 24 is pinned in three places (`.nvmrc`, `engines` in `package.json`, `node:24-slim` in
 the Dockerfile). `npm outdated` will keep offering 26.x; taking it would typecheck against APIs the
 runtime doesn't have, and `node:sqlite` is exactly the kind of still-moving API where that bites.
 Bump it only when all three Node pins move, and move them together.
 
 ## CI
 
-`.github/workflows/ci.yml` typechecks every PR into `main`. Deploy typechecks again before
-shipping, so a red CI means the merge would fail to deploy too. There are no tests — typecheck is
-the whole gate.
+`.github/workflows/ci.yml` runs two jobs on every PR into `main`. `typecheck` is the code gate —
+there are no tests — and Deploy typechecks again before shipping, so a red one means the merge
+would fail to deploy too.
+
+`image` builds the real Docker image, because typecheck can't see inside it: 1.15.0 passed CI with
+a native library that couldn't load in production. It checks that `botuser` still has the uid/gid
+the Alpine image gave it, then runs `.github/ci/image-smoke.cjs` inside the container, which fails
+if the TLS library won't load in the request worker or in any idle one. A 403 or 429 from
+faceit.com still passes: the runner's IP may be challenged, but a status code means the library
+worked.
 
 ## Releasing
 
