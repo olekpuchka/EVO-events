@@ -1,10 +1,10 @@
 // Event data → the strings and keyboards Telegram shows. No database, no API calls, no context.
 //
-// The squad cap lives here because it decides what renders: which keyboard, whether the locked
-// banner appears, how many seats the reminder advertises. handlers/events.ts imports it for the
+// The squad cap lives here because it decides what renders: which keyboard, and how many seats
+// the reminder advertises. handlers/events.ts imports it for the
 // server-side cap, so the two can never disagree.
 
-import { buildMention, escapeAiHtml } from "./html.ts";
+import { buildMention } from "./html.ts";
 import type { Mentionable } from "./html.ts";
 import { t } from "./i18n.ts";
 import type { InlineKeyboardMarkup } from "@grammyjs/types";
@@ -102,7 +102,7 @@ export function buildRsvpSection(rsvps: RsvpLike[]): string {
   return section;
 }
 
-export function buildReminderText(row: EventRow, joining: RsvpRow[], phrase: string, pending: Mentionable[]): string {
+export function buildReminderText(row: EventRow, joining: RsvpRow[], pending: Mentionable[]): string {
   const eventName = extractEventName(row.base_text);
   // Last call for the open seats, aimed at whoever hasn't answered either way. Gone once the squad
   // locks — nothing left to recruit for — or once everyone has answered.
@@ -114,7 +114,6 @@ export function buildReminderText(row: EventRow, joining: RsvpRow[], phrase: str
     t("reminderHeader") +
     (eventName ? `\n\n${eventName}` : "") +
     `\n\n${t("joiningHeader", joining.length)}\n${joining.map(buildMention).join(", ")}` +
-    nudge +
-    `\n\n<blockquote><i>${escapeAiHtml(phrase)}</i></blockquote>`
+    nudge
   );
 }

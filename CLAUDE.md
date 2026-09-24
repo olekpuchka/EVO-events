@@ -7,7 +7,7 @@ bot.ts              composition root — config checks, handler registration, sc
 src/config.ts       every process.env read in the project
 src/log.ts          timestamps on console
 src/types.ts        shared row + API shapes
-src/adapters/       one module per external system: db (SQLite), faceit (HTTP), ai (DeepSeek)
+src/adapters/       one module per external system: db (SQLite), faceit (HTTP, open API + faceit.com), ai (DeepSeek)
 src/view/           data → strings: html, i18n, commands, render, eventtime, birthday, prompt, phrase
 src/handlers/       Telegram entry points: events, results, birthdays, guards
 ```
@@ -20,8 +20,7 @@ handler. The sideways edges all run `adapters/ai.ts` → `view/`: `i18n.ts` for 
 
 A phrase therefore crosses three modules, split by what makes each one change: `view/prompt.ts` is
 jokes and tone, `view/phrase.ts` is what may not ship, and `adapters/ai.ts` is only the call, the
-retry and the fallback — no wording in it at all. Adding an angle or a stat touches `prompt.ts`
-alone.
+retry and the fallback — no wording in it at all. Adding an angle touches `prompt.ts` alone.
 
 That keeps `view/` importable on its own, which matters because `adapters/db.ts` opens the file and
 creates tables **at import time** — importing it, directly or not, creates a database as a side
@@ -140,7 +139,7 @@ The dates live in a **table of their own**, and that is the whole point. There i
 here (see **Schema**), so two new columns on `members` would never reach the `members.db` already on
 the volume and every statement naming them would throw at boot. `CREATE TABLE IF NOT EXISTS` adds a
 *new* table to an old database perfectly well — it is the one shape of schema change this setup can
-take, and it is why hype phrases are in memory but birthdays are not.
+take.
 
 `/birthday <date>` calls `trackMember`, exactly as `/faceit` does: the greeting reads the name from
 the `members` row, and the sweep's `JOIN` drops anyone without one. Unlike `welcomeJoiners`, this is
@@ -156,7 +155,7 @@ twelve months.
 That retry is bounded by kind of failure, and has to be: the AI call runs *before* the send, so a
 chat the bot can no longer post to would regenerate a whole toast every 60s until midnight. A
 permanent Telegram 4xx (kicked, chat gone, migrated) is marked greeted anyway and given up on; 429
-and everything else stays on the retry side. Same split `results.ts` makes with `transientFail`.
+and everything else stays on the retry side.
 `markBirthdayGreeted` therefore means two things — "greeted" and "gave up on this chat" — so the
 log line says which; it used to print `greeted (36)` directly under `giving up`.
 
@@ -221,27 +220,20 @@ messages**), and the mention is the point.
 
 ## Birthday phrases
 
-The **one kind that is not a one-liner**, which is why `SYSTEM_PROMPTS` is keyed by `Kind` rather
-than being the single `SYSTEM_PROMPT` it used to be. Every rule in the short-message prompt is about
-brevity — one or two sentences, at most two names, one bold fragment — and a multi-paragraph toast
-is the opposite shape. Adding a kind now forces a decision about which prompt it speaks under instead of
-silently inheriting those rules.
+The **only AI message** the bot sends. Hype, win and loss phrases were removed: the match post is a
+scoreboard, and the event reminder and the 5/5 lock carry no quote. With one kind left there is no
+`Kind` to key anything on — `adapters/ai.ts` has one system prompt, one budget and one fallback —
+and `sanitize` always keeps paragraph breaks, which the one-liner kinds used to collapse.
 
-`LIMITS` in `adapters/ai.ts` holds `maxTokens` and `timeoutMs` **in one entry per kind**, because
-the two move together: a completion cut off at `maxTokens` comes back truncated, one past
-`timeoutMs` not at all, and a kind must not get a budget while inheriting someone else's clock.
-Birthday runs 512/30s against the short kinds' 512/15s — same budget, a roomier clock, since nobody
-waits on that call. The timeout is per request, so `maxRetries: 0` still stands.
+The budget is 512 tokens and a 30s timeout. The two move together: a completion cut off at
+`max_tokens` comes back truncated, one past the timeout not at all. The clock is roomy because
+nobody waits on this call, and the timeout is per attempt, so `maxRetries: 0` still stands.
 
 The budget is sized off the **ask**, not the average: 70 words is ~260 tokens at this project's
 measured 2.5–3.7 per Ukrainian word, so it sits near double. Nothing inspects `finish_reason`, so an
-overshoot ships truncated with no check able to catch it — headroom is the only defence. Every entry
-in `MAX_WORDS` is a number actually sent to the model; `birthday` once held one the ask never used.
-**Both were far larger when the ask was 400–500 words** — they follow it down as well as up.
-
-`FALLBACKS` is keyed by kind for a smaller reason: `generate` looks its own up rather than taking
-one as a fourth parameter, which is one fewer place a caller can pair a kind with the wrong
-fallback.
+overshoot ships truncated with no check able to catch it — headroom is the only defence. `MAX_WORDS`
+is a number actually sent to the model; it once held one the ask never used. **Both were far larger
+when the ask was 400–500 words** — they follow it down as well as up.
 
 The standing danger here is **not a wrong number but a wrong memory**. The squad stores nothing about
 a person but a date, so asked to be warm and specific the model will happily recall a clutch that
@@ -256,19 +248,20 @@ supplied. It was briefly patched by putting `${age}.0` on the safe list *and* na
 spellings in the prompt — a sentence written to appease a regex is a sign the regex needs fixing.
 
 Note what the checks **cannot** do: `attributable` ignores 1–2 digit integers, so an invented
-«17 років у грі» ships where an invented ADR of 847 is rejected. On this kind the small numbers are
-the dangerous ones, and only the prompt stands behind them.
+«17 років у грі» ships where an invented figure of 847 is rejected. Here the small numbers are the
+dangerous ones, and only the prompt stands behind them.
 
-The code swap in `phrase.ts` **strips `<` and `>` from whatever it substitutes**, because it runs
-*after* `sanitize` and `balanceTags` — nothing checks it again, and `escapeAiHtml` turns
-`&lt;/i&gt;` back into a real tag. Every other kind swaps in a FACEIT nickname, which cannot contain
-one; a birthday swaps in a Telegram **first name**, which is arbitrary user text. A member named
-`</i>` shipped an unmatched tag, and the sweep read the resulting 400 as a dead chat.
+The member reaches the model only as `P1`, which keeps a Latin username away from its
+transliteration reflex, and any other code is rejected as invented. The swap in `phrase.ts`
+**strips `<` and `>` from the name it substitutes**, because it runs *after* `sanitize` and
+`balanceTags` — nothing checks it again, and `escapeAiHtml` turns `&lt;/i&gt;` back into a real tag.
+A Telegram first name is arbitrary user text: a member named `</i>` shipped an unmatched tag, and
+the sweep read the resulting 400 as a dead chat.
 
-`P1` works as it does in a win message, but it **takes no Ukrainian case ending** and the swap puts
-a bare nominative in its place — «в P1 день народження» shipped as «в Олег день народження». The
-prompt therefore says to build every sentence around P1 in the nominative and rephrase rather than
-decline it. Nothing can fix it afterwards: the code carries no case to restore.
+`P1` **takes no Ukrainian case ending** and the swap puts a bare nominative in its place —
+«в P1 день народження» shipped as «в Олег день народження». The prompt therefore says to build every
+sentence around P1 in the nominative and rephrase rather than decline it. Nothing can fix it
+afterwards: the code carries no case to restore.
 
 **Words are not a unit the model can count. Sentences are.** It overshot every word figure it was
 given — 78 median against a 70 ask, and 77 against a *lower* 55 ask, which moved nothing. Every real
@@ -282,38 +275,21 @@ ask: 50–70 words, median 58, two retries, **no fallbacks**.
 At a 400–500 ask it behaved the opposite way, landing *under* whatever ceiling it was given. Don't
 carry a calibration across a change — re-measure, and expect the direction of the error to flip.
 
-`maxWords` is `null` for hype, win and loss on purpose. Those have never had a hard limit — see
-**Match phrases** — and switching one on would start rejecting messages that ship fine today, on
-paths a user is waiting for. Birthday can afford it: nobody waits on that call, so a rejection costs
-only a second request.
+The word ceiling is **enforced** (`maxWords`), not just asked for: nobody waits on this call, so a
+rejection costs only a second request.
 
 `balanceTags` in `view/phrase.ts` is what keeps several bold fragments sendable. It replaced a pair
 of per-tag regexes that could only see one tag at a time and read «`<b>a <i>b</i> c</b>`» as an
 unclosed `<b>` — dropping the bold outright, or worse, dropping the open tag while an earlier `<b>`
-in the message kept its `</b>` alive. Telegram rejects an unmatched close tag with a 400. Rare while
-the short kinds are held to one bold fragment, reachable the moment a birthday message is invited to
-use several.
+in the message kept its `</b>` alive. Telegram rejects an unmatched close tag with a 400, and a
+birthday message is invited to use several fragments.
 
-`MULTILINE` in `view/phrase.ts` is what lets those paragraphs survive: `sanitize` collapses all
-whitespace for a one-liner, where a stray newline is padding rather than structure, and a
-multi-paragraph toast through that came out as one block. Blank-line-separated paragraphs are what Telegram renders as
-paragraphs.
+There is **no recent-phrase memory**: a toast fires once per member per year, so there is nothing to
+repeat within, and stored toasts would only be prepended to every later prompt. The angle and the
+register are still rolled in code, through `rollFresh`, with a short freshness memory each.
 
-`recentPhrases` has **no birthday bucket**, and that absence *is* the policy — it fires once per
-member per year, so there is nothing to repeat within, and three stored toasts would be prepended
-to every later prompt. Said as a missing key rather than as `if (kind ===
-"birthday") return` inside `remember()`: a guard naming a kind leaves an empty bucket four lines
-above it that lies about being maintained, and the next kind opts in by being forgotten in an `if`.
-`MULTILINE` in `phrase.ts` is the same idea done as an exhaustive table — both let a new kind fail
-loudly rather than inherit a default.
-
-Registers go through `pickRegister(kind, pool)`, mirroring `pickAngle`. The pool stays beside the
-prompt that uses it; only the freshness memory is keyed, and buckets appear on first use, since win
-and loss roll their register inside `closingInstruction` rather than from a pool. Birthday briefly
-had a second module-level array next to hype's — two globals differing in nothing but name.
-
-`allowCallouts` is `true`, the same as hype and for the same reason: nothing has been played, so
-«точку B» is a running joke about our plans, not a claim about a round.
+There is **no callout or scoreline check** either: nothing has been played, so «точку B» is a
+running joke about our plans, not a claim about a round, and no score is ever in play.
 
 ## Rich messages
 
@@ -336,7 +312,7 @@ non-empty".
 no migration step. Adding a column to an existing table therefore does **not** reach the
 `members.db` on the mounted volume, and every `db.prepare` naming it throws at boot. A new column
 needs a migration guard written first. This is why the FACEIT nickname is fetched live rather than
-stored, and why hype phrases stay in memory.
+stored.
 
 The database is deliberately never closed. SQLite auto-checkpoints the WAL every 1000 pages, so it
 self-caps near 4MB unaided; closing on shutdown would race the FACEIT poll and the scheduler tick,
@@ -345,33 +321,28 @@ unclosed WAL is replayed on the next open — a half-written one is not.
 
 ## The AI call
 
-Applies to all three phrase kinds — hype, win and loss.
+Only the birthday toast calls the model — see **Birthday phrases**.
 
 A DeepSeek call takes **2–3 seconds** on `deepseek-v4-pro` with `thinking` **disabled** — measured,
-not guessed. Thinking is off deliberately: one 25-word joke from facts computed in code has nothing
-to reason about, and it cost 10x the latency (26s median, 40s max) for no accuracy gain, over-applied
-`<b>`, and could outgrow `max_tokens` with its chain and return an empty `content` — a silent
-fallback. It had been switched back on once already before anyone noticed, precisely because an empty
-response just looks like a fallback. Re-enabling it means paying all of that again.
+not guessed. Thinking is off deliberately: it cost 10x the latency (26s median, 40s max) for no
+accuracy gain, over-applied `<b>`, and could outgrow `max_tokens` with its chain and return an empty
+`content` — a silent fallback. It had been switched back on once already before anyone noticed,
+precisely because an empty response just looks like a fallback. Re-enabling it means paying all of
+that again.
 
 `maxRetries: 0` is about **transport**: a failed call isn't worth repeating, and since `timeout` is
-per attempt, retrying would double the ceiling rather than improve the odds. At 2–3s the 15s bound is
-pure slack — though not a hard guarantee either, since back when thinking was on, calls of 20–40s
-completed instead of aborting, so the SDK's `timeout` evidently doesn't cover the response body. Even
-so, never `await` a call before a user-visible update: `sendReminder` reads its roster *after* the
-phrase for exactly this reason, and the locked-squad edit in `handleRsvp` pays the delay before the
-message shows 5/5 — twice over if the reply is rejected and retried, so that path's worst case is
-~6s. If that ever matters, retry only the match phrases, which nobody is waiting on.
+per attempt, retrying would double the ceiling rather than improve the odds. The timeout is not a
+hard guarantee either — back when thinking was on, calls of 20–40s completed instead of aborting, so
+the SDK's `timeout` evidently doesn't cover the response body.
 
 A **check rejection is retried once** — a different case from a failed call, since the API worked and
-the model merely broke a rule. `generate` calls `generateOnce` twice, spelled out rather than looped
-because the two asks differ: the second is `retryAsk(prompt, reason)`, the same ask plus one sentence
-naming the rule that was broken. It takes the prompt and returns the whole second one, so
-`view/prompt.ts` stays the only module that composes what the model reads. A blind re-roll at
-temperature 0.8 was enough only when the mistake was incidental. When the *angle itself* invited it, the model made
-the same mistake twice and fell back — a 19:16 overtime win opened with the scoreline both times, a
-hype angle about signing away your rating reached for «Elo» both times. The reason is free: the retry
-was already happening, and `finalizePhrase` already returns why.
+the model merely broke a rule. `generateBirthdayPhrase` calls `generateOnce` twice, spelled out
+rather than looped because the two asks differ: the second is `retryAsk(prompt, reason)`, the same
+ask plus one sentence naming the rule that was broken. It takes the prompt and returns the whole
+second one, so `view/prompt.ts` stays the only module that composes what the model reads. A blind
+re-roll at temperature 0.8 was enough only when the mistake was incidental; when the *angle itself*
+invited it, the model made the same mistake twice and fell back. The reason is free: the retry was
+already happening, and `finalizePhrase` already returns why.
 
 `RejectReason` and `PhraseVerdict` both live in `src/types.ts` for the same reason: phrase.ts
 returns the verdict, ai.ts forwards it untouched, and the `"phrase" in result` narrowing on both
@@ -381,39 +352,24 @@ The correction wording lives in `view/prompt.ts`, like every other word sent to 
 phrased as a correction rather than a restatement of the rule — repeating a rule the model has just
 demonstrated it will skim past changes nothing.
 
-Which is why **every rejection is logged** with its reason (`[ai] win rejected (scoreline): …`) and
+Which is why **every rejection is logged** with its reason (`[ai] birthday rejected (elo): …`) and
 an empty reply logged separately. Without that, a check misfiring and the API being down look
 identical from the outside — the exact trap that let `thinking` sit switched on unnoticed.
 
-**Fallbacks are for having no AI result, not for policing output.** That's why a phrase has no
-*stylistic* length limit: a good long message ships. The one length check that does exist,
-`MAX_CHARS` in `view/phrase.ts`, is a transport bound rather than a style one (the birthday word
-ceiling shares its `too-long` reason but is a separate, per-kind check — see **Birthday phrases**) — Telegram refuses a
-`sendMessage` over 4096 characters outright, and `handlers/birthdays.ts` reads that 400 as a chat it
-can no longer post to, costing the member their greeting for a year, silently. A phrase past the cap
-cannot be delivered at all, which is a different thing from being merely long. It sits well clear of
-the largest real message and is unreachable for every kind at the asks they carry today — it is a
-backstop against a runaway completion, not a length policy, and so does not move with the ask. The checks that do
-reject — an invented or borrowed stat, a scoreline we didn't supply, a `P`-code we never issued, Elo
-when no Elo numbers were given, English in a UA message, a **callout** — each catch something that
-would read as fact or as broken text in the group, and each gets that second attempt first.
+**Fallbacks are for having no AI result, not for policing output.** `MAX_CHARS` in `view/phrase.ts`
+is a transport bound rather than a style one — Telegram refuses a `sendMessage` over 4096 characters
+outright, and `handlers/birthdays.ts` reads that 400 as a chat it can no longer post to, costing the
+member their greeting for a year, silently. It sits well clear of any real toast: a backstop against
+a runaway completion, so it does not move with the ask. The word ceiling shares its `too-long`
+reason but is a separate check. The checks that do reject — a number we didn't supply, a `P`-code
+we never issued, any Elo, English in a UA message — each catch something that would read as fact or
+as broken text in the group, and each gets that second attempt first.
 
-`CALLOUT` is the newest and the narrowest. The model is told the map but never where anything
-happened, so «їхній тренер завис над Banana» is an invented position — and *banana* is the example
-the system prompt itself lists, which is how much a stated rule is worth on its own.
-
-Banana needed two passes. Matched bare, it hit the squad's own mascot — 🍌 runs through the bot down
-to `fallbackHype` («Банан-сквад, підйом!»). Dropped from the Cyrillic side entirely, «односторонній
-дим на банані» shipped. It now matches Latin `banana` plus Cyrillic **behind a place preposition**:
-«на банані» is a position, «Банан-сквад» is us. The word list
-stays short because every entry has to survive being an ordinary Ukrainian word in a joke: «піт»,
-«вікно», «палац» and *ninja* (from the `ninja defuse` angle) are all left out, and «мід» takes no
-case ending, because a real loss message wrote «мідною труною».
-
-Whether a message may name a place is `allowCallouts` in `PhraseChecks`, alongside `allowElo` —
-`true` only for hype, which has no round to invent a place in and whose angles include «rush B». It
-is set in `prompt.ts` next to the angle pools because that is where the reason lives; a
-`kind !== "hype"` test inside the checker put the rule and its reason in different modules.
+Terms that must come out in Latin with exact casing live in **one table**, `TERM_FIX` in
+`view/phrase.ts`, alongside the Cyrillic spellings the model reaches for — map names included, since
+de-transliterating «інферно» and re-casing `faceit` are the same operation. It replaced a
+replace-per-term chain that had already drifted. Add new terms there, not as another `.replace`.
+`Cache` is Latin-only on purpose — its transliteration «кеш» is also the Ukrainian for *cash*.
 
 One thing is **stripped rather than rejected**: a leading preamble. A reply opened «Звісно, ось
 повідомлення в заданому стилі: …» and shipped it. The message after the colon was fine, and a
@@ -424,233 +380,36 @@ opening clause and nothing says so. It therefore matches only a bare handover: n
 deictic (ось / here's) and the noun (повідомлення / message), and after it only a style-or-request
 marker. Every looser version bit — bare stems matched «запит» inside «запитання», then «текст» ate
 «Ось текст нашого заповіту:», then free text before the noun ate «Ось офіційне повідомлення
-прес-служби:». The заповіт, страховий випадок and прес-служба angles invite exactly those openings
-by name. A stray preamble shipping is the cheaper failure.
-
-## Hype phrases
-
-Hype gets a **register roll** like a win does — flat tactical briefing, commentator losing his
-voice, or quiet menace — because it was the one kind with no register at all, and every message
-came out as the same pump-up announcement in a different hat.
-
-Its one fact is **how long until kick-off**, bucketed into words by `startsInLine`. Never a number:
-a hype message has an empty safe-list, so «за 20 хвилин» is an unsourced stat, and the prompt has
-to say so out loud — invited to use the timing without that clause, the model turned the bucket
-into «за сорок хвилин» for forty-five and invented «опів на дванадцяту» from nothing. The start
-time is already printed above the message anyway. The far bucket says only "a long way off", never
-"tonight": `parseEventTime` rolls a time already past to tomorrow, so it can be a day out.
-
-`squadFull` is passed only from the 5/5 lock, never from the reminder: `sendReminder` reads its
-roster *after* the phrase call on purpose (the 2–3s would make the count stale), so the reminder
-path genuinely does not know yet.
-
-A phrase is frozen per event and deliberately **not** regenerated when a squad drops below full and
-refills — same event, same squad, and a re-hype costs another call plus that delay. `endEvent` is
-the only thing that clears it; don't add a delete on the not-full branch. Both caches are in-memory,
-so a redeploy mid-event re-hypes on the next tap. Persisting them would need a new column, which
-the schema can't take — see **Schema**.
-
-## Match phrases
-
-Who gets a shoutout is the **model's** call, not the code's. There used to be an ADR floor of 100
-plus per-stat thresholds deciding it, and on a real squad match that silenced the whole roster —
-nobody cleared 100. Every player with stats is now sent with every stat that could carry a joke, and
-zero/missing values are dropped so the model can't quote "0 knife kills" as if it happened. Don't add
-a performance bar back; if a line is too noisy, cut a *fact* from `FACTS`, not a player.
-
-FACEIT's per-round and per-match **rate** fields (`Match Entry Rate`, `Sniper Kill Rate per Round`, …)
-are deliberately not sent — they're derived from the raw counts already there and only cost prompt
-length.
-
-The roster is **shuffled**, not sorted by ADR. Telling the model the order means nothing only
-half-worked — it still leaned on whoever came first, which is the bar reintroduced by anchoring. The
-map reaches the model **only** through `mapLine()`: naming it in the context string as well
-contradicted `mapLine`'s own "do not mention the map" branch, and the name leaked into messages that
-had banned it.
-
-**No dated events and no named pros in the angle pools.** Boston-2018, Stockholm-2021, s1mple,
-ZywOo, donk and the 2007 computer club were all replaced with the generic version of the same joke
-(«фінал мажора», «п'ятеро майбутніх легенд», «людина з десятьма тисячами годин», «клуб нашого
-дитинства»). A named prodigy stales fastest of all, and a year on a major only recedes. `NaVi`
-stays — an org, undated — as do platform and game references (Valve, HLTV, FACEIT, Zeus x27).
-
-`HYPE_ANGLES` and `WIN_ANGLES` are annotated `string[]` rather than inferred, for the same reason
-`FactId` exists: `needs` and `self` are read only on the loss branch, so an object in either pool
-would be accepted and silently ignored.
-
-**Teasing our own players on a win is deliberate**, and reads as a bug if you don't know that. The
-squad are friends and judged an affectionate dig at a quiet game funnier than relentless praise. The
-line it must not cross is contempt or a verdict on someone's skill — warm, about the moment, never
-about the person. Don't "fix" this back to praise-only. Naming **one of us** applies to wins only:
-on a loss, a dig with a name on it is blame.
-
-The squad as a whole is a different matter. A loss angle carrying `self: true` turns the joke on
-«ми» — the tactical plan was «якось воно буде», we played like five strangers — and swaps the
-closing instruction, because "never blame our own team" and "we played like five strangers" can't
-sit in the same prompt. The pool used to be pure deflection (the router, the chairs, Valve), and a
-bot that can never take an L is one note. Collective is the whole distinction: nobody wears it
-personally, and the roster still isn't sent on a loss, so the model **cannot** single anyone out
-even under that instruction. The prompt also forbids inventing the round we threw — a specific
-call or play would be a fact we never had, and no check catches an invented event, only an
-invented number.
-
-`subject` — `"us" | "them" | "squad"` — is resolved once per message and is what every part of the
-prompt asks: the genre word (`MESSAGE_KIND`: a self-roast asks for a *confession*, not an excuse,
-because «визнай, що ми грали як п'ятеро незнайомців» is an admission), the roster block, the
-opponents' one number (contrast on a self-roast, punchline otherwise) and the closing register. Each
-one it doesn't reach is a place the prompt contradicts itself, and the model splits the difference by
-drifting back to deflection. `win + self` is unrepresentable by construction.
-
-`buildPlayerBlock` takes the flag too, and only to change *why* the roster is withheld. Told "the
-joke is about the opponents" in one line and "this one is on us" in the next, the model split the
-difference and drifted back to deflection — the self-roast group quietly stopped working. Both
-lines still withhold every name and stat; they differ in one clause.
-
-The prompt tells the model the scoreboard above already shows the score — and the Elo **only when
-there is Elo**. FACEIT omits faction ratings often enough that `elo` is null on real matches, and
-the line was gated on `upset` alone, so it claimed an Elo the reader cannot see.
-
-**Every kind has a register, and the register is rolled in code.** A loss is melodrama: play it
-straight and devastated, build to the punchline, go one step past what the angle needs. A win rolls
-a coin between deadpan (barely looked up) and loud gloating — asked to choose, the model takes the
-loudest option every time, the same failure as letting it pick the angle. A win had no register at
-all until this, which is why raising its word budget alone changed nothing about how it read. That instruction plus `MAX_WORDS` is what turned the
-deflection jokes from one-liners into something with a setup. At 25 words the model spent the whole
-budget on the setup and landed nothing.
-
-Asking for one step further sends the model looking for the biggest stakes it can find, and it came
-back with «сервер засуджений за зраду Батьківщині». Hence the clause: whatever is mourned, buried or
-put on trial has to be part of the match — the rating, the server, our aim — and a real war, real
-politics or a real person's death is never the comparison. What that clause does **not** ban is the
-funeral register itself: «хвилину мовчання за нашим рейтингом», «день жалоби», «склади заповіт» are
-angles in the pool, and a guard written wide enough to catch them would have contradicted the angle
-it shipped with. "Commit to it fully" wins that argument every time, so the guard has to be narrower
-than the joke. The same reasoning is why the tone line says "the end of an era" rather than naming a
-tragedy — whatever the prompt reaches for as a comparison, the model will try to top.
-
-`MAX_WORDS` in `view/prompt.ts` is one object keyed by kind — 35 for all three match/hype kinds,
-kept per-kind so one register can be loosened alone. Nothing enforces it for **these** kinds but the
-model (birthday is the exception, and enforces it via `checks.maxWords`); `max_tokens: 512` in
-`adapters/ai.ts` is the only hard bound here, and 35 Ukrainian words measures at **86–131 completion
-tokens**, so there is room to raise this a long way before that ceiling matters.
-
-The invitation lives **only** in that roll. A standing "a friendly dig is welcome" in the closing
-line contradicted it on 72% of wins — the roster block had just said to leave everyone's weak line
-alone. Same trap as the loss side: one idea stated in two places drifts apart.
-
-Whether a dig is invited is a **coin toss in code** (~1 in 3), not a standing permission, for the
-same reason the angle is picked in code. Allowed on every call, the model went for the lowest ADR
-every single time and kept landing on the same player — four of six messages about one teammate,
-in the register of "he was carried" and "he's a bot". Banned outright, it stopped teasing at all.
-Rolling it keeps the dig a surprise and spreads who wears it.
-
-**A win highlights us, a loss highlights them.** That rule is enforced by the data, not the prompt:
-on a loss our roster never reaches the model at all, so it cannot land on a teammate even if asked
-to. The opponents become the subject instead, which is why `opponentsLine` takes the `subject`:
-real figures from their side are what the suspicious-aim, smurf and exit-frag angles were always
-reaching for, and without them the model invented one.
-Opponents are never named — they're outside the group, and anonymous carries the joke anyway.
-
-Exactly **one** of their stats ships, win or loss — inviting the model to build around all of them
-made every loss open with the same recital. A win used to carry two for contrast, and the model
-merged them into one imaginary opponent: «їхній гравець з 4 MVP і 13 флешкових асистів» was two
-different players, both figures real, nothing in the checks able to tell. One fact is also all a win
-should spend on them, since the win is ours to be smug about. **Which** stat is rolled per match from
-`OPPONENT_FACTS` — a table keyed by stat id, declared with `satisfies` so `FactId` is exactly the
-set of ids that exist and an angle's `needs` can't name one that doesn't (a typo used to drop that
-angle from the pool on every match, silently and forever). Rolled over everything their whole team
-actually did: knife kills, an AWP tally, clutches won, a Zeus, a team-high HS%. Handing over the same three every time — the top fragger's kills, his ADR, the
-team's best HS% — is what made nearly every loss come back quoting kills or ADR, since those were
-the only interesting numbers on offer. Add a stat there, not to the line, and the results handler
-stays out of it: it now passes their roster raw, because which number is funny is a prompt decision.
-
-A duel fact needs **two real attempts**, and the filter runs *before* the pick, not after it — rank
-the team by wins first and one player at 1-of-1 hides the whole team's duel fact, along with every
-angle whose `needs` name it. The `Number.isFinite` half is a second hole: a Wins key whose Count key
-is missing gives `NaN`, and every comparison against `NaN` is false, so «3 of NaN entry duels» went
-into the prompt with "NaN" on the safe-number list. The floor itself is because "won 1 of 1 1v2 clutches" is true and reads as noise — the model tried to
-make sense of it and produced «клатчем 1 на 1 в ситуації 1v2». There is
-deliberately **no flash-assist fact** either: three wordings in, it still collapsed back into
-«засліпили N разів», which is the enemies-blinded fact with the wrong number attached.
-
-A fact is phrased as an **action**, not as a stat label: "opened 8 separate rounds with the first
-kill", not "8 opening kills". Both halves of that wording are scar tissue — "drew first blood" came
-back transliterated as «2 фірстблади», and without "separate" the count became «три раунди поспіль»,
-a qualifier nobody supplied. Three more went the same way: «5 AWP kills» shipped as a raw English
-label, and "utility damage" / "total damage" came back as «утиліті-шкоди». Said as actions — "killed
-N of us with the AWP", "did N damage with grenades alone", "dealt N damage across the match" — they
-return as «5 вбивств з AWP», «156 шкоди самою утилітою», «2400 шкоди».
-
-The same rule binds `FACTS`, our own roster's list: it carried "total damage", "utility damage",
-"grenades thrown", "flashes thrown" and "opening kill" — the exact phrases UA_STYLE bans — and the
-model pasted them through as «367 утиліті-шкоди». They are now "damage dealt", "damage with
-grenades", "grenades used", "flashes used" and "rounds opened with the first kill".
-
-Clutch kills took three goes. "N clutch kills" and then "N kills while last man standing" both got
-compressed back to «вісьмома клатчами» — which claims eight rounds *won*, not eight kills. It now
-says "killed N of us after his own team was already dead": no word left to compress. The weapon
-facts that *do* stay labels («тріпл-кіл», «ейс», «ножем», Zeus) get away with it only because
-Ukrainian has the slang; `wrongLanguage` cannot catch any of them, since a pasted label carries no
-English function words. A label gets pasted into the Ukrainian sentence untranslated — two English words
-aren't enough for `wrongLanguage` to fire — or picks up a unit the number never had («5 пістолетних
-вбивств **за раунд**», which was a match total). Neither is catchable by a check, since the digits
-themselves are correct.
-
-Every fact is about «one of them», never a named subject. That is what makes them safe to mix: the
-team's best HS% usually belongs to a **different player** from the top fragger, and bundling the two
-asserted one player had both, which is false — while sending both percentages unlabelled made the
-model recite «44% HS і 56% HS», once as «чийсь 56% HS», visibly unsure whose it was.
-
-A loss angle written around a specific stat declares it (`needs: ["hs"]`) and gets it instead of a
-roll — the suspicious-aim joke needs an HS figure, not a knife kill. It's also **dropped from the
-pool** when their team produced nothing of that kind: blaming their AWPer with no AWP kill on the
-board is an excuse about something that never happened.
-
-Terms that must come out in Latin with exact casing live in **one table**, `TERM_FIX` in
-`view/phrase.ts`, alongside the Cyrillic spellings the model reaches for — map names included, since
-de-transliterating «інферно» and re-casing `faceit` are the same operation. It replaced a
-replace-per-term chain that had already drifted: `HLTV` was restored while `K/D` wasn't, and `LAN`
-/`VAC` were written into the angle pools then lowercased with nothing to put them back. Add new terms
-there, not as another `.replace`. `Cache` is Latin-only on purpose — its transliteration «кеш» is also
-the Ukrainian for *cash*, which the accountancy and bank-heist angles lean on constantly.
+прес-служби:». A stray preamble shipping is the cheaper failure.
 
 ## Posting a result
 
 A match is posted only if **`MIN_PLAYERS` (2) or more** linked members were on our team. Solo queue is one
-member's business, the scoreboard renders as a one-row table, and the phrase says «ми» about four
-strangers.
+member's business, and the scoreboard renders as a one-row table.
 
-Gated in **one** place: `resultRows` in `buildMatchResult`, our team alone, before the AI call. A
-second gate on `participantIds` (both teams) used to run first because it sat before the Elo
-fetches and so saved them; once skipped matches needed their Elo too, it caught nothing the first
-didn't. Two of us queued onto opposite sides counts as one.
+Gated in **one** place: `registered` in `buildMatchResult`, our team alone, before the scoreboard
+fetch. Two of us queued onto opposite sides counts as one.
 
 The count comes from the **match stats**, never from `candidates` in the history sweep. That
 tally is built from each member's own recent-match history, and a failed history call — already
 counted in `historyFailed` — would read a real squad game as solo and bury it permanently.
 
-**Skipping the post skips nothing else.** The gate sits *after* the Elo fetches, and a skipped
-match is `markMatchPosted` and its players' Elo is still saved. Gating before the fetch was cheaper, but a solo game then never moved the baseline and the next
-squad post showed a delta spanning both. It also waits out the same `transientFail` hold as a
-posted match, so a 429 doesn't commit a half-fetched baseline.
+**Elo comes from the scoreboard alone**, so a skipped solo game is `markMatchPosted` and nothing
+else. There used to be a stored baseline: live Elo from `getPlayerById`, diffed against the last
+value saved per member. It was approximate — matches finished inside one poll shared one live value,
+so the first posted carried the whole swing — and it needed a save rule for every path: posted,
+skipped solo, held on a failed fetch, and pending behind another match. The scoreboard's exact
+per-match change made all of it redundant, and it was removed rather than kept as a fallback. The
+`faceit_elo` column it lived in stays in the `CREATE` — see **Schema** — but nothing reads or
+writes it.
 
-*When* it is saved is the subtle part. `postElo` is live Elo, one value per poll, so whichever
-match saves it first owns the whole swing. A skipped match therefore saves **after the loop**, and
-only for players with no candidate still unmarked in `posted_matches` — held back, send failed,
-stats not ready, whatever the reason. Saved inline, a solo game sorted ahead of a pending squad
-match took that match's swing, and the squad post showed a delta of 0. Deriving "pending" from what
-was marked, rather than recording it at each early `continue`, means a new hold path can't forget
-to. A candidate's players are its history players plus, once read, its stats ones; a member whose
-history call failed counts as pending, since nothing says what they have outstanding.
+Matches post **oldest first**. They were sorted by member count first, but only so that the squad
+match would own a swing it shared with a solo game — a question exact per-match Elo no longer asks.
 
-A *posted* match saves immediately and ignores pending matches: it has just shown the swing, and a
-held match posting later from the old baseline would show it twice.
-
-The delta is still approximate: `getPlayerById` returns Elo at *poll* time, not at match time, so
-matches finished inside one poll share a single `postElo`. The first *posted* one carries the whole
-swing, a solo game's included. And if the match holding a skipped one's save back is later dropped
-(voided, stats never arrive), that save never happens and the next delta spans both — the old
-behaviour, not a wrong number. Not worth a fetch to fix.
+The table is **three columns** — player with Elo, rating with swing, K/D/A with ADR — each cell
+holding two lines under a header naming both. Four and five columns wrapped every cell on a phone,
+headers included, and Telegram's rich table has no width control; `is_compact` (smaller padding) is
+the only lever it offers, and is on. Rows sort by rating, ADR breaking ties.
 
 `buildResultBlocks` is the **only** renderer. A plain-HTML version shipped alongside it as a
 fallback from the day the rich card arrived, and was removed once the rich send had proved reliable
@@ -658,20 +417,60 @@ in the group: it cost two places to edit for every change to the post, and had n
 itself.
 
 The consequence to know is on the failure path. A rejected send is **not** `markMatchPosted`, so the
-poll retries that match every `FACEIT_POLL_MINUTES` for 24 hours — and `generateMatchPhrase` runs
-inside `buildMatchResult`, *before* the send, so each retry buys another completion for a post
-nobody sees. The fallback used to absorb that. If it ever starts biting, the fix is the
+poll retries that match every `FACEIT_POLL_MINUTES` for 24 hours, re-fetching its stats and
+scoreboard each time for a post nobody sees. If it ever starts biting, the fix is the
 transient/permanent split `handlers/birthdays.ts` already makes — give up on a permanent 4xx, keep
 retrying a 429 — not a second renderer. The likeliest rejection is the `photo` block: `mapImage` is
 a FACEIT CDN URL that Telegram fetches server-side.
 
+## Rating and swing
+
+The open API has no FACEIT rating or swing; only faceit.com's own
+`/api/statistics/v1/cs2/matches/{id}/match-rounds/1/scoreboard-summary` does, and it sits behind
+Cloudflare. Plain `fetch` is challenged, so `adapters/faceit.ts` goes through `node-tls-client`
+with the **chrome_131** profile and navigation headers (`sec-fetch-mode: navigate`) — 120/124 get
+a challenge, `cors` gets a 403. No cookies or key. The match-wide `/scoreboard-summary` 403s
+anonymous callers with `err_f0`; the per-map one does not, and it is what the site itself calls.
+Only map 1 is read, matching `rounds[0]` on the open API side.
+
+It is **best-effort by design**. A failed fetch logs `[faceit] scoreboard fetch failed` and the post
+ships without the Rating column and without Elo lines, never held back: nothing says a Cloudflare
+rejection clears by the next poll. The anonymous limit is **5 requests per
+30s per IP**, and a catch-up poll of ten matches hit it on the sixth. A 429 therefore waits out the
+`Ratelimit-Retry-After` it carries (plus a second, capped at 30s) and tries again, up to three
+times — the poll runs in the background, and since the baseline was removed this is the only
+source of per-player Elo. The fetch also runs **after** the `MIN_PLAYERS` gate, so a solo match
+spends nothing from it. Swing is shown in percentage points; both it and rating are rounded to two places.
+
+Not every match is readable anonymously: one freshly finished match in thirteen sampled answered
+`403 err_f0` and kept doing so, while matches Cloudflare had never cached (`MISS`) served fine.
+The cause is unknown, which is one more reason the fetch never holds a post back.
+
+The same scoreboard carries **match-time Elo**, and is the only source of it: `elo` is Elo *going
+into* the match — checked across three consecutive matches, where each `elo + elo_delta` was the
+next one's `elo` — and `elo_delta` is that match's exact change. The post shows `elo + elo_delta`
+with the change as the arrow; a player the scoreboard has no Elo for gets no Elo line.
+
+The library loads a Go shared object through koffi. On Linux x64 it looks for
+`os.tmpdir()/tls-client-x64.so` and, if missing, downloads the **ubuntu (glibc)** build from
+bogdanfinn/tls-client's *latest* release — unloadable on Alpine, and unpinned. The Dockerfile
+therefore bakes the **alpine** build, pinned by version and sha256, at that exact path. Bump both
+args together. On a dev machine the download is left to happen once.
+
+On a failed download the library calls **`process.exit(1)`** from inside `initTLS`, where no
+`.catch` can reach it. `ensureNativeLibrary` runs the same check and download itself first, so a
+failure throws instead and the post just loses Rating and Elo. The library creates the file
+before downloading and keeps it on an HTTP error, so a failure also deletes it — left behind, every
+later check would trust an empty library. It reaches two internals, typed
+by hand in `src/node-tls-client.d.ts` — re-check both on a `node-tls-client` bump.
+
 ## FACEIT links
 
-Two writers, deliberately not one. `setFaceitAccount` sets the link and expresses a user's explicit
-intent; `setFaceitElo` only advances the Elo delta baseline, and its `WHERE faceit_player_id = ?`
-is what stops the 20-minute poll from resurrecting a link that `/faceit off` removed mid-poll. The
-poll must never call the former — its roster is a snapshot from poll start, so it would write back
-an id the user has since cleared. Nothing enforces this but the names.
+**One writer**: `setFaceitAccount`, called only from `/faceit`, where it expresses a user's explicit
+intent. The poll writes nothing to `members` at all. Keep it that way: its roster is a snapshot from
+poll start, so any write back could resurrect a link that `/faceit off` removed mid-poll. There were
+two writers while the poll saved an Elo baseline, and a `WHERE faceit_player_id = ?` guard on that
+second one was all that stopped it.
 
 ## Dependencies
 

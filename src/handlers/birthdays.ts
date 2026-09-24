@@ -116,13 +116,13 @@ export async function postBirthdayGreetings(api: Api): Promise<void> {
       // Sequential on purpose — two birthdays in a day is rare and nothing waits on this.
       let phrase = phraseCache.get(key);
       if (phrase === undefined) {
-        phrase = await generateBirthdayPhrase(member.first_name, { age });
+        phrase = await generateBirthdayPhrase(member.first_name, age);
         if (phrase !== FALLBACK_BIRTHDAY) phraseCache.set(key, phrase);
       }
 
       // The roster is a snapshot and the call above took seconds. "Still due today", not merely
       // "still on": a date moved mid-write would otherwise be greeted on the wrong day *and* mark
-      // the year spent. Same hazard `setFaceitElo`'s `WHERE faceit_player_id = ?` closes.
+      // the year spent.
       const current = getBirthday(member.chat_id, member.user_id);
       if (!current || !isDueOn(current.birth_date, today)) {
         console.log(`[birthday] skipped — ${current ? "date moved" : "turned off"} while the greeting was being written`);

@@ -100,10 +100,7 @@ ${COMMANDS.map(({ command, key }) => `/${command} — ${escapeHtml(t(key))}`).jo
   // Sent to the group like the welcome — a greeting only its subject can see makes no sense.
   // The AI toast goes under this line.
   birthdayGreeting: (mention, age) => `🎂 <b>З днем народження, ${mention}!</b> <i>(${age})</i>`,
-  fallbackHype: "Банан-сквад, підйом! 🍌",
-  fallbackWin: "МИ ПОВЕРНУЛИСЬ 🍌🍌🍌",
-  fallbackLoss: "Їхні VAC-чисті акаунти грали підозріло добре 🤔",
-  // Longer than the other fallbacks: a one-liner under the greeting header would read as a bug.
+  // Long on purpose: a one-liner under the greeting header would read as a bug.
   fallbackBirthday: `Сьогодні свято, і воно не в календарі — воно в нашому лоббі.
 
 Бажаємо тобі стабільного пінгу, чесного сабтіку і тіммейтів, які не продають раунд за тридцять секунд до кінця. Хай кожен твій постріл знаходить голову, кожен клатч закривається, а кожна «одна катка» триває рівно стільки, скільки ти сам захочеш.
