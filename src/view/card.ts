@@ -45,8 +45,14 @@ function columns(rated: boolean): Column[] {
 
 const PLAYER_FLEX = 2.6;
 
-// Room the nickname has: the player column less its padding — the Elo line sits underneath.
-const NICK_ROOM = 250;
+// The table's inner width: the card less the table's margin and border either side.
+const TABLE_WIDTH = CARD_WIDTH - 2 * 16 - 2;
+const PLAYER_PADDING = 18;
+
+// Room the nickname has: the player column's share of the table, less its padding. The column is
+// wider without Rating and Swing, so this is worked out per table rather than fixed.
+const nickRoom = (cols: Column[]): number =>
+  Math.floor(TABLE_WIDTH * PLAYER_FLEX / (PLAYER_FLEX + cols.reduce((sum, c) => sum + c.flex, 0))) - 2 * PLAYER_PADDING;
 
 // The MVP badge and the room it takes from the nickname beside it.
 const MVP_ROOM = 72;
@@ -66,8 +72,11 @@ function ratingColor(text: string): string {
   return rating >= 1.4 ? COLOR.best : rating >= 1.1 ? COLOR.up : COLOR.muted;
 }
 
-// Up green, down red: "+6.80%" / "-4.50%" for a swing.
-const signColor = (text: string): string => /^\+/.test(text) ? COLOR.up : /^[-−]/.test(text) ? COLOR.down : "";
+// Up green, down red: "+6.80%" / "-4.50%" for a swing. A zero, printed "+0.00%", stays neutral.
+function signColor(text: string): string {
+  const value = parseFloat(text.replace("−", "-"));
+  return value > 0 ? COLOR.up : value < 0 ? COLOR.down : "";
+}
 
 // The banner: the score large across the map, green for a win and red for a loss, the team Elo
 // pair small under it. Without a map it sits on a plain band of the same height.
@@ -88,8 +97,8 @@ function banner(result: MatchResult, withMap: boolean): string {
 }
 
 // The nickname in bold, with the MVP badge beside it, and under it the Elo and this match's change.
-function playerCell(row: ResultRow, mvp: boolean): string {
-  const room = mvp ? NICK_ROOM - MVP_ROOM : NICK_ROOM;
+function playerCell(row: ResultRow, mvp: boolean, width: number): string {
+  const room = mvp ? width - MVP_ROOM : width;
   const nick = `<div style="display:flex;font-size:${nickSize(row.nickname, room)}px;font-weight:700;max-width:${room}px;` +
     `overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${escapeHtml(row.nickname)}</div>`;
   const badge = mvp
@@ -107,7 +116,7 @@ function playerCell(row: ResultRow, mvp: boolean): string {
     `<div style="display:flex;align-items:center;gap:10px">${nick}${badge}</div>${eloLine}</div>`;
 }
 
-// Where each column's top value is: only ADR marks one — rating has its own tiers.
+// The rows holding the top ADR, the one figure marked by rank — rating has its own tiers.
 function topAdr(rows: ResultRow[]): Set<number> {
   const values = rows.map(r => parseFloat(r.adr));
   if (rows.length < 2 || values.some(Number.isNaN)) return new Set();
@@ -125,10 +134,11 @@ function table(result: MatchResult): string {
   // A win's MVP is its highest rating, ties included; a loss has none.
   const mvp = new Set(result.won && rated ? ratings.flatMap((v, i) => v === top ? [i] : []) : []);
   const bestAdr = topAdr(rows);
+  const room = nickRoom(cols);
 
   const cellStyle = (flex: number, first: boolean, extra: string) =>
     `display:flex;align-items:center;justify-content:${first ? "flex-start" : "center"};flex:${flex};` +
-    `padding:${first ? "14px 18px" : "14px 4px"}${first ? "" : `;border-left:1px solid ${COLOR.line}`};${extra}`;
+    `padding:${first ? `14px ${PLAYER_PADDING}px` : "14px 4px"}${first ? "" : `;border-left:1px solid ${COLOR.line}`};${extra}`;
 
   const head = `<div style="display:flex;background:${COLOR.head}">` +
     `<div style="${cellStyle(PLAYER_FLEX, true, `font-size:17px;font-weight:700;letter-spacing:1px;color:${COLOR.headText}`)}">` +
@@ -148,7 +158,7 @@ function table(result: MatchResult): string {
         `<div style="display:flex">${escapeHtml(text)}</div></div>`;
     }).join("");
     return `<div style="display:flex;border-top:1px solid ${COLOR.line};background:${i % 2 ? COLOR.rowB : COLOR.rowA}">` +
-      `<div style="${cellStyle(PLAYER_FLEX, true, hot ? "font-weight:700" : "")}">${playerCell(row, mvp.has(i))}</div>${cells}</div>`;
+      `<div style="${cellStyle(PLAYER_FLEX, true, hot ? "font-weight:700" : "")}">${playerCell(row, mvp.has(i), room)}</div>${cells}</div>`;
   }).join("");
 
   return `<div style="display:flex;flex-direction:column;margin:16px;border:1px solid ${COLOR.line};border-radius:10px">${head}${body}</div>`;

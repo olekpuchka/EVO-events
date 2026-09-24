@@ -105,6 +105,18 @@ test("a long nickname shrinks, and is clipped with an ellipsis rather than spill
   assert.match(long, /text-overflow:ellipsis">Oleksandr_Kravets/);
 });
 
+test("without Rating and Swing the nickname gets the wider column", () => {
+  const size = (m: string) => Number(/font-size:(\d+)px;font-weight:700;max-width:(\d+)px;[^>]*>Oleksandr_Kravets</.exec(m)?.[2]);
+  const long = [row("Oleksandr_Kravets", "1.0", "+1%", "80", 1, 1)];
+  const rated = with_({ won: false, rows: long });
+  const unrated = with_({ won: false, rows: long.map(r => ({ ...r, rating: null, swing: null })) });
+  assert.ok(size(unrated) > size(rated), `${size(unrated)} > ${size(rated)}`);
+});
+
+test("a zero swing is neutral, not green", () => {
+  assert.match(with_({ rows: [row("a", "1.0", "+0.00%", "80", 1, 1)] }), /font-size:26px"><div style="display:flex">\+0\.00%/);
+});
+
 test("only PNG and JPEG pass as a map, judged by bytes", () => {
   assert.equal(mapFormat(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a])), "png");
   assert.equal(mapFormat(new Uint8Array([0xff, 0xd8, 0xff, 0xe0])), "jpeg");

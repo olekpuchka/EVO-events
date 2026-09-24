@@ -505,7 +505,9 @@ contains a raster image — ~6 MB a card, 1.25 GB after 200, and neither `gc()` 
 touches it. The WASM build does not leak but plateaus near 140 MB and costs 3–4× the CPU. A child that
 exits returns everything. Measured in this image at the real limits, with grammy, openai and the TLS
 library loaded and one live scoreboard fetch done: 2.3–2.6 s a card, container peak 174 MB, no OOM
-over ten cards. Nobody waits on that post, so the seconds are free.
+over ten cards. Nobody waits on that post, so the seconds are free. That budget is for **one** child,
+and `pollFaceit` polls every chat in parallel — so `renderCard` queues: renders run one at a time,
+whichever chat asked first.
 
 Two satori traps. **`satori-html` is quadratic on a long attribute**: the map's base64 inline in the
 markup took 9 s to parse, so the markup carries `MAP_SRC` and the worker swaps the bytes into the
@@ -522,14 +524,15 @@ Elo after the match (no "Elo" word, not bold) beside the match's change — `↑
 bold. A **Rating** is coloured by its own tier — gold from 1.40, green from 1.10 (FACEIT's platform
 average), grey below — and a rating of **1.5 or more sets the row bold**, as FACEIT itself marks a
 standout game. On a **win the highest rating gets an MVP badge**, ties sharing it; a loss has none.
-**Swing** is green or red by its sign. The top **ADR** is marked gold by colour alone: bolding
+**Swing** is green or red by its sign; a zero (`+0.00%`) stays neutral. The top **ADR** is marked gold by colour alone: bolding
 leaders made the leader's whole row read as bold. No scoreboard from faceit.com, no Rating or Swing
 column and no MVP — the rich table's rule.
 
 **There is no header row.** The score is set at 92 px across a 190 px map banner, green for a win and
 red for a loss, with the team Elo pair small under it; the map is dimmed so the figures read on any
 map. Without a map the band is plain. A long nickname shrinks from 25 px to 15 px before an ellipsis
-clips it (`nickSize`, `NICK_ROOM`); the widths are DejaVu Sans Bold's by class of letter, tuned on
+clips it (`nickSize`, `nickRoom`); the room is worked out from the player column's real width, which
+is far wider without Rating and Swing. The widths are DejaVu Sans Bold's by class of letter, tuned on
 real nicknames — `TheR0gue0ne` was clipped at 11 characters by the first guess.
 
 All of that was settled against mocks in the group, and these were tried and dropped: level badges,

@@ -6,11 +6,21 @@ import { fileURLToPath } from "node:url";
 
 const WORKER = fileURLToPath(new URL("./card-worker.ts", import.meta.url));
 
-// ~2.8s measured at 0.25 CPU; the rest is headroom for a busy host.
+// ~2.5s measured at 0.25 CPU; the rest is headroom for a busy host.
 const TIMEOUT_MS = 20_000;
+
+// Renders run one at a time: chats are polled in parallel, and two children at once would double
+// the memory the 250 MB budget was measured against.
+let queue: Promise<unknown> = Promise.resolve();
 
 // PNG bytes, or null on any failure — the caller falls back to the rich message.
 export function renderCard(markup: string, map: Uint8Array | null): Promise<Uint8Array | null> {
+  const run = queue.then(() => renderOnce(markup, map));
+  queue = run;
+  return run;
+}
+
+function renderOnce(markup: string, map: Uint8Array | null): Promise<Uint8Array | null> {
   return new Promise(resolve => {
     const child = spawn(process.execPath, [WORKER], { stdio: ["pipe", "pipe", "pipe"], timeout: TIMEOUT_MS });
     const out: Buffer[] = [];
