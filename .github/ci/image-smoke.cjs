@@ -1,5 +1,5 @@
-// Run inside the built image by CI: proves node-tls-client's native library loads there. A 403 or
-// 429 from faceit.com still passes — the runner's IP may be challenged, but the library answered.
+// Run inside the built image by CI: proves node-tls-client's native library loads and can complete a
+// request there. A real HTTP status still passes — the runner's IP may be challenged — but 0 fails.
 import("../../src/adapters/faceit.ts").then(async ({ getMatchScoreboard }) => {
   let workerFailed = false;
   const log = console.error;
@@ -11,7 +11,7 @@ import("../../src/adapters/faceit.ts").then(async ({ getMatchScoreboard }) => {
     const board = await getMatchScoreboard("1-b44d1826-358c-4448-b30e-8c09c534a78b");
     console.log(`scoreboard ok: ${board.size} players`);
   } catch (err) {
-    if (!/^faceit\.com \d+$/.test(err.message)) {
+    if (!/^faceit\.com [1-9]\d*:/.test(err.message)) {
       console.log(`library failed: ${err.message}`);
       process.exit(1);
     }

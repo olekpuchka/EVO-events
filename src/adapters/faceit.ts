@@ -152,7 +152,8 @@ export async function getMatchScoreboard(matchId: string): Promise<Map<string, S
     await sleep(Math.min(wait + 1, 30) * 1000);
     res = await session.get(url);
   }
-  if (res.status !== 200) throw new Error(`faceit.com ${res.status}`);
+  // Status 0 is the library's own transport error, and its reason is only in the body.
+  if (res.status !== 200) throw new Error(`faceit.com ${res.status}: ${res.body.slice(0, 160)}`);
   const data = await res.json<FaceitScoreboard>();
   const lines = new Map<string, ScoreboardLine>();
   for (const team of data.payload?.cs2?.teams ?? []) {
