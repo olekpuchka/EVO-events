@@ -183,6 +183,9 @@ export interface ResultRow {
   elo: string | null;
   rating: string | null;
   swing: string | null;
+  // The same Elo as figures, for the card: after the match, and the match's change.
+  eloAfter: number | null;
+  eloChange: number | null;
 }
 
 export interface MatchResult {

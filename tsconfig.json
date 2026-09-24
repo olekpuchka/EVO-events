@@ -13,5 +13,5 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true
   },
-  "include": ["bot.ts", "src/**/*.ts"]
+  "include": ["bot.ts", "src/**/*.ts", "scripts/**/*.ts"]
 }

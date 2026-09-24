@@ -22,3 +22,6 @@ data/
 *.db
 *.db-shm
 *.db-wal
+
+# npm run card:preview output
+card-preview/

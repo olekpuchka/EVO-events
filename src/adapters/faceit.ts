@@ -15,6 +15,7 @@ import { LibraryHandler } from "node-tls-client/dist/utils/native.js";
 import { LibraryDownloader } from "node-tls-client/dist/utils/download.js";
 import { Client } from "node-tls-client/dist/lib/Client.js";
 import { FACEIT_API_KEY } from "../config.ts";
+import { mapFormat } from "../view/card.ts";
 
 const BASE = "https://open.faceit.com/data/v4";
 
@@ -173,4 +174,19 @@ export async function getMatchScoreboard(matchId: string): Promise<Map<string, S
 // FACEIT's large map image URL for the played map, or null if not in the pool.
 export function getMapImage(matchDetails: FaceitMatchDetails, mapId: string): string | null {
   return (matchDetails.voting?.map?.entities ?? []).find(e => e.game_map_id === mapId)?.image_lg ?? null;
+}
+
+// The map image's bytes for the result card, or null on any failure or a format the card can't
+// draw. A public CDN: no API key sent.
+export async function fetchMapImage(url: string): Promise<Uint8Array | null> {
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!res.ok) return null;
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    if (mapFormat(bytes)) return bytes;
+    console.warn(`[card] map image is not PNG or JPEG, drawing the card without it: ${url}`);
+    return null;
+  } catch {
+    return null;
+  }
 }

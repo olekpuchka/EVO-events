@@ -7,16 +7,21 @@ bot.ts              composition root — config checks, handler registration, sc
 src/config.ts       every process.env read in the project
 src/log.ts          timestamps on console
 src/types.ts        shared row + API shapes
-src/adapters/       one module per external system: db (SQLite), faceit (HTTP, open API + faceit.com), ai (DeepSeek)
-src/view/           data → strings: html, i18n, commands, render, eventtime, birthday, prompt, phrase
+src/adapters/       one module per external system: db (SQLite), faceit (HTTP, open API + faceit.com), ai (DeepSeek),
+                    card (the result-card renderer, in a child process)
+src/view/           data → strings: html, i18n, commands, render, card, eventtime, birthday, prompt, phrase
+scripts/            dev-only, not in the image: card-preview
+assets/             the fonts the result card is drawn with
 src/handlers/       Telegram entry points: events, results, birthdays, guards
 ```
 
 **Exactly one module talks to each external system**: nothing outside `adapters/faceit.ts` calls
 `fetch`, nothing outside `adapters/db.ts` imports `node:sqlite`, nothing outside `adapters/ai.ts`
-constructs an LLM client. Nothing points back up either — `view/` imports no adapter and no
-handler. The sideways edges all run `adapters/ai.ts` → `view/`: `i18n.ts` for the fallback phrases,
-`prompt.ts` for what to ask, `phrase.ts` for judging the reply.
+constructs an LLM client, nothing outside `adapters/card-worker.ts` imports satori or resvg.
+Nothing points back up either — `view/` imports no adapter and no handler. The sideways edges all run
+`adapters/*` → `view/`: `ai.ts` reaches `i18n.ts` for the fallback phrases, `prompt.ts` for what to
+ask and `phrase.ts` for judging the reply; `faceit.ts` and `card-worker.ts` reach `card.ts` for the
+map formats the card can draw, its size and the map placeholder.
 
 A phrase therefore crosses three modules, split by what makes each one change: `view/prompt.ts` is
 jokes and tone, `view/phrase.ts` is what may not ship, and `adapters/ai.ts` is only the call, the
@@ -411,17 +416,18 @@ holding two lines under a header naming both. Four and five columns wrapped ever
 headers included, and Telegram's rich table has no width control; `is_compact` (smaller padding) is
 the only lever it offers, and is on. Rows sort by rating, ADR breaking ties.
 
-`buildResultBlocks` is the **only** renderer. A plain-HTML version shipped alongside it as a
-fallback from the day the rich card arrived, and was removed once the rich send had proved reliable
-in the group: it cost two places to edit for every change to the post, and had never needed a change
-itself.
+That table is now the **fallback**: a match posts as the result card (see **Result card**), and
+`buildResultBlocks` runs only when the card could not be drawn. So there are two renderers again —
+knowingly. A plain-HTML fallback was removed once for costing two places to edit per change; this one
+stays because the card depends on a native module and a child process, and a post must never be lost
+to either. A change to what the post *says* therefore touches `buildResultBlocks` and `view/card.ts`.
 
 The consequence to know is on the failure path. A rejected send is **not** `markMatchPosted`, so the
 poll retries that match every `FACEIT_POLL_MINUTES` for 24 hours, re-fetching its stats and
 scoreboard each time for a post nobody sees. If it ever starts biting, the fix is the
 transient/permanent split `handlers/birthdays.ts` already makes — give up on a permanent 4xx, keep
-retrying a 429 — not a second renderer. The likeliest rejection is the `photo` block: `mapImage` is
-a FACEIT CDN URL that Telegram fetches server-side.
+retrying a 429 — not a third renderer. The card uploads the map as bytes, so the server-side fetch of
+`mapImage` that was the likeliest rejection now only happens on the rich fallback.
 
 ## Rating and swing
 
@@ -480,6 +486,80 @@ before downloading and keeps it on an HTTP error, so a failure also deletes it �
 later check would trust an empty library. That guard and the pool listener reach three internals,
 typed by hand in `src/node-tls-client.d.ts` — re-check them on a `node-tls-client` bump.
 
+## Result card
+
+A posted match is a **PNG**, sent with `sendPhoto`, with the FACEIT link in the caption — a link
+drawn inside an image cannot be tapped. The rich table fits three two-line columns into a phone; an
+image is not bound by that, so the card spells out five: player, Rating, Swing, K/D/A, ADR.
+
+The path is `buildMatchResult` → `cardMarkup` (`view/card.ts`, pure, reading the `MatchResult`
+directly) → `renderCard` (`adapters/card.ts`) → a **child process** running `card-worker.ts`: satori
+turns the markup into SVG, resvg turns that into PNG. No browser — headless Chromium alone would not
+fit the container's **0.25 CPU / 250 MB**. The markup is the flexbox subset satori speaks, so every
+element with children is `display:flex` — satori fails at render time otherwise, and nothing checks
+it before then. `ResultRow` carries the Elo as figures too (`eloAfter`, `eloChange`) so the card
+never parses the rich table's "2035 Elo ↑25" string.
+
+**One child per card, on purpose.** `@resvg/resvg-js` leaks native memory on every render that
+contains a raster image — ~6 MB a card, 1.25 GB after 200, and neither `gc()` nor `MALLOC_ARENA_MAX`
+touches it. The WASM build does not leak but plateaus near 140 MB and costs 3–4× the CPU. A child that
+exits returns everything. Measured in this image at the real limits, with grammy, openai and the TLS
+library loaded and one live scoreboard fetch done: 2.3–2.6 s a card, container peak 174 MB, no OOM
+over ten cards. Nobody waits on that post, so the seconds are free. That budget is for **one** child,
+and `pollFaceit` polls every chat in parallel — so `renderCard` queues: renders run one at a time,
+whichever chat asked first.
+
+Two satori traps. **`satori-html` is quadratic on a long attribute**: the map's base64 inline in the
+markup took 9 s to parse, so the markup carries `MAP_SRC` and the worker swaps the bytes into the
+parsed tree. And satori **decodes PNG and JPEG only** — a WebP map served under a `.png` name threw
+`RangeError: Offset is outside the bounds of the DataView` inside the worker and lost the card. So
+`fetchMapImage` checks magic bytes with `mapFormat` and hands back null for anything else, and the
+card is drawn without a map rather than not at all. Neither a file name nor a Content-Type is trusted.
+
+Satori draws only the fonts it is handed, so DejaVu lives in `assets/`, which the Dockerfile copies.
+The card draws no emoji — FACEIT nicknames can't carry one — so there are no emoji images to ship.
+
+**The table is the point of the card.** The player cell is the nickname in bold, and under it the
+Elo after the match (no "Elo" word, not bold) beside the match's change — `↑25` green / `↓23` red,
+bold. Bold is set on the elements meant to be bold, never on a whole cell and undone inside it.
+
+A **Rating** is drawn as FACEIT draws it: the figure bold in its tier's colour on a chip tinted with
+it, over a bar filled linearly from 0.6 to 1.6 — a range read off FACEIT's own chips, not published.
+Gold from 1.80, green from 1.30, white from 0.90, red below. A chip's tint is blended **solid** onto
+one base (`blend`), not left translucent: over striped rows a translucent chip came out a different
+shade on every other row.
+
+The card has **one** green and red — FACEIT's own, `#6ADE43` and `#FF2727`, read from its
+scoreboard's styles — shared by the ratings, the score, the swing and the Elo arrows; the ratings
+briefly had a palette of their own, and two reds side by side read as a mistake. **Gold is two things
+on FACEIT, and so here**: a 1.80+ rating is an orange-to-yellow gradient (`#FF7601` → `#FCD529`)
+across its figure, bar and chip, sampled from a FACEIT chip; the MVP star is a solid `#F3B346`. The
+gradient figure is `background-clip:text`, which satori supports.
+
+On a **win the highest rating gets a gold MVP star**, ties sharing it, and **only the MVP's row is
+bold**; a loss has neither. The star is inline SVG, not a glyph: FACEIT's has rounded points, which a
+same-colour round-joined stroke gives and a font's ★ cannot. **Swing** is green or red by its sign; a
+zero (`+0.00%`) is grey, like an Elo `±0`. **ADR** is plain. No scoreboard from faceit.com, no Rating
+or Swing column and no MVP — the rich table's rule.
+
+**There is no header row.** The score is set at 92 px across a 190 px map banner, green for a win
+and red for a loss, with the team Elo pair small and bold under it; the map is dimmed so the figures
+read on any map. Without a map the band is plain. A long nickname shrinks from 25 px to 15 px before
+an ellipsis clips it (`nickSize`, `nickRoom`); the room is worked out from the player column's real
+width, which is far wider without Rating and Swing. The widths are DejaVu Sans Bold's by class of
+letter, tuned on real nicknames — `TheR0gue0ne` was clipped at 11 characters by the first guess.
+
+All of that was settled against mocks in the group, and these were tried and dropped: level badges,
+an "MVP" text pill, the star beside the rating chip rather than the nickname, a ПЕРЕМОГА/ПОРАЗКА
+word, a separate header row, K/D, HS% and MVPs as columns, the Elo stacked at the cell's right edge,
+a tinted pill or a chip round the Elo, filled ▲/▼, 🔥 on a 1.5, bolding every row rated 1.5 or more
+(whatever the result), and marking the top ADR bold or gold — beside the MVP star, a gold ADR read
+as part of the MVP.
+
+**The rich table is the fallback**: a failed render (timeout, crash, missing font) sends it instead,
+so a post is never lost to the renderer. `npm run card:preview` writes a sample `card.html` and
+`card.png` to `card-preview/`, and `-- --send=<chat id>` posts it with `BOT_TOKEN`.
+
 ## FACEIT links
 
 **One writer**: `setFaceitAccount`, called only from `/faceit`, where it expresses a user's explicit
@@ -498,16 +578,16 @@ Bump it only when all three Node pins move, and move them together.
 
 ## CI
 
-`.github/workflows/ci.yml` runs two jobs on every PR into `main`. `typecheck` is the code gate —
-there are no tests — and Deploy typechecks again before shipping, so a red one means the merge
-would fail to deploy too.
+`.github/workflows/ci.yml` runs two jobs on every PR into `main`. `typecheck` is the code gate.
+Deploy typechecks again before shipping, so a red one means the merge would fail to deploy too.
 
 `image` builds the real Docker image, because typecheck can't see inside it: 1.15.0 passed CI with
 a native library that couldn't load in production. It checks that `botuser` still has the uid/gid
 the Alpine image gave it, then runs `.github/ci/image-smoke.cjs` inside the container, which fails
 if the TLS library won't load in the request worker or in any idle one. A 403 or 429 from
 faceit.com still passes: the runner's IP may be challenged, but a status code means the library
-worked.
+worked. `.github/ci/card-smoke.cjs` then renders a card offline inside the container — resvg is
+native as well, and its glibc build and the fonts in `assets/` are only proven there.
 
 ## Releasing
 
