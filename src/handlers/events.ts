@@ -1,8 +1,8 @@
 import { trackMember, getMembers, setNotifications, getNotificationsStatus, saveEvent, saveRsvp, getRsvps, getEventBaseText, scheduleUnpin, scheduleReminder, getActiveEvents, deleteEventData, getReminderMessageId, setFaceitAccount, getFaceitAccount, clearFaceitAccount } from "../adapters/db.ts";
 import { buildMention, escapeHtml } from "../view/html.ts";
-import { sendEphemeral, deleteTrigger, groupOnly } from "./guards.ts";
+import { sendEphemeral, sendEphemeralRich, deleteTrigger, groupOnly } from "./guards.ts";
 import { getPlayer, getPlayerById, searchPlayers } from "../adapters/faceit.ts";
-import { t, type LabelKey } from "../view/i18n.ts";
+import { t, helpBlocks, type LabelKey } from "../view/i18n.ts";
 import { parseEventTime, decorateEventTime, timezoneForUser } from "../view/eventtime.ts";
 import {
   MAX_PLAYERS,
@@ -202,7 +202,7 @@ export const cancelEvent = groupOnly(async (ctx: CommandContext<Context>, from) 
 // The only place `@all` is documented in-app: it isn't a slash command, so it can never appear in
 // Telegram's command menu.
 export const showHelp = groupOnly(async (ctx: CommandContext<Context>) => {
-  await sendEphemeral(ctx, t("helpBody"), { parse_mode: "HTML" });
+  await sendEphemeralRich(ctx, { blocks: helpBlocks() });
 });
 
 // A join is a service message, so it rides the `message` update — `chat_member` would need

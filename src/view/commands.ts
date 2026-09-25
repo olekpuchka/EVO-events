@@ -1,4 +1,4 @@
-// The one list of commands: bot.ts publishes it as Telegram's menu, helpBody prints it. Adding
+// The one list of commands: bot.ts publishes it as Telegram's menu, helpBlocks prints it. Adding
 // one means an entry here plus its `bot.command(...)` handler.
 // Type-only import — i18n.ts imports this list at runtime, so a value import back would cycle.
 import type { LabelKey } from "./i18n.ts";
