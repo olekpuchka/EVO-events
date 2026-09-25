@@ -3,7 +3,7 @@
 // Telegram UX — and shares no state with the event lifecycle.
 
 import { getFaceitMembers, hasPostedMatch, markMatchPosted } from "../adapters/db.ts";
-import { getRecentMatches, getMatchStats, getMatchDetails, getMatchScoreboard, getMapImage, fetchMapImage, matchRoomUrl } from "../adapters/faceit.ts";
+import { getRecentMatches, getMatchStats, getMatchDetails, getMatchScoreboard, getMapImage, fetchMapImage, matchRoomUrl, ChallengeError } from "../adapters/faceit.ts";
 import { renderCard } from "../adapters/card.ts";
 import { cardMarkup, cardCaption, eloArrow, formatRating, formatSwing } from "../view/card.ts";
 import { t } from "../view/i18n.ts";
@@ -56,8 +56,9 @@ async function buildMatchResult(
   const matchDetails = await getMatchDetails(matchId);
   if (!matchDetails) return null;
 
-  // Best-effort: a scoreboard Cloudflare turned away drops Rating and Elo, never the post.
+  // Best-effort: a failed scoreboard drops Rating and Elo. A Cloudflare challenge is rethrown, so the poll retries.
   const board = await getMatchScoreboard(matchId).catch(err => {
+    if (err instanceof ChallengeError) throw err;
     console.error("[faceit] scoreboard fetch failed:", (err as Error).message);
     return null;
   });
@@ -186,7 +187,7 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
       }
       result = await buildMatchResult(stats, registeredIds, matchId);
     } catch (err) {
-      console.error("[faceit] poll stats fetch failed:", (err as Error).message);
+      console.error("[faceit] poll fetch failed:", (err as Error).message);
       continue;
     }
     // Too few of us, or no details: never posted, so marked done.
