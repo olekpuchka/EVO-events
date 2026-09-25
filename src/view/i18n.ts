@@ -3,6 +3,7 @@
 // the phrase checks only ever ran for UA. Dropping it also drops the trap where a missing key
 // warned to the console and shipped English into the group.
 
+import type { InputRichBlock, RichBlockTableCell, RichText } from "@grammyjs/types";
 import { COMMANDS } from "./commands.ts";
 import { escapeHtml } from "./html.ts";
 
@@ -37,24 +38,6 @@ const LABELS = {
   cmdFaceit: "Прив'язати, перевірити або відв'язати акаунт FACEIT",
   cmdBirthday: "Додати, перевірити або прибрати свій день народження",
   cmdHelp: "Як користуватися ботом",
-  // One bold header per form over its own description; run together they were unreadable. The
-  // command list comes from COMMANDS so it can't fall behind the menu, escapeHtml because a cmd*
-  // label also feeds setMyCommands (plain text only), and `: string` breaks the
-  // LABELS → t() → keyof typeof LABELS cycle.
-  helpBody: (): string => `<b>@all CS 22:00</b>
-Згадує всіх і закріплює подію з кнопками.
-Нагадування — за 10 хв до старту, відкріплення — на початку.
-
-<b>@all CS</b>
-Без часу — тільки згадка, нічого не закріплюється.
-
-<b>Команди</b> — вони ж у меню <b>/</b>
-${COMMANDS.map(({ command, key }) => `/${command} — ${escapeHtml(t(key))}`).join("\n")}
-
-<b>Вперше тут?</b>
-Надішли /unmute, щоб потрапити в список згадувань.
-Надішли /faceit ТвійНікнейм, щоб з'являтися в результатах матчів.
-Надішли /birthday ДД-ММ-РРРР, щоб чат привітав тебе з днем народження.`,
   // Sent to the group, not via sendEphemeral: an introduction is for everyone, not the joiner.
   // escapeHtml because a group title is user-set text.
   welcome: (mentions, chatTitle) => `👋 <b>Вітаємо, ${mentions} в ${escapeHtml(chatTitle)}!</b>
@@ -116,4 +99,32 @@ export type LabelKey = keyof typeof LABELS;
 export function t(key: LabelKey, ...args: any[]): string {
   const entry: Label = LABELS[key];
   return typeof entry === "function" ? entry(...args) : entry;
+}
+
+// /help as rich blocks. The command table comes from COMMANDS, so it can't fall behind the menu.
+export function helpBlocks(): InputRichBlock<never>[] {
+  const cell = (text: RichText): RichBlockTableCell => ({ text, align: "left", valign: "middle" });
+  const code = (text: string): RichText => ({ type: "code", text });
+  const step = (text: RichText): { blocks: InputRichBlock<never>[] } => ({ blocks: [{ type: "paragraph", text }] });
+
+  return [
+    { type: "heading", size: 5, text: "Події" },
+    { type: "paragraph", text: [code("@all CS 22:00"), " — згадує всіх і закріплює подію з кнопками. Нагадування — за 10 хв до старту, відкріплення — на початку."] },
+    { type: "paragraph", text: [code("@all CS"), " — без часу: тільки згадка, нічого не закріплюється."] },
+    { type: "heading", size: 5, text: "Команди" },
+    {
+      type: "table", is_striped: true, is_compact: true,
+      cells: COMMANDS.map(({ command, key }) => [cell({ type: "bot_command", text: `/${command}`, bot_command: `/${command}` }), cell(t(key))]),
+      caption: "Вони ж у меню /",
+    },
+    { type: "heading", size: 5, text: "Вперше тут?" },
+    {
+      type: "list",
+      items: [
+        step(["Надішли ", { type: "bot_command", text: "/unmute", bot_command: "/unmute" }, ", щоб потрапити в список згадувань."]),
+        step(["Надішли ", code("/faceit ТвійНікнейм"), ", щоб з'являтися в результатах матчів."]),
+        step(["Надішли ", code("/birthday ДД-ММ-РРРР"), ", щоб чат привітав тебе з днем народження."]),
+      ],
+    },
+  ];
 }

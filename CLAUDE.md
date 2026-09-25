@@ -58,15 +58,14 @@ A command lives in **two** places: its `bot.command(...)` handler and the `COMMA
 `keyof typeof LABELS` — a missing or misspelled key fails typecheck instead of reaching the group,
 and `COMMANDS` is checked against that same `LabelKey`.
 
-`COMMANDS` feeds **both** the published menu and the command block in `/help`, which is why
-`helpBody` is a function. A hand-written list would be a fourth place to update, and prose is
-where typecheck can't reach — a renamed command would leave a stale line in `/help` with CI green.
-Two consequences: `helpBody` is annotated `(): string` to break the inference cycle (`LABELS` →
-`t` → `keyof typeof LABELS`), and `commands.ts` imports `LabelKey` as a **type only**, since
-i18n.ts imports the list at runtime.
+`COMMANDS` feeds **both** the published menu and the command table in `/help` (`helpBlocks` in
+`src/view/i18n.ts`). A hand-written list would be a fourth place to update, and prose is where
+typecheck can't reach — a renamed command would leave a stale line in `/help` with CI green.
+`helpBlocks` sits outside `LABELS`, so it needs no annotation to break the `LABELS` → `t` cycle;
+`commands.ts` still imports `LabelKey` as a **type only**, since i18n.ts imports the list at runtime.
 
-Commands print **unwrapped** there, not in `<code>` — Telegram only makes a bare `/command`
-tappable.
+Commands in that table are `bot_command` rich text, so they stay tappable; a command that takes an
+argument is `code` with a placeholder, so it copies instead.
 
 That cost is why a secondary action is an **argument**, not a command: `/faceit off` unlinks, and
 `/faceit` with no argument reports the current link. Both live inside the one handler, so neither
@@ -84,9 +83,9 @@ drops an update carrying no `from`, and hands the handler a narrowed sender. Eve
 so it checks inline.
 
 The private reply itself is `ephemeral_message_parameters: { receiver_user_id }` on the send, built
-in one place — `sendEphemeral()` in `src/handlers/guards.ts`. It was a flat `receiver_user_id`
-before @grammyjs/types v5; if a send starts silently falling back to send-then-delete, that rename
-is the first thing to check, because the failure logs as `[ephemeral] send failed` and otherwise
+in one place — `ephemeral()` in `src/handlers/guards.ts`, behind `sendEphemeral` and
+`sendEphemeralRich`. It was a flat `receiver_user_id` before @grammyjs/types v5; if a send starts
+silently falling back to send-then-delete, that rename is the first thing to check, because the failure logs as `[ephemeral] send failed` and otherwise
 looks like nothing at all.
 
 Every command is published `is_ephemeral`, so Telegram hides the invoking `/command` from everyone
@@ -298,13 +297,13 @@ running joke about our plans, not a claim about a round, and no score is ever in
 
 ## Rich messages
 
-`sendRichMessage` takes real headings, lists and tables. It used to have **no way to send
-privately** — no `receiver_user_id` — which ruled it out for anything personal and is why `/help`
-was tried as a rich table and reverted. **That constraint is gone**: since @grammyjs/types v5 the
-private-send parameter is the nested `ephemeral_message_parameters` object, and `sendRichMessage`
-accepts it like the other send methods. Nothing has been changed to take advantage of it, so the
-scoreboard is still the only rich message — but the reason `/help` is plain HTML no longer holds,
-and a revisit is now a design question rather than an API limit.
+`sendRichMessage` takes real headings, lists and tables, and since @grammyjs/types v5 it can send
+privately through the nested `ephemeral_message_parameters`. Before that it had no private send,
+which is why `/help` was once tried as a rich table and reverted.
+
+`/help` is now a **private rich message**: headings, the command table and a "Вперше тут?" list.
+It is the same for everyone — a per-member checklist was tried and dropped, since people read it
+once. A failed private send falls back to the same blocks sent publicly and deleted after 10s.
 
 The payload nests: `rich_message: { blocks: [...] }`. grammY's `sendRichMessage(chatId, { blocks })`
 passes that object as the second positional argument, so the `{ blocks }` shape at the call site is

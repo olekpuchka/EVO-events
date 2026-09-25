@@ -29,11 +29,14 @@ export async function deleteTrigger(ctx: Context): Promise<void> {
 // Group chats only; falls back to send-then-delete in private chats or if the send fails.
 // The private-send parameter is nested — it was a flat `receiver_user_id` before
 // @grammyjs/types v5 — and this is the only place that shape appears.
-export async function sendEphemeral(ctx: Context, text: string, opts: ReplyOptions = {}): Promise<void> {
+async function ephemeral(
+  ctx: Context,
+  send: (extra: { ephemeral_message_parameters?: { receiver_user_id: number } }) => Promise<{ message_id: number }>,
+): Promise<void> {
   const isGroup = ctx.chat?.type === "group" || ctx.chat?.type === "supergroup";
   if (isGroup && ctx.from?.id) {
     try {
-      await ctx.reply(text, { ...opts, ephemeral_message_parameters: { receiver_user_id: ctx.from.id } });
+      await send({ ephemeral_message_parameters: { receiver_user_id: ctx.from.id } });
       // The reply is private, but the message that triggered it isn't always — remove it.
       await deleteTrigger(ctx);
       return;
@@ -41,8 +44,15 @@ export async function sendEphemeral(ctx: Context, text: string, opts: ReplyOptio
       console.warn("[ephemeral] send failed, falling back to auto-delete:", (err as Error).message);
     }
   }
-  const reply = await ctx.reply(text, opts);
-  autoDelete(ctx, reply);
+  autoDelete(ctx, await send({}));
+}
+
+export async function sendEphemeral(ctx: Context, text: string, opts: ReplyOptions = {}): Promise<void> {
+  await ephemeral(ctx, extra => ctx.reply(text, { ...opts, ...extra }));
+}
+
+export async function sendEphemeralRich(ctx: Context, message: Parameters<Context["replyWithRichMessage"]>[0]): Promise<void> {
+  await ephemeral(ctx, extra => ctx.replyWithRichMessage(message, extra));
 }
 
 // Any context that has resolved a chat — every command and text trigger the bot registers.

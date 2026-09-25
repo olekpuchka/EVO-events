@@ -63,7 +63,7 @@ every hint, error and confirmation is sent privately, so the chat stays clean.
 | `/birthday <dd-mm-yyyy>` | Save your birthday, so the group gets a toast on the day. `5-3-1990` works too |
 | `/birthday` | Show the date you saved |
 | `/birthday off` | Remove it |
-| `/help` | The `@all` syntax — the one thing the `/` menu can't list, since `@all` isn't a command — plus every command and where a newcomer starts |
+| `/help` | The `@all` syntax — the one thing the `/` menu can't list, since `@all` isn't a command — plus every command and where a newcomer starts. Shown only to you, as a rich message with a tappable command table |
 | *someone joins* | A welcome naming them and the group, pointing at `/help`. Joining alone doesn't opt anyone into `@all` — that stays `/unmute` |
 
 Commands work in groups only and are case-insensitive. The `/` menu is published on every boot and
