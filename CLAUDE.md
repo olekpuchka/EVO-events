@@ -437,14 +437,29 @@ retrying a 429 — not a third renderer. The card uploads the map as bytes, so t
 The open API has no FACEIT rating or swing; only faceit.com's own
 `/api/statistics/v1/cs2/matches/{id}/match-rounds/1/scoreboard-summary` does, and it sits behind
 Cloudflare. Plain `fetch` is challenged, so `adapters/faceit.ts` goes through `node-tls-client`
-with the **chrome_131** profile and navigation headers (`sec-fetch-mode: navigate`) — 120/124 get
+with the **chrome_152** profile and navigation headers (`sec-fetch-mode: navigate`) — 120/124 get
 a challenge, `cors` gets a 403. No cookies or key. The match-wide `/scoreboard-summary` 403s
 anonymous callers with `err_f0`; the per-map one does not, and it is what the site itself calls.
 Only map 1 is read, matching `rounds[0]` on the open API side.
 
+The profile is **newer than `node-tls-client`'s own enum**, which stops at 131: the name is passed
+through as a string to the Go library, whose pinned build (see below) knows up to 152. An unknown
+name does not fail — it silently falls back to a default fingerprint — so check a new one against
+that version's `profiles.go` before using it. It was moved off 131 after a production Cloudflare
+challenge ("Just a moment...") on a fingerprint two years stale. `sec-ch-ua` must move with it:
+Chrome derives the GREASE brand (`Not?A_Brand`) and the brand order from its major version, and
+131's string sent under a 152 user agent is itself a bot signal.
+
 It is **best-effort by design**. A failed fetch logs `[faceit] scoreboard fetch failed` and the post
-ships without the Rating column and without Elo lines, never held back: nothing says a Cloudflare
-rejection clears by the next poll. The anonymous limit is **5 requests per
+ships without the Rating column and without Elo lines.
+
+The one exception is a **Cloudflare challenge** — the "Just a moment..." page, recognised by
+`cf-mitigated: challenge` or its title and thrown as `ChallengeError`. It is a verdict on the
+server's IP at that moment, not on the match, so it is left to fail the whole post: nothing is
+marked posted and the poll's ordinary retry tries again every `FACEIT_POLL_MINUTES`. There is no
+separate deadline — a challenge lasting past the 24-hour candidate window loses the match
+silently, which was judged better than shipping it without figures. `403 err_f0` is *not* treated
+this way: it is about the match, and has been seen to persist. The anonymous limit is **5 requests per
 30s per IP**, and a catch-up poll of ten matches hit it on the sixth. A 429 therefore waits out the
 `Ratelimit-Retry-After` it carries (plus a second, capped at 30s) and tries again, up to three
 times — the poll runs in the background, and since the baseline was removed this is the only

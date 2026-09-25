@@ -83,13 +83,14 @@ export function getMatchDetails(matchId: string): Promise<FaceitMatchDetails | n
   return faceitGet<FaceitMatchDetails>(`${BASE}/matches/${encodeURIComponent(matchId)}`);
 }
 
-// faceit.com's own API, for what the open one lacks. Cloudflare admits only the chrome_131
-// fingerprint with navigation headers — see **Rating and swing** in CLAUDE.md.
-const CHROME = 131;
+// faceit.com's own API, for what the open one lacks. Cloudflare admits a current Chrome fingerprint
+// with navigation headers — see **Rating and swing** in CLAUDE.md.
+const CHROME = 152;
 const SITE_HEADERS = {
   "cache-control": "no-cache",
   pragma: "no-cache",
-  "sec-ch-ua": `"Google Chrome";v="${CHROME}", "Chromium";v="${CHROME}", "Not_A Brand";v="24"`,
+  // Chrome's GREASE brand and order change with its version; this is 152's.
+  "sec-ch-ua": `"Google Chrome";v="${CHROME}", "Not?A_Brand";v="24", "Chromium";v="${CHROME}"`,
   "sec-ch-ua-mobile": "?0",
   "sec-ch-ua-platform": '"Windows"',
   "upgrade-insecure-requests": "1",
@@ -131,7 +132,8 @@ function siteSession(): Promise<Session> {
       Client.getInstance().pool.on("error", err => console.error("[faceit] tls worker failed:", (err as Error).message));
     })
     .then(() => new Session({
-      clientIdentifier: ClientIdentifier.chrome_131,
+      // Newer than the wrapper's enum; the Go library knows it, and falls back silently on a name it doesn't.
+      clientIdentifier: `chrome_${CHROME}` as ClientIdentifier,
       timeout: TIMEOUT_MS,
       headers: SITE_HEADERS,
       // Header names at runtime; the library's typings mistype it as an array of header objects.
@@ -140,6 +142,9 @@ function siteSession(): Promise<Session> {
     .catch(err => { site = null; throw err; });
   return site;
 }
+
+// Cloudflare's "Just a moment..." page rather than an answer from faceit.com.
+export class ChallengeError extends Error {}
 
 // Rating, swing and match-time Elo by player id, first map only — the open API's stats read only
 // rounds[0] too. The anonymous limit is 5 requests per 30s, so a 429 waits out the slot it names —
@@ -152,6 +157,9 @@ export async function getMatchScoreboard(matchId: string): Promise<Map<string, S
     const wait = Number(firstHeader(res.headers["Ratelimit-Retry-After"])) || 10;
     await sleep(Math.min(wait + 1, 30) * 1000);
     res = await session.get(url);
+  }
+  if (firstHeader(res.headers["Cf-Mitigated"]) === "challenge" || res.body.includes("<title>Just a moment")) {
+    throw new ChallengeError(`faceit.com ${res.status}: Cloudflare challenge`);
   }
   // Status 0 is the library's own transport error, and its reason is only in the body.
   if (res.status !== 200) throw new Error(`faceit.com ${res.status}: ${res.body.slice(0, 160)}`);
