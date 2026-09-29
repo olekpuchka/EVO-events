@@ -186,6 +186,8 @@ export interface ResultRow {
   // Elo after the match, and the match's change.
   eloAfter: number | null;
   eloChange: number | null;
+  // Top rating on our whole team, linked or not, on a win. Ties share it.
+  mvp: boolean;
 }
 
 export interface MatchResult {

@@ -66,6 +66,9 @@ async function buildMatchResult(
   // Display rows, by rating desc. Unrated players sink; ADR breaks ties, and orders all when unrated.
   const ratingOf = (p: FaceitStatPlayer): number => board?.get(p.player_id)?.rating ?? -Infinity;
   const adrOf = (p: FaceitStatPlayer): number => Number(p.player_stats?.ADR ?? 0);
+  // The MVP is judged on the full team: a non-member topping it means no star on the card.
+  const teamRatings = ourTeam.players.flatMap(p => { const r = board?.get(p.player_id); return r ? [round2(r.rating)] : []; });
+  const mvpRating = won && teamRatings.length ? Math.max(...teamRatings) : null;
   const resultRows: ResultRow[] = registered
     .sort((a, b) => ratingOf(b) - ratingOf(a) || adrOf(b) - adrOf(a))
     .map(p => {
@@ -79,6 +82,7 @@ async function buildMatchResult(
         swing: r ? round2(r.swing * 100) : null,
         eloAfter: r?.elo?.after ?? null,
         eloChange: r?.elo?.change ?? null,
+        mvp: r !== undefined && round2(r.rating) === mvpRating,
       };
     });
 

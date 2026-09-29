@@ -160,10 +160,6 @@ function table(result: MatchResult): string {
   const { rows } = result;
   const rated = rows.some(r => r.rating !== null);
   const cols = columns(rated);
-  const ratings = rows.map(r => r.rating ?? NaN);
-  const top = Math.max(...ratings.filter(Number.isFinite));
-  // A win's MVP is its highest rating, ties included; a loss has none.
-  const mvp = new Set(result.won && rated ? ratings.flatMap((v, i) => v === top ? [i] : []) : []);
   const room = nickRoom(cols);
 
   const cellStyle = (flex: number, first: boolean, extra: string) =>
@@ -177,7 +173,7 @@ function table(result: MatchResult): string {
     headCell(PLAYER_FLEX, true, t("scorePlayer")) + cols.map(c => headCell(c.flex, false, c.head)).join("") + `</div>`;
 
   const body = rows.map((row, i) => {
-    const hot = mvp.has(i);
+    const hot = row.mvp;
     const cells = cols.map(c => {
       const { style, body } = c.cell(row, hot);
       return `<div style="${cellStyle(c.flex, false, `font-size:26px${style}`)}">${body}</div>`;
