@@ -555,8 +555,12 @@ on FACEIT, and so here**: a 1.80+ rating is an orange-to-yellow gradient (`#FF76
 across its figure, bar and chip, sampled from a FACEIT chip; the MVP star is a solid `#F3B346`. The
 gradient figure is `background-clip:text`, which satori supports.
 
-On a **win the highest rating gets a gold MVP star**, ties sharing it, and **only the MVP's row is
-bold**; a loss has neither. The star is inline SVG, not a glyph: FACEIT's has rounded points, which a
+On a **win the highest FACEIT Rating gets a gold MVP star**, ties sharing it, and **only the MVP's
+row is bold**; a loss has neither. The top is taken across **our whole team**, members of the group
+or not, and the star is drawn only when a member holds it — judged on our rows alone, a random
+carrying the game handed the star to our best instead, which the FACEIT link beside it contradicts.
+That is why `mvp` is decided in `buildMatchResult`, the one place that sees the full team, and
+travels on `ResultRow`. The star is inline SVG, not a glyph: FACEIT's has rounded points, which a
 same-colour round-joined stroke gives and a font's ★ cannot. **Swing** is green or red by its sign; a
 zero (`+0.00%`) is grey, like an Elo `±0`. **ADR** is plain. No scoreboard from faceit.com, no Rating
 or Swing column and no MVP — the rich table's rule.

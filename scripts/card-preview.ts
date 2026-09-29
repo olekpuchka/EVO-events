@@ -29,6 +29,7 @@ const row = (i: number, nickname: string, rating: number, swing: number, kda: st
   swing: rated ? swing : null,
   eloAfter: after,
   eloChange: loss ? -Math.abs(change) : change,
+  mvp: rated && !loss && i === 0,
 });
 
 const result: MatchResult = {
