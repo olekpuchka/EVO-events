@@ -25,7 +25,7 @@ constructs an LLM client, nothing outside `adapters/card-worker.ts` imports sato
 Nothing points back up either — `view/` imports no adapter and no handler. The sideways edges all run
 `adapters/*` → `view/`: `ai.ts` reaches `i18n.ts` for the fallback phrases, `prompt.ts` for what to
 ask and `phrase.ts` for judging the reply; `adapters/card.ts` reaches `view/card.ts` for the markup and
-its image placeholders, `card-worker.ts` for the card's size.
+its image placeholders, `card-worker.ts` for the card's size, the avatar's and the map's `src`.
 
 A phrase therefore crosses three modules, split by what makes each one change: `view/prompt.ts` is
 jokes and tone, `view/phrase.ts` is what may not ship, and `adapters/ai.ts` is only the call, the
@@ -573,16 +573,14 @@ a grey disc with the nickname's first letter — as does a player with no avatar
 string), silently. The signature check matters here too: the CDN runs Cloudflare Polish
 (`cf-polished`), which can serve WebP under a `.jpg` name, and that is the map trap again.
 
-**The card renders at 4×** (`ZOOM` in `card-worker.ts`), 3200 px wide: at 2× the avatar was 112 px and
-read as blocks the moment anyone zoomed in. Whether Telegram keeps those pixels through `sendPhoto` has
-not been checked — a test post is what settles it. A 4× card is ~3 s of CPU on a laptop against ~0.5 s
-at 2×, so `TIMEOUT_MS` in `card.ts` went from 20 s to 60 s.
-
-**Each avatar is shrunk before satori sees it**, to exactly the pixels it is drawn at. resvg samples
-an image without averaging, so a 1254 px avatar drawn at 112 came out grainy with jagged edges. The
-worker draws it 16 times at sub-pixel offsets into one render and averages them, which matched a
-proper downscale. Halving in steps looked the same at three times the cost. FACEIT's CDN resizes
-too, but only to an allowlist of widths, and none of 8–640 is on it.
+**Each avatar is shrunk before satori sees it**, to exactly the pixels it is drawn at — `AVATAR` from
+`view/card.ts` times the worker's `ZOOM`. resvg samples an image without averaging, so a 1254 px avatar drawn at
+112 px came out grainy with jagged edges. The worker draws it 16 times at sub-pixel offsets into one
+render and averages them, which matched a proper downscale. Halving in steps looked the same at three times the cost. FACEIT's CDN resizes
+too, but only to an allowlist of widths, and none of 8–640 is on it. resvg skips an image it cannot
+decode rather than failing, so a shrink that comes back fully transparent throws — otherwise a corrupt
+avatar would ship as an empty circle instead of reaching the retry without avatars. resvg reads no WebP
+either, so the parent's signature check still stands in front of it.
 
 Avatars come at up to 1254×1254 and resvg decodes each at full size, ~6 MB raw, so five add ~30 MB
 to the render child. That was **not** re-measured in the image at the real limits when they shipped —
@@ -592,10 +590,8 @@ the MVP star.
 
 **The map banner is bundled, not FACEIT's.** FACEIT serves map images at 428×212 only — the open API's
 `image_lg` and faceit.com alike — and the banner crops that to ~428×100 and draws it at 1600×380, so
-it posted visibly soft. `assets/maps/<game_map_id>.jpg` holds each map pre-cut to exactly 1600×380 —
-1:1 when the card rendered at 2×, stretched 2× now it renders at 4×; behind the dimming that was judged
-acceptable, and the upstream screenshots are not wide enough for 3200 anyway. `bundledMap` reads it by
-the stats' map id. The ten files cover every CS2
+it posted visibly soft. `assets/maps/<game_map_id>.jpg` holds each map pre-cut to exactly 1600×380, so
+resvg draws it 1:1; `bundledMap` reads it by the stats' map id. The ten files cover every CS2
 competitive map so far, current pool and rotated-out alike, so FACEIT's map image is not used at all: a
 map we don't ship gets the plain band, and the rich fallback carries no map.
 

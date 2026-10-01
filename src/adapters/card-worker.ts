@@ -35,25 +35,33 @@ function swapImages(node: Node): void {
   }
 }
 
-// The card renders at 4x; an avatar is shrunk to the pixels it is drawn at.
-const ZOOM = 4;
+// The PNG is drawn at this multiple of the markup; an avatar is shrunk to the pixels it fills.
+const ZOOM = 2;
 const AVATAR_PX = AVATAR * ZOOM;
 
-// Averages a 4×4 grid of sub-pixel draws: resvg samples without averaging, so one big shrink aliases.
+// A 4×4 grid of sub-pixel draws, averaged: resvg samples without averaging, so one big shrink aliases.
 const GRID = 4;
-function shrink(uri: string): string {
-  let draws = "";
-  for (let i = 0; i < GRID * GRID; i++) {
-    const [x, y] = [i % GRID, Math.floor(i / GRID)].map(v => (v + 0.5) / GRID - 0.5);
-    draws += `<use href="#a" x="${x}" y="${y}" opacity="${1 / (i + 1)}"/>`;
-  }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_PX}" height="${AVATAR_PX}"><defs>` +
-    `<image id="a" href="${uri}" width="${AVATAR_PX}" height="${AVATAR_PX}" preserveAspectRatio="xMidYMid slice"/></defs>${draws}</svg>`;
-  return `data:image/png;base64,${Buffer.from(new Resvg(svg).render().asPng()).toString("base64")}`;
+const offset = (v: number): number => (v + 0.5) / GRID - 0.5;
+let DRAWS = "";
+for (let y = 0, n = 1; y < GRID; y++) {
+  for (let x = 0; x < GRID; x++, n++) DRAWS += `<use href="#a" x="${offset(x)}" y="${offset(y)}" opacity="${1 / n}"/>`;
 }
 
-for (const src of Object.keys(job.images)) {
-  if (src !== MAP_SRC) job.images[src] = shrink(job.images[src]!);
+// An avatar shrunk to the pixels it is drawn at, as a PNG data URI.
+function shrink(src: string, uri: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_PX}" height="${AVATAR_PX}"><defs>` +
+    `<image id="a" href="${uri}" width="${AVATAR_PX}" height="${AVATAR_PX}" preserveAspectRatio="xMidYMid slice"/></defs>${DRAWS}</svg>`;
+  const image = new Resvg(svg).render();
+  // resvg skips an image it can't decode; without this, a corrupt avatar ships as an empty circle.
+  const pixels = image.pixels;
+  let opaque = false;
+  for (let i = 3; i < pixels.length && !opaque; i += 4) opaque = pixels[i]! > 0;
+  if (!opaque) throw new Error(`${src} did not decode`);
+  return `data:image/png;base64,${Buffer.from(image.asPng()).toString("base64")}`;
+}
+
+for (const [src, uri] of Object.entries(job.images)) {
+  if (src !== MAP_SRC) job.images[src] = shrink(src, uri);
 }
 
 const tree = html(job.markup) as unknown as Node;

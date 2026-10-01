@@ -10,14 +10,14 @@ import type { MatchResult } from "../types.ts";
 const WORKER = fileURLToPath(new URL("./card-worker.ts", import.meta.url));
 const MAPS = new URL("../../assets/maps/", import.meta.url);
 
-// The bundled banner for a map id, pre-cut to 1600×380; null for a map we don't ship.
+// The bundled banner for a map id, pre-cut to the banner's 2x size; null for a map we don't ship.
 export async function bundledMap(mapId: string | null): Promise<Uint8Array | null> {
   if (!mapId || !/^[a-z0-9_]+$/.test(mapId)) return null;
   return readFile(new URL(`${mapId}.jpg`, MAPS)).catch(() => null);
 }
 
-// A 4x card with five avatars is ~3s of CPU; nobody waits on the post, so the rest is headroom.
-const TIMEOUT_MS = 60_000;
+// ~2.5s measured at 0.25 CPU; the rest is headroom for a busy host.
+const TIMEOUT_MS = 20_000;
 
 // Renders run one at a time: chats are polled in parallel, and two children at once would double
 // the memory the 250 MB budget was measured against.
