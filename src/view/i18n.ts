@@ -111,6 +111,7 @@ export function helpBlocks(): InputRichBlock<never>[] {
     { type: "heading", size: 5, text: "Події" },
     { type: "paragraph", text: [code("@all CS 22:00"), " — згадує всіх і закріплює подію з кнопками. Нагадування — за 10 хв до старту, відкріплення — на початку."] },
     { type: "paragraph", text: [code("@all CS"), " — без часу: тільки згадка, нічого не закріплюється."] },
+    { type: "paragraph", text: [code("@all"), " можна ставити будь-де в повідомленні, наприклад ", code("CS 22:00 @all"), "."] },
     { type: "heading", size: 5, text: "Команди" },
     {
       type: "table", is_striped: true, is_compact: true,

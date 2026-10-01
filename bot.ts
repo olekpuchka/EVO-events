@@ -7,6 +7,7 @@ import { registerBirthday, postBirthdayGreetings } from "./src/handlers/birthday
 import { getDueUnpins, getDueReminders, deleteScheduledReminder, saveReminderMessageId, getAllFaceitChats, pruneOldPostedMatches } from "./src/adapters/db.ts";
 import { t } from "./src/view/i18n.ts";
 import { COMMANDS } from "./src/view/commands.ts";
+import { ALL_TAG, stripAllTag } from "./src/view/alltag.ts";
 import { BOT_TOKEN, FACEIT_API_KEY, DEEPSEEK_API_KEY, FACEIT_POLL_MINUTES } from "./src/config.ts";
 
 // State the config up front — a missing FACEIT key otherwise just 401s forever, silently.
@@ -73,12 +74,11 @@ async function publishCommands(): Promise<void> {
   }
 }
 
-// ─── Text trigger: @all <optional message> ────────────────────────────────────
+// ─── Text trigger: @all anywhere in the message ──────────────────────────────
 // Works when the bot has privacy mode disabled (set via BotFather → /setprivacy → Disable).
 
-bot.hears(/^@all(?:\s+([\s\S]*))?$/i, async (ctx) => {
-  const message = (ctx.match[1] ?? "").trim();
-  await mentionAll(ctx, message);
+bot.hears(ALL_TAG, async (ctx) => {
+  await mentionAll(ctx, stripAllTag(ctx.msg.text ?? ctx.msg.caption ?? ""));
 });
 
 // ─── Callback queries: joining buttons ───────────────────────────────────────

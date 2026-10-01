@@ -13,7 +13,7 @@ src/log.ts          timestamps on console
 src/types.ts        shared row + API shapes
 src/adapters/       one module per external system: db (SQLite), faceit (HTTP, open API + faceit.com), ai (DeepSeek),
                     card (the result-card renderer, in a child process)
-src/view/           data → strings: html, i18n, commands, render, card, eventtime, birthday, prompt, phrase
+src/view/           data → strings: html, i18n, commands, render, card, eventtime, alltag, birthday, prompt, phrase
 scripts/            dev-only, not in the image: card-preview
 assets/             the fonts and map banners the result card is drawn with
 src/handlers/       Telegram entry points: events, results, birthdays, guards
@@ -97,6 +97,24 @@ but its sender. Such a message arrives with **`message_id: 0`**, which `ctx.dele
 rejects — a handler must never delete its own trigger directly. Use `deleteTrigger()` from the
 same file: it skips an ephemeral trigger and still removes a plainly-sent one (`@all`, which can
 never be ephemeral, or a client ignoring the flag).
+
+## @all
+
+`@all` triggers **anywhere in a message**, not only at the start: `CS 22:00 @all` and
+`хто на CS @all о 22:00?` work like `@all CS 22:00`. It must stand as its own word, so `@allin` and
+`a@all.com` don't match. Matching ignores case. Punctuation straight after the tag (`@all,`) is removed
+with it, and the rest of the message becomes the event text.
+
+Allowing the tag anywhere has a known cost, and it was **accepted on purpose**. A passing mention such
+as «чому @all не працює?» pings everyone and deletes the message. If the message has a time in it, a
+pinned event is created as well. Matching only at the start avoided this. The group is about 15 people
+who know the command, so the friendlier syntax was judged worth it. Don't narrow it again without
+asking.
+
+The tag lives in `view/alltag.ts` as pure logic, like the time parsing it feeds. `ALL_TAG` carries
+the `g` flag and serves both `hears` and the strip. That is safe only because grammY matches with
+`String.prototype.match`, and both `match` and `replace` reset `lastIndex`. A `RegExp.test` or `exec`
+on it would keep `lastIndex` and skip every other message.
 
 ## Welcome message
 
