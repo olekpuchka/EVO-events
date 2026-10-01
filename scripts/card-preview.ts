@@ -1,12 +1,12 @@
 // Renders a sample result card: card-preview/card.html for a browser, card-preview/card.png as posted.
-// `npm run card:preview -- [--loss] [--unrated] [--nicks=a,b] [--map-id=de_nuke] [--send=<chat id>]`
-// --send needs BOT_TOKEN in the environment.
+// `npm run card:preview -- [--loss] [--unrated] [--nicks=a,b] [--map-id=de_nuke] [--avatars] [--send=<chat id>]`
+// --avatars fetches each nickname's FACEIT avatar and needs FACEIT_API_KEY; --send needs BOT_TOKEN.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Api, InputFile } from "grammy";
 import { cardMarkup, cardCaption, COLOR, MAP_SRC } from "../src/view/card.ts";
-import { matchRoomUrl } from "../src/adapters/faceit.ts";
+import { matchRoomUrl, getPlayer, getAvatar } from "../src/adapters/faceit.ts";
 import { renderCard, bundledMap, dataUri } from "../src/adapters/card.ts";
 import { BOT_TOKEN } from "../src/config.ts";
 import type { MatchResult, ResultRow } from "../src/types.ts";
@@ -66,7 +66,11 @@ ${markup.replace(`src="${MAP_SRC}"`, `src="${mapSrc}"`)}
 <p>${cardCaption(matchRoomUrl(result.matchId))}</p>
 `);
 
-const png = await renderCard(result, map, result.rows.map(() => null));
+// Online only on request; otherwise every row gets its letter disc.
+const avatars = flag("avatars")
+  ? await Promise.all(result.rows.map(async r => getAvatar((await getPlayer(r.nickname))?.avatar ?? null)))
+  : result.rows.map(() => null);
+const png = await renderCard(result, map, avatars);
 if (!png) process.exit(1);
 writeFileSync(resolve(out, "card.png"), png);
 console.log(`${out}/card.html\n${out}/card.png (${png.length} B)${map ? "" : ` — no map: nothing bundled for ${result.mapId}`}`);

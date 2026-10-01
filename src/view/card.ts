@@ -65,7 +65,7 @@ const nickRoom = (cols: Column[]): number =>
 const MVP_ROOM = 40;
 
 // The avatar circle before the nickname, and the gap after it.
-const AVATAR = 56;
+export const AVATAR = 56;
 const AVATAR_GAP = 14;
 
 // FACEIT's MVP star: filled, its points rounded by a same-colour stroke.

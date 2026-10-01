@@ -25,7 +25,7 @@ constructs an LLM client, nothing outside `adapters/card-worker.ts` imports sato
 Nothing points back up either — `view/` imports no adapter and no handler. The sideways edges all run
 `adapters/*` → `view/`: `ai.ts` reaches `i18n.ts` for the fallback phrases, `prompt.ts` for what to
 ask and `phrase.ts` for judging the reply; `adapters/card.ts` reaches `view/card.ts` for the markup and
-its image placeholders, `card-worker.ts` for the card's size.
+its image placeholders, `card-worker.ts` for the card's size, the avatar's and the map's `src`.
 
 A phrase therefore crosses three modules, split by what makes each one change: `view/prompt.ts` is
 jokes and tone, `view/phrase.ts` is what may not ship, and `adapters/ai.ts` is only the call, the
@@ -573,7 +573,16 @@ a grey disc with the nickname's first letter — as does a player with no avatar
 string), silently. The signature check matters here too: the CDN runs Cloudflare Polish
 (`cf-polished`), which can serve WebP under a `.jpg` name, and that is the map trap again.
 
-Avatars come at up to 1080×1080 and resvg decodes each at full size, ~4.6 MB raw, so five add ~23 MB
+**Each avatar is shrunk before satori sees it**, to exactly the pixels it is drawn at — `AVATAR` from
+`view/card.ts` times the worker's `ZOOM`. resvg samples an image without averaging, so a 1254 px avatar drawn at
+112 px came out grainy with jagged edges. The worker draws it 16 times at sub-pixel offsets into one
+render and averages them, which matched a proper downscale. Halving in steps looked the same at three times the cost. FACEIT's CDN resizes
+too, but only to an allowlist of widths, and none of 8–640 is on it. resvg skips an image it cannot
+decode rather than failing, so a shrink that comes back fully transparent throws — otherwise a corrupt
+avatar would ship as an empty circle instead of reaching the retry without avatars. resvg reads no WebP
+either, so the parent's signature check still stands in front of it.
+
+Avatars come at up to 1254×1254 and resvg decodes each at full size, ~6 MB raw, so five add ~30 MB
 to the render child. That was **not** re-measured in the image at the real limits when they shipped —
 if the card starts falling back to the rich table, check the child for an OOM first. The avatar also
 takes ~70 px from the nickname: an 11-character nickname drops from 25 px to ~19, and further beside
@@ -655,8 +664,9 @@ star, a gold ADR read as part of the MVP.
 **The rich table is the fallback**: a failed render (timeout, crash, missing font) sends it instead —
 after the one retry without avatars — so a post is never lost to the renderer. `npm run card:preview`
 writes a sample `card.html` and `card.png` to `card-preview/` on Mirage; `-- --map-id=<id>` picks
-another bundled map and `-- --send=<chat id>` posts it with `BOT_TOKEN`. The sample rows carry no
-avatar URL, so the preview shows letter discs; it stays offline.
+another bundled map and `-- --send=<chat id>` posts it with `BOT_TOKEN`. The preview stays offline
+and shows letter discs unless `-- --avatars` asks it to look the sample nicknames up on FACEIT —
+which is why `FaceitPlayer` declares `avatar`, though the bot itself reads it from the match roster.
 
 ## FACEIT links
 

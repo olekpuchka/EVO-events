@@ -97,8 +97,9 @@ The SQLite file is created at `app/data/` on first run (gitignored). The first m
 downloads `node-tls-client`'s native library into your temp directory; the Docker image ships it
 pre-installed instead. `npm run dev` restarts on change; `npm run typecheck` is the
 check. `npm run card:preview` draws a sample result card into `card-preview/` (`card.html` and
-`card.png`) on Mirage, offline, so the avatars show as initials; `-- --map-id=de_nuke` picks another
-map, and `-- --send=<chat id>` with `BOT_TOKEN` set posts it to a chat.
+`card.png`) on Mirage, offline, so the avatars show as initials; `-- --avatars` fetches the sample
+nicknames' real FACEIT avatars with `FACEIT_API_KEY`, `-- --map-id=de_nuke` picks another map, and
+`-- --send=<chat id>` with `BOT_TOKEN` set posts it to a chat.
 
 **The mention list starts empty.** The Bot API cannot enumerate a group's members, so people add
 themselves with `/unmute` — until someone does, `@all` has nobody to mention and says so.

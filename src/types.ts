@@ -68,6 +68,7 @@ export interface DueReminderRow {
 export interface FaceitPlayer {
   player_id: string;
   nickname: string;
+  avatar?: string;
   games?: { cs2?: { faceit_elo?: number | null } };
 }
 
