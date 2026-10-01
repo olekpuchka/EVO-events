@@ -575,16 +575,21 @@ string), silently. The signature check matters here too: the CDN runs Cloudflare
 
 **Each avatar is shrunk before satori sees it**, to exactly the pixels it is drawn at — `AVATAR` from
 `view/card.ts` times the worker's `ZOOM`. resvg samples an image without averaging, so a 1254 px avatar drawn at
-112 px came out grainy with jagged edges. The worker draws it 16 times at sub-pixel offsets into one
-render and averages them, which matched a proper downscale. Halving in steps looked the same at three times the cost. FACEIT's CDN resizes
+112 px came out grainy with jagged edges. The worker draws it once at 4× and averages each 4×4 block
+of pixels itself, which matched a proper downscale. 1.22.1 took the same 16 samples as 16 `<use>`
+draws at sub-pixel offsets instead: each draw decoded the full-size avatar again, and the render
+child was OOM-killed (`[card] render failed (SIGKILL)`) on every card, so every card lost its avatars to the retry. Halving in steps looked the same at three times the cost. FACEIT's CDN resizes
 too, but only to an allowlist of widths, and none of 8–640 is on it. resvg skips an image it cannot
 decode rather than failing, so a shrink that comes back fully transparent throws — otherwise a corrupt
 avatar would ship as an empty circle instead of reaching the retry without avatars. resvg reads no WebP
 either, so the parent's signature check still stands in front of it.
 
 Avatars come at up to 1254×1254 and resvg decodes each at full size, ~6 MB raw, so five add ~30 MB
-to the render child. That was **not** re-measured in the image at the real limits when they shipped —
-if the card starts falling back to the rich table, check the child for an OOM first. The avatar also
+to the render child. Every `Resvg` also takes `font: { loadSystemFonts: false }`: satori hands it
+paths, never text, and the default scans the system's fonts on each construction — ~150 ms and over
+100 MB a time on macOS. Measured on macOS with five 1254 px avatars: peak 199 MB and 0.5 s, against 373 MB
+and 2.0 s on 1.22.1. That is **not** a measurement in the image at the real limits — if the card starts
+falling back to the rich table, check the child for an OOM first. The avatar also
 takes ~70 px from the nickname: an 11-character nickname drops from 25 px to ~19, and further beside
 the MVP star.
 
