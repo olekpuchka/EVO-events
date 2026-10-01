@@ -10,11 +10,12 @@ export const CARD_WIDTH = 800;
 // The map is a banner with the score across it, not a photo: the table is what people read.
 const MAP_HEIGHT = 190;
 
-// The map's `src` in the markup; the renderer swaps the image bytes in after parsing.
+// The map's and each row's avatar `src` in the markup; the renderer swaps the image bytes in after parsing.
 export const MAP_SRC = "map";
+export const avatarSrc = (row: number): string => `avatar${row}`;
 
-// The swapped-in `src`. Every bundled map is a JPEG.
-export const mapUri = (base64: string): string => `data:image/jpeg;base64,${base64}`;
+// Whether the renderer has the image for a `src`; without it the map band goes plain and an avatar becomes a letter.
+export type HasImage = (src: string) => boolean;
 
 // FACEIT's neutral greys and orange, not a blue-grey: the card should read as their scoreboard.
 export const COLOR = {
@@ -62,6 +63,10 @@ const nickRoom = (cols: Column[]): number =>
 
 // The room the MVP star takes from the nickname beside it.
 const MVP_ROOM = 40;
+
+// The avatar circle before the nickname, and the gap after it.
+const AVATAR = 56;
+const AVATAR_GAP = 14;
 
 // FACEIT's MVP star: filled, its points rounded by a same-colour stroke.
 const STAR = "12,2.8 14.8,8.7 21.2,9.4 16.4,13.8 17.7,20.2 12,17 6.3,20.2 7.6,13.8 2.8,9.4 9.2,8.7";
@@ -139,9 +144,19 @@ function banner(result: MatchResult, withMap: boolean): string {
   return `<div style="display:flex;position:relative;width:${CARD_WIDTH}px;height:${MAP_HEIGHT}px">${ground}${overlay}${edge}</div>`;
 }
 
-// The nickname in bold, with the MVP star beside it, and under it the Elo and this match's change.
-function playerCell(row: ResultRow, mvp: boolean, width: number): string {
-  const room = mvp ? width - MVP_ROOM : width;
+// The avatar, or the nickname's first letter on a grey disc when there is none.
+function avatar(row: ResultRow, src: string | null): string {
+  const circle = `width:${AVATAR}px;height:${AVATAR}px;border-radius:50%`;
+  if (src) return `<img src="${src}" style="${circle};object-fit:cover"/>`;
+  const letter = [...row.nickname].find(c => /[\p{L}\p{N}]/u.test(c))?.toUpperCase() ?? "?";
+  return `<div style="display:flex;align-items:center;justify-content:center;${circle};background:${COLOR.strip};` +
+    `font-size:24px;font-weight:700;color:${COLOR.muted}">${escapeHtml(letter)}</div>`;
+}
+
+// The avatar, then the nickname in bold with the MVP star beside it, and under it the Elo and this match's change.
+function playerCell(row: ResultRow, mvp: boolean, width: number, src: string | null): string {
+  const nickWidth = width - AVATAR - AVATAR_GAP;
+  const room = mvp ? nickWidth - MVP_ROOM : nickWidth;
   const nick = `<div style="display:flex;font-size:${nickSize(row.nickname, room)}px;font-weight:700;max-width:${room}px;` +
     `overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${escapeHtml(row.nickname)}</div>`;
   const badge = mvp
@@ -155,11 +170,12 @@ function playerCell(row: ResultRow, mvp: boolean, width: number): string {
     `<span style="font-size:22px;color:${COLOR.muted}">${row.eloAfter}</span>` +
     (arrow ? `<span style="font-size:22px;color:${signColor(change!)}">${arrow}</span>` : "") +
     `</div>`;
-  return `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px">` +
-    `<div style="display:flex;align-items:center;gap:10px">${nick}${badge}</div>${eloLine}</div>`;
+  return `<div style="display:flex;align-items:center;gap:${AVATAR_GAP}px">${avatar(row, src)}` +
+    `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px">` +
+    `<div style="display:flex;align-items:center;gap:10px">${nick}${badge}</div>${eloLine}</div></div>`;
 }
 
-function table(result: MatchResult): string {
+function table(result: MatchResult, has: HasImage): string {
   const { rows } = result;
   const rated = rows.some(r => r.rating !== null);
   const cols = columns(rated);
@@ -190,16 +206,16 @@ function table(result: MatchResult): string {
       const { style, body } = c.cell(row);
       return `<div style="${cellStyle(c.flex, false, `font-size:26px${style}`)}">${body}</div>`;
     }).join("");
-    return line(`<div style="${cellStyle(1, true, "")}">${playerCell(row, row.mvp, room)}</div>`, cells, i > 0);
+    return line(`<div style="${cellStyle(1, true, "")}">${playerCell(row, row.mvp, room, has(avatarSrc(i)) ? avatarSrc(i) : null)}</div>`, cells, i > 0);
   }).join("");
 
   return `<div style="display:flex;flex-direction:column;margin:16px;background:${COLOR.panel};border-radius:8px;overflow:hidden">${head}${body}</div>`;
 }
 
-// The whole card. `withMap` is false when the map image could not be had — the banner goes plain.
-export function cardMarkup(result: MatchResult, withMap: boolean): string {
+// The whole card, drawn around the images the renderer has.
+export function cardMarkup(result: MatchResult, has: HasImage): string {
   return `<div style="display:flex;flex-direction:column;width:${CARD_WIDTH}px;background:${COLOR.bg};color:${COLOR.text};` +
-    `font-family:DejaVu;font-size:20px">${banner(result, withMap)}${table(result)}</div>`;
+    `font-family:DejaVu;font-size:20px">${banner(result, has(MAP_SRC))}${table(result, has)}</div>`;
 }
 
 // Photo caption (parse_mode HTML): the tappable FACEIT link the card itself can't carry.

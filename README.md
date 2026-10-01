@@ -28,10 +28,12 @@ and schedule.
 `@all CS` with no time just mentions people. Nothing is pinned, nothing is scheduled.
 
 **Match results.** Finished matches post automatically as a picture: the score across the map, both
-teams' Elo, and a table sorted by FACEIT rating — each player with their Elo and that match's change
-(↑25 / ↓23 / ±0), their rating (gold from 1.80, green from 1.30, white from 0.90, red below) and
-swing, and their K/D/A and ADR. On a win the team's top rating gets a gold MVP star — judged across all five, so a teammate from outside the group topping it means no star. The FACEIT link rides in the caption. If the picture can't be drawn, the same result posts as
-Telegram's own rich table. Only matches **two or more** linked members played in — solo queue stays
+teams' Elo, and a table sorted by FACEIT rating — each player with their FACEIT avatar (or their
+initial, without one), their Elo and that match's change (↑25 / ↓23 / ±0), their rating (gold from
+1.80, green from 1.30, white from 0.90, red below) and swing, and their K/D/A and ADR. On a win the
+team's top rating gets a gold MVP star — judged across all five, so a teammate from outside the group
+topping it means no star. The FACEIT link rides in the caption. If the picture can't be drawn, the
+same result posts as Telegram's own rich table. Only matches **two or more** linked members played in — solo queue stays
 off the group's feed.
 
 The map behind the score is drawn from HD screenshots bundled in [`assets/maps/`](assets/maps/), since
@@ -92,8 +94,8 @@ The SQLite file is created at `app/data/` on first run (gitignored). The first m
 downloads `node-tls-client`'s native library into your temp directory; the Docker image ships it
 pre-installed instead. `npm run dev` restarts on change; `npm run typecheck` is the
 check. `npm run card:preview` draws a sample result card into `card-preview/` (`card.html` and
-`card.png`) on Mirage; `-- --map-id=de_nuke` picks another map, and `-- --send=<chat id>` with
-`BOT_TOKEN` set posts it to a chat.
+`card.png`) on Mirage, offline, so the avatars show as initials; `-- --map-id=de_nuke` picks another
+map, and `-- --send=<chat id>` with `BOT_TOKEN` set posts it to a chat.
 
 **The mention list starts empty.** The Bot API cannot enumerate a group's members, so people add
 themselves with `/unmute` — until someone does, `@all` has nobody to mention and says so.
@@ -131,14 +133,18 @@ src/
   config.ts         every process.env read in the project
   log.ts            timestamps on console output
   types.ts          shared SQLite row and FACEIT response shapes
-  adapters/         one module per external system — db, faceit (open API + faceit.com), ai
+  adapters/         one module per external system — db, faceit (open API, faceit.com, avatars), ai,
+                    card (the result-card renderer, in a child process)
   view/             data → strings; no I/O, no Telegram context
   handlers/         Telegram entry points — events, results, birthdays, guards
+assets/             fonts and map banners the result card is drawn with
+scripts/            dev-only, not in the image: card-preview
 ```
 
 One rule holds it together: **exactly one module talks to each external system.** Nothing outside
 `adapters/faceit.ts` calls `fetch`, nothing outside `adapters/db.ts` imports `node:sqlite`, nothing
-outside `adapters/ai.ts` builds an LLM client. `view/` imports no adapter and no handler, which keeps
+outside `adapters/ai.ts` builds an LLM client, nothing outside `adapters/card-worker.ts` imports
+satori or resvg. `view/` imports no adapter and no handler, which keeps
 it importable on its own — `adapters/db.ts` creates the database at import time.
 
 ## Deploying
@@ -166,10 +172,11 @@ npm version <patch|minor|major> --no-git-tag-version   # bumps package.json + lo
 git commit -am "feat: ..."                             # change and bump together
 ```
 
-[CLAUDE.md](CLAUDE.md) documents the decisions behind the non-obvious parts, and the traps worth
-knowing before you change them: there are no schema migrations (which is why birthdays live in a
-table of their own), the birthday prompt and its output checks are deliberately split across three modules,
-and several behaviours that read as bugs are intentional.
+Keep this README and [CLAUDE.md](CLAUDE.md) current in the same change as the code. CLAUDE.md
+documents the decisions behind the non-obvious parts, and the traps worth knowing before you change
+them: there are no schema migrations (which is why birthdays live in a table of their own), the
+birthday prompt and its output checks are deliberately split across three modules, and several
+behaviours that read as bugs are intentional.
 
 ## License
 

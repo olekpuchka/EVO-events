@@ -82,6 +82,30 @@ export function getMatchDetails(matchId: string): Promise<FaceitMatchDetails | n
   return faceitGet<FaceitMatchDetails>(`${BASE}/matches/${encodeURIComponent(matchId)}`);
 }
 
+// Beyond any avatar FACEIT serves; the largest seen was ~250 KB at 1080×1080.
+const AVATAR_MAX_BYTES = 2_000_000;
+
+// A player's avatar bytes for the card, or null on any failure; the renderer checks the format.
+export async function getAvatar(url: string | null): Promise<Uint8Array | null> {
+  if (!url?.startsWith("https://")) return null;
+  try {
+    const res = await fetch(url, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    // Read in chunks and stop past the cap: content-length may be absent, and the bot has 250 MB.
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for await (const chunk of res.body ?? []) {
+      size += chunk.length;
+      if (size > AVATAR_MAX_BYTES) throw new Error(`over ${AVATAR_MAX_BYTES} B`);
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks);
+  } catch (err) {
+    console.error("[faceit] avatar fetch failed:", (err as Error).message);
+    return null;
+  }
+}
+
 // faceit.com's own API, for what the open one lacks. Cloudflare admits a current Chrome fingerprint
 // with navigation headers — see **Rating and swing** in CLAUDE.md.
 const CHROME = 152;

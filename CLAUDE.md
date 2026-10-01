@@ -1,5 +1,9 @@
 # EVO Events Bot
 
+**Keep this file and `README.md` up to date.** A change to behaviour, layout, config or a decision
+recorded here updates both in the same change — README for what the bot does and how to run it,
+this file for the why.
+
 ## Layout
 
 ```
@@ -20,8 +24,8 @@ src/handlers/       Telegram entry points: events, results, birthdays, guards
 constructs an LLM client, nothing outside `adapters/card-worker.ts` imports satori or resvg.
 Nothing points back up either — `view/` imports no adapter and no handler. The sideways edges all run
 `adapters/*` → `view/`: `ai.ts` reaches `i18n.ts` for the fallback phrases, `prompt.ts` for what to
-ask and `phrase.ts` for judging the reply; `card-worker.ts` reaches `card.ts` for the card's size
-and the map placeholder.
+ask and `phrase.ts` for judging the reply; `adapters/card.ts` reaches `view/card.ts` for the markup and
+its image placeholders, `card-worker.ts` for the card's size.
 
 A phrase therefore crosses three modules, split by what makes each one change: `view/prompt.ts` is
 jokes and tone, `view/phrase.ts` is what may not ship, and `adapters/ai.ts` is only the call, the
@@ -425,8 +429,8 @@ stays because the card depends on a native module and a child process, and a pos
 to either. A change to what the post *says* therefore touches `buildResultBlocks` and `view/card.ts`.
 
 The consequence to know is on the failure path. A rejected send is **not** `markMatchPosted`, so the
-poll retries that match every `FACEIT_POLL_MINUTES` for 24 hours, re-fetching its stats and
-scoreboard each time for a post nobody sees. If it ever starts biting, the fix is the
+poll retries that match every `FACEIT_POLL_MINUTES` for 24 hours, re-fetching its stats, scoreboard
+and avatars each time for a post nobody sees. If it ever starts biting, the fix is the
 transient/permanent split `handlers/birthdays.ts` already makes — give up on a permanent 4xx, keep
 retrying a 429 — not a third renderer. Neither renderer hands Telegram a URL to fetch any more — the
 rich fallback's map photo, the likeliest rejection, went with FACEIT's image.
@@ -509,9 +513,9 @@ A posted match is a **PNG**, sent with `sendPhoto`, with the FACEIT link in the 
 drawn inside an image cannot be tapped. The rich table fits three two-line columns into a phone; an
 image is not bound by that, so the card spells out five: player, Rating, Swing, K/D/A, ADR.
 
-The path is `buildMatchResult` → `cardMarkup` (`view/card.ts`, pure, reading the `MatchResult`
-directly) → `renderCard` (`adapters/card.ts`) → a **child process** running `card-worker.ts`: satori
-turns the markup into SVG, resvg turns that into PNG. No browser — headless Chromium alone would not
+The path is `buildMatchResult` → `renderCard` (`adapters/card.ts`), which draws the markup with
+`cardMarkup` (`view/card.ts`, pure, reading the `MatchResult` directly) → a **child process** running
+`card-worker.ts`: satori turns the markup into SVG, resvg turns that into PNG. No browser — headless Chromium alone would not
 fit the container's **0.25 CPU / 250 MB**. The markup is the flexbox subset satori speaks, so every
 element with children is `display:flex` — satori fails at render time otherwise, and nothing checks
 it before then. `ResultRow` carries figures, not display text — `rating`, `swing`, `eloAfter`,
@@ -529,16 +533,39 @@ and `pollFaceit` polls every chat in parallel — so `renderCard` queues: render
 whichever chat asked first.
 
 Two satori traps. **`satori-html` is quadratic on a long attribute**: the map's base64 inline in the
-markup took 9 s to parse, so the markup carries `MAP_SRC` and the worker swaps the bytes into the
-parsed tree. And satori **decodes PNG and JPEG only** — a WebP map served under a `.png` name threw
-`RangeError: Offset is outside the bounds of the DataView` inside the worker and lost the card. The
-worker labels every map `image/jpeg`, so a bundled file must really be one.
+markup took 9 s to parse, so the markup carries `MAP_SRC` and `avatarSrc(i)` and the worker swaps the
+bytes into the parsed tree. And satori **decodes PNG and JPEG only** — a WebP map served under a `.png`
+name threw `RangeError: Offset is outside the bounds of the DataView` inside the worker and lost the
+card. `renderCard` therefore checks every image's signature once, map and avatars alike, and drops
+anything else with `[card] … dropped` — the band goes plain, the avatar becomes a letter. It then draws
+the markup itself around what survived (`cardMarkup` takes a `has(src)`), so markup and images can't
+disagree. The check reads only the signature, so a file that starts right but won't decode still fails
+the render; a failed render with avatars is therefore **retried once without them**, map kept, before
+the rich table. That retry covers an avatar-driven OOM as well, at the cost of a second child.
+
+The worker reports its own crash as one `Name: message` line. Node's default report opens with the
+throwing source line, and satori ships minified on a single 64 KB line — the parent logged that and
+never saw the error.
+
+**Each player cell opens with the FACEIT avatar**, a 56 px circle. The URL rides the match details'
+roster, already fetched for the team Elo, so it costs no API call; `getAvatar` downloads it from
+FACEIT's CDN, keyless and outside the Cloudflare challenge. It is best-effort like everything else on
+the card: a failed download or anything over 2 MB logs `[faceit] avatar fetch failed` and the row gets
+a grey disc with the nickname's first letter — as does a player with no avatar (the roster's empty
+string), silently. The signature check matters here too: the CDN runs Cloudflare Polish
+(`cf-polished`), which can serve WebP under a `.jpg` name, and that is the map trap again.
+
+Avatars come at up to 1080×1080 and resvg decodes each at full size, ~4.6 MB raw, so five add ~23 MB
+to the render child. That was **not** re-measured in the image at the real limits when they shipped —
+if the card starts falling back to the rich table, check the child for an OOM first. The avatar also
+takes ~70 px from the nickname: an 11-character nickname drops from 25 px to ~19, and further beside
+the MVP star.
 
 **The map banner is bundled, not FACEIT's.** FACEIT serves map images at 428×212 only — the open API's
 `image_lg` and faceit.com alike — and the banner crops that to ~428×100 and draws it at 1600×380, so
 it posted visibly soft. `assets/maps/<game_map_id>.jpg` holds each map pre-cut to exactly 1600×380, so
 resvg draws it 1:1; `bundledMap` reads it by the stats' map id. The ten files cover every CS2
-competitive map so far, current pool and rotated-out alike, so FACEIT's image is not used at all: a
+competitive map so far, current pool and rotated-out alike, so FACEIT's map image is not used at all: a
 map we don't ship gets the plain band, and the rich fallback carries no map.
 
 A new map means adding a file there (see `SOURCE`), cut the same way and saved as a real JPEG —
@@ -548,7 +575,7 @@ renders without a map, so a missing or unshipped file shows only as a plain band
 Satori draws only the fonts it is handed, so DejaVu lives in `assets/`, which the Dockerfile copies.
 The card draws no emoji — FACEIT nicknames can't carry one — so there are no emoji images to ship.
 
-**The table is the point of the card.** The player cell is the nickname in bold, and under it the Elo
+**The table is the point of the card.** Beside the avatar, the player cell is the nickname in bold, and under it the Elo
 after the match (no "Elo" word, not bold) beside the match's change — `↑25` green / `↓23` red, at the
 same size and weight as the Elo, so only the colour sets it apart. It was bold and 2 px smaller once:
 the renderer cannot baseline-align mixed sizes, so it sat low, and bold pulled the eye off the
@@ -595,7 +622,7 @@ Rating or Swing column and no MVP — the rich table's rule.
 (`1778 Elo vs 1650 Elo`, no brackets); the map is dimmed so the figures read on any map. Without a map
 the band is plain. A long nickname shrinks from 25 px to 15 px before an ellipsis clips it
 (`nickSize`, `nickRoom`); the room is worked out from the player column's real width, which is far
-wider without Rating and Swing. It stays at 2.6 flex: narrowing it to fill the gap short nicknames
+wider without Rating and Swing, less the avatar and its gap. It stays at 2.6 flex: narrowing it to fill the gap short nicknames
 leave was tried and dropped, as it shrank an 18-character nickname from 20 px to 16. The widths are
 DejaVu Sans Bold's by class of letter, tuned on real nicknames — `TheR0gue0ne` was clipped at 11
 characters by the first guess.
@@ -607,10 +634,11 @@ tinted pill or a chip round the Elo, filled ▲/▼, 🔥 on a 1.5, bolding ever
 (whatever the result), bolding the MVP's row, and marking the top ADR bold or gold — beside the MVP
 star, a gold ADR read as part of the MVP.
 
-**The rich table is the fallback**: a failed render (timeout, crash, missing font) sends it instead,
-so a post is never lost to the renderer. `npm run card:preview` writes a sample `card.html` and
-`card.png` to `card-preview/` on Mirage; `-- --map-id=<id>` picks another bundled map and
-`-- --send=<chat id>` posts it with `BOT_TOKEN`.
+**The rich table is the fallback**: a failed render (timeout, crash, missing font) sends it instead —
+after the one retry without avatars — so a post is never lost to the renderer. `npm run card:preview`
+writes a sample `card.html` and `card.png` to `card-preview/` on Mirage; `-- --map-id=<id>` picks
+another bundled map and `-- --send=<chat id>` posts it with `BOT_TOKEN`. The sample rows carry no
+avatar URL, so the preview shows letter discs; it stays offline.
 
 ## FACEIT links
 
@@ -644,7 +672,10 @@ the Alpine image gave it, then runs `.github/ci/image-smoke.cjs` inside the cont
 if the TLS library won't load in the request worker or in any idle one. A 403 or 429 from
 faceit.com still passes: the runner's IP may be challenged, but a status code means the library
 worked. `.github/ci/card-smoke.cjs` then renders a card offline inside the container — resvg is
-native as well, and its glibc build and the fonts in `assets/` are only proven there.
+native as well, and its glibc build and the fonts in `assets/` are only proven there. One row carries a
+raster avatar (a bundled map stands in) and the other the letter disc, so both cell shapes are drawn.
+Any `[card]` error log fails it: `renderCard`'s retry would otherwise hand back an avatar-less card and
+pass CI while every card in the group lost its avatars.
 
 ## Releasing
 

@@ -3,9 +3,9 @@
 // Telegram UX — and shares no state with the event lifecycle.
 
 import { getFaceitMembers, hasPostedMatch, markMatchPosted } from "../adapters/db.ts";
-import { getRecentMatches, getMatchStats, getMatchDetails, getMatchScoreboard, matchRoomUrl, ChallengeError } from "../adapters/faceit.ts";
+import { getRecentMatches, getMatchStats, getMatchDetails, getMatchScoreboard, getAvatar, matchRoomUrl, ChallengeError } from "../adapters/faceit.ts";
 import { renderCard, bundledMap } from "../adapters/card.ts";
-import { cardMarkup, cardCaption, eloArrow, formatRating, formatSwing } from "../view/card.ts";
+import { cardCaption, eloArrow, formatRating, formatSwing } from "../view/card.ts";
 import { t } from "../view/i18n.ts";
 import { InputFile, type Api } from "grammy";
 import type { RichText, RichBlockTableCell } from "@grammyjs/types";
@@ -69,6 +69,9 @@ async function buildMatchResult(
   // The MVP is judged on the full team: a non-member topping it means no star on the card.
   const teamRatings = ourTeam.players.flatMap(p => { const r = board?.get(p.player_id); return r ? [round2(r.rating)] : []; });
   const mvpRating = won && teamRatings.length ? Math.max(...teamRatings) : null;
+  const factions = Object.values(matchDetails.teams ?? {});
+  const ourFaction = factions.find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
+  const avatarOf = new Map(ourFaction?.roster?.map(p => [p.player_id, p.avatar || null]));
   const resultRows: ResultRow[] = registered
     .sort((a, b) => ratingOf(b) - ratingOf(a) || adrOf(b) - adrOf(a))
     .map(p => {
@@ -83,13 +86,12 @@ async function buildMatchResult(
         eloAfter: r?.elo?.after ?? null,
         eloChange: r?.elo?.change ?? null,
         mvp: r !== undefined && round2(r.rating) === mvpRating,
+        avatar: avatarOf.get(p.player_id) ?? null,
       };
     });
 
   const mapId = round.round_stats?.Map || null;
 
-  const factions = Object.values(matchDetails.teams ?? {});
-  const ourFaction = factions.find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
   const theirFaction = factions.find(f => f !== ourFaction);
   const ourRating = ourFaction?.stats?.rating;
   const theirRating = theirFaction?.stats?.rating;
@@ -133,8 +135,8 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
 
 // The card as a photo; the rich table when rendering fails, so a post is never lost to it.
 async function sendResult(api: Api, chatId: number | string, result: MatchResult): Promise<void> {
-  const map = await bundledMap(result.mapId);
-  const png = await renderCard(cardMarkup(result, map !== null), map);
+  const [map, avatars] = await Promise.all([bundledMap(result.mapId), Promise.all(result.rows.map(r => getAvatar(r.avatar)))]);
+  const png = await renderCard(result, map, avatars);
   if (!png) {
     await api.sendRichMessage(chatId, { blocks: buildResultBlocks(result) });
     return;
