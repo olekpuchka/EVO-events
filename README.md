@@ -27,6 +27,9 @@ and schedule.
 
 `@all CS` with no time just mentions people. Nothing is pinned, nothing is scheduled.
 
+`@all` works anywhere in the message — `CS 22:00 @all` or `хто на CS @all о 22:00?` — as long as it
+stands as its own word. The tag is dropped and the rest becomes the event text.
+
 **Match results.** Finished matches post automatically as a picture: the score across the map, both
 teams' Elo, and a table sorted by FACEIT rating — each player with their FACEIT avatar (or their
 initial, without one), their Elo and that match's change (↑25 / ↓23 / ±0), their rating (gold from
