@@ -3,8 +3,8 @@
 // Telegram UX — and shares no state with the event lifecycle.
 
 import { getFaceitMembers, hasPostedMatch, markMatchPosted } from "../adapters/db.ts";
-import { getRecentMatches, getMatchStats, getMatchDetails, getMatchScoreboard, getMapImage, fetchMapImage, matchRoomUrl, ChallengeError } from "../adapters/faceit.ts";
-import { renderCard } from "../adapters/card.ts";
+import { getRecentMatches, getMatchStats, getMatchDetails, getMatchScoreboard, matchRoomUrl, ChallengeError } from "../adapters/faceit.ts";
+import { renderCard, bundledMap } from "../adapters/card.ts";
 import { cardMarkup, cardCaption, eloArrow, formatRating, formatSwing } from "../view/card.ts";
 import { t } from "../view/i18n.ts";
 import { InputFile, type Api } from "grammy";
@@ -52,7 +52,7 @@ async function buildMatchResult(
   // fetch, so a solo game spends none of faceit.com's anonymous rate limit.
   if (registered.length < MIN_PLAYERS) return null;
 
-  // Details (map, team Elo) only for a match that will post; unavailable, it is never posted.
+  // Details (team Elo) only for a match that will post; unavailable, it is never posted.
   const matchDetails = await getMatchDetails(matchId);
   if (!matchDetails) return null;
 
@@ -86,7 +86,7 @@ async function buildMatchResult(
       };
     });
 
-  const mapImage = getMapImage(matchDetails, round.round_stats?.Map ?? "");
+  const mapId = round.round_stats?.Map || null;
 
   const factions = Object.values(matchDetails.teams ?? {});
   const ourFaction = factions.find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
@@ -95,7 +95,7 @@ async function buildMatchResult(
   const theirRating = theirFaction?.stats?.rating;
   const elo: EloPair | null = ourRating && theirRating ? { ours: ourRating, theirs: theirRating } : null;
 
-  return { won, ourScore, theirScore, elo, mapImage, matchId, rows: resultRows };
+  return { won, ourScore, theirScore, elo, mapId, matchId, rows: resultRows };
 }
 
 // Non-breaking spaces keep "1234 Elo ↑25" on one line, so the narrow player cell never wraps past two.
@@ -104,7 +104,7 @@ const eloLine = (after: number, change: number | null): string =>
 
 // Rich rendering of a match result: header, scoreboard table, FACEIT footer.
 function buildResultBlocks(result: MatchResult): RichBlocks {
-  const { won, ourScore, theirScore, elo, matchId, rows, mapImage } = result;
+  const { won, ourScore, theirScore, elo, matchId, rows } = result;
   const H = (text: RichText, align: RichBlockTableCell["align"] = "center"): RichBlockTableCell => ({ text, is_header: true, align, valign: "middle" });
   const C = (text: RichText, align: RichBlockTableCell["align"] = "center"): RichBlockTableCell => ({ text, align, valign: "middle" });
   // Two values per cell under a two-line header: three columns is what a phone fits unwrapped.
@@ -119,14 +119,12 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
     ]),
   ];
 
-  // The map is never named here — it shows only as the card's image below the header.
+  // The map is never named here: the card shows it, and the rich fallback goes without.
   const header: RichText[] = [`${won ? "🍌" : "❌"} `, { type: "bold", text: `${ourScore}:${theirScore}` }];
   if (elo) header.push(" ", `${elo.ours} Elo vs ${elo.theirs} Elo`);
 
   const blocks: RichBlocks = [];
-  // Header first, with the map image below it.
   blocks.push({ type: "paragraph", text: header });
-  if (mapImage) blocks.push({ type: "photo", photo: { type: "photo", media: mapImage } });
   // Compact: smaller cell padding, for the same phone width.
   blocks.push({ type: "table", is_striped: true, is_bordered: true, is_compact: true, cells });
   blocks.push({ type: "footer", text: [`🔗 ${t("viewOnFaceit")} `, { type: "url", text: "FACEIT", url: matchRoomUrl(matchId) }] });
@@ -135,7 +133,7 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
 
 // The card as a photo; the rich table when rendering fails, so a post is never lost to it.
 async function sendResult(api: Api, chatId: number | string, result: MatchResult): Promise<void> {
-  const map = result.mapImage ? await fetchMapImage(result.mapImage) : null;
+  const map = await bundledMap(result.mapId);
   const png = await renderCard(cardMarkup(result, map !== null), map);
   if (!png) {
     await api.sendRichMessage(chatId, { blocks: buildResultBlocks(result) });

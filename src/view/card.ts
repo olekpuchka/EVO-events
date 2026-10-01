@@ -13,13 +13,8 @@ const MAP_HEIGHT = 190;
 // The map's `src` in the markup; the renderer swaps the image bytes in after parsing.
 export const MAP_SRC = "map";
 
-// The formats satori decodes, told by magic bytes — a file's name or Content-Type can lie. Anything
-// else (WebP, AVIF) makes satori throw mid-render, so it must never reach the worker.
-export function mapFormat(bytes: Uint8Array): "png" | "jpeg" | null {
-  if (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "png";
-  if (bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "jpeg";
-  return null;
-}
+// The swapped-in `src`. Every bundled map is a JPEG.
+export const mapUri = (base64: string): string => `data:image/jpeg;base64,${base64}`;
 
 // FACEIT's neutral greys and orange, not a blue-grey: the card should read as their scoreboard.
 export const COLOR = {
@@ -204,7 +199,7 @@ function table(result: MatchResult): string {
 // The whole card. `withMap` is false when the map image could not be had — the banner goes plain.
 export function cardMarkup(result: MatchResult, withMap: boolean): string {
   return `<div style="display:flex;flex-direction:column;width:${CARD_WIDTH}px;background:${COLOR.bg};color:${COLOR.text};` +
-    `font-family:DejaVu;font-size:20px">${banner(result, withMap && result.mapImage !== null)}${table(result)}</div>`;
+    `font-family:DejaVu;font-size:20px">${banner(result, withMap)}${table(result)}</div>`;
 }
 
 // Photo caption (parse_mode HTML): the tappable FACEIT link the card itself can't carry.

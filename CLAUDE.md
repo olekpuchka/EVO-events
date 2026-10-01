@@ -11,7 +11,7 @@ src/adapters/       one module per external system: db (SQLite), faceit (HTTP, o
                     card (the result-card renderer, in a child process)
 src/view/           data → strings: html, i18n, commands, render, card, eventtime, birthday, prompt, phrase
 scripts/            dev-only, not in the image: card-preview
-assets/             the fonts the result card is drawn with
+assets/             the fonts and map banners the result card is drawn with
 src/handlers/       Telegram entry points: events, results, birthdays, guards
 ```
 
@@ -20,8 +20,8 @@ src/handlers/       Telegram entry points: events, results, birthdays, guards
 constructs an LLM client, nothing outside `adapters/card-worker.ts` imports satori or resvg.
 Nothing points back up either — `view/` imports no adapter and no handler. The sideways edges all run
 `adapters/*` → `view/`: `ai.ts` reaches `i18n.ts` for the fallback phrases, `prompt.ts` for what to
-ask and `phrase.ts` for judging the reply; `faceit.ts` and `card-worker.ts` reach `card.ts` for the
-map formats the card can draw, its size and the map placeholder.
+ask and `phrase.ts` for judging the reply; `card-worker.ts` reaches `card.ts` for the card's size
+and the map placeholder.
 
 A phrase therefore crosses three modules, split by what makes each one change: `view/prompt.ts` is
 jokes and tone, `view/phrase.ts` is what may not ship, and `adapters/ai.ts` is only the call, the
@@ -428,8 +428,8 @@ The consequence to know is on the failure path. A rejected send is **not** `mark
 poll retries that match every `FACEIT_POLL_MINUTES` for 24 hours, re-fetching its stats and
 scoreboard each time for a post nobody sees. If it ever starts biting, the fix is the
 transient/permanent split `handlers/birthdays.ts` already makes — give up on a permanent 4xx, keep
-retrying a 429 — not a third renderer. The card uploads the map as bytes, so the server-side fetch of
-`mapImage` that was the likeliest rejection now only happens on the rich fallback.
+retrying a 429 — not a third renderer. Neither renderer hands Telegram a URL to fetch any more — the
+rich fallback's map photo, the likeliest rejection, went with FACEIT's image.
 
 ## Rating and swing
 
@@ -531,9 +531,19 @@ whichever chat asked first.
 Two satori traps. **`satori-html` is quadratic on a long attribute**: the map's base64 inline in the
 markup took 9 s to parse, so the markup carries `MAP_SRC` and the worker swaps the bytes into the
 parsed tree. And satori **decodes PNG and JPEG only** — a WebP map served under a `.png` name threw
-`RangeError: Offset is outside the bounds of the DataView` inside the worker and lost the card. So
-`fetchMapImage` checks magic bytes with `mapFormat` and hands back null for anything else, and the
-card is drawn without a map rather than not at all. Neither a file name nor a Content-Type is trusted.
+`RangeError: Offset is outside the bounds of the DataView` inside the worker and lost the card. The
+worker labels every map `image/jpeg`, so a bundled file must really be one.
+
+**The map banner is bundled, not FACEIT's.** FACEIT serves map images at 428×212 only — the open API's
+`image_lg` and faceit.com alike — and the banner crops that to ~428×100 and draws it at 1600×380, so
+it posted visibly soft. `assets/maps/<game_map_id>.jpg` holds each map pre-cut to exactly 1600×380, so
+resvg draws it 1:1; `bundledMap` reads it by the stats' map id. The ten files cover every CS2
+competitive map so far, current pool and rotated-out alike, so FACEIT's image is not used at all: a
+map we don't ship gets the plain band, and the rich fallback carries no map.
+
+A new map means adding a file there (see `SOURCE`), cut the same way and saved as a real JPEG —
+several of the upstream `.png` files are WebP inside. Nothing checks the folder: the CI card smoke
+renders without a map, so a missing or unshipped file shows only as a plain band in the group.
 
 Satori draws only the fonts it is handed, so DejaVu lives in `assets/`, which the Dockerfile copies.
 The card draws no emoji — FACEIT nicknames can't carry one — so there are no emoji images to ship.
@@ -599,7 +609,8 @@ star, a gold ADR read as part of the MVP.
 
 **The rich table is the fallback**: a failed render (timeout, crash, missing font) sends it instead,
 so a post is never lost to the renderer. `npm run card:preview` writes a sample `card.html` and
-`card.png` to `card-preview/`, and `-- --send=<chat id>` posts it with `BOT_TOKEN`.
+`card.png` to `card-preview/` on Mirage; `-- --map-id=<id>` picks another bundled map and
+`-- --send=<chat id>` posts it with `BOT_TOKEN`.
 
 ## FACEIT links
 

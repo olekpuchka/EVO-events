@@ -2,9 +2,17 @@
 // A child per card keeps the renderer's memory out of the bot — see **Result card** in CLAUDE.md.
 
 import { spawn } from "node:child_process";
+import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 const WORKER = fileURLToPath(new URL("./card-worker.ts", import.meta.url));
+const MAPS = new URL("../../assets/maps/", import.meta.url);
+
+// The bundled banner for a map id, pre-cut to the banner's 2x size; null for a map we don't ship.
+export async function bundledMap(mapId: string | null): Promise<Uint8Array | null> {
+  if (!mapId || !/^[a-z0-9_]+$/.test(mapId)) return null;
+  return readFile(new URL(`${mapId}.jpg`, MAPS)).catch(() => null);
+}
 
 // ~2.5s measured at 0.25 CPU; the rest is headroom for a busy host.
 const TIMEOUT_MS = 20_000;
