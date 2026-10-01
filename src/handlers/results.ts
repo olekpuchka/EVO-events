@@ -121,7 +121,7 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
 
   // The map is never named here — it shows only as the card's image below the header.
   const header: RichText[] = [`${won ? "🍌" : "❌"} `, { type: "bold", text: `${ourScore}:${theirScore}` }];
-  if (elo) header.push(" ", `(${elo.ours} Elo vs ${elo.theirs} Elo)`);
+  if (elo) header.push(" ", `${elo.ours} Elo vs ${elo.theirs} Elo`);
 
   const blocks: RichBlocks = [];
   // Header first, with the map image below it.
