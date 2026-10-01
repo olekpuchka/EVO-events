@@ -111,7 +111,6 @@ export interface FaceitFaction {
 
 export interface FaceitMatchDetails {
   status?: string;
-  voting?: { map?: { entities?: { game_map_id: string; image_lg?: string }[] } };
   teams?: Record<string, FaceitFaction>;
 }
 
@@ -195,7 +194,8 @@ export interface MatchResult {
   ourScore: string;
   theirScore: string;
   elo: EloPair | null;
-  mapImage: string | null;
+  // FACEIT's map id (`de_mirage`), which picks the card's bundled banner.
+  mapId: string | null;
   matchId: string;
   rows: ResultRow[];
 }

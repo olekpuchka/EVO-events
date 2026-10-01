@@ -34,6 +34,9 @@ swing, and their K/D/A and ADR. On a win the team's top rating gets a gold MVP s
 Telegram's own rich table. Only matches **two or more** linked members played in — solo queue stays
 off the group's feed.
 
+The map behind the score is drawn from HD screenshots bundled in [`assets/maps/`](assets/maps/), since
+FACEIT's own map images are too small for the banner; a map not in there gets a plain banner.
+
 Rating, swing and the exact per-match Elo change come from faceit.com's own scoreboard, which the
 open FACEIT API doesn't carry. That fetch is **best-effort**: when it fails, the post still goes out,
 without the Rating column and without the Elo lines.
@@ -89,7 +92,8 @@ The SQLite file is created at `app/data/` on first run (gitignored). The first m
 downloads `node-tls-client`'s native library into your temp directory; the Docker image ships it
 pre-installed instead. `npm run dev` restarts on change; `npm run typecheck` is the
 check. `npm run card:preview` draws a sample result card into `card-preview/` (`card.html` and
-`card.png`); add `-- --send=<chat id>` with `BOT_TOKEN` set to post it to a chat.
+`card.png`) on Mirage; `-- --map-id=de_nuke` picks another map, and `-- --send=<chat id>` with
+`BOT_TOKEN` set posts it to a chat.
 
 **The mention list starts empty.** The Bot API cannot enumerate a group's members, so people add
 themselves with `/unmute` — until someone does, `@all` has nobody to mention and says so.

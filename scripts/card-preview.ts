@@ -1,17 +1,15 @@
 // Renders a sample result card: card-preview/card.html for a browser, card-preview/card.png as posted.
-// `npm run card:preview -- [--loss] [--unrated] [--nicks=a,b] [--map=<url>] [--send=<chat id>]`
-// Needs network for the map image; --send also needs BOT_TOKEN in the environment.
+// `npm run card:preview -- [--loss] [--unrated] [--nicks=a,b] [--map-id=de_nuke] [--send=<chat id>]`
+// --send needs BOT_TOKEN in the environment.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Api, InputFile } from "grammy";
-import { cardMarkup, cardCaption, COLOR, MAP_SRC } from "../src/view/card.ts";
-import { fetchMapImage, matchRoomUrl } from "../src/adapters/faceit.ts";
-import { renderCard } from "../src/adapters/card.ts";
+import { cardMarkup, cardCaption, COLOR, MAP_SRC, mapUri } from "../src/view/card.ts";
+import { matchRoomUrl } from "../src/adapters/faceit.ts";
+import { renderCard, bundledMap } from "../src/adapters/card.ts";
 import { BOT_TOKEN } from "../src/config.ts";
 import type { MatchResult, ResultRow } from "../src/types.ts";
-
-const MIRAGE = "https://assets.faceit-cdn.net/third_party/games/ce652bd4-0abb-4c90-9936-1133965ca38b/assets/votables/7fb7d725-e44d-4e3c-b557-e1d19b260ab8_1695819144685.jpeg";
 
 const args = process.argv.slice(2);
 const flag = (name: string) => args.includes(`--${name}`);
@@ -37,7 +35,7 @@ const result: MatchResult = {
   ourScore: loss ? "9" : "13",
   theirScore: loss ? "13" : "9",
   elo: { ours: 1778, theirs: 1650 },
-  mapImage: option("map") ?? MIRAGE,
+  mapId: option("map-id") ?? "de_mirage",
   matchId: "1-sample",
   rows: [
     row(0, "prox", 1.62, 6.8, "24/13/4", "112.8", 2035, 25),
@@ -48,14 +46,14 @@ const result: MatchResult = {
   ],
 };
 
-const map = await fetchMapImage(result.mapImage!);
+const map = await bundledMap(result.mapId);
 const markup = cardMarkup(result, map !== null);
 const out = resolve("card-preview");
 mkdirSync(out, { recursive: true });
 
 // The browser gets the same markup and fonts, with the caption under the card.
 const fonts = resolve("assets/fonts");
-const mapSrc = map ? `data:image/jpeg;base64,${Buffer.from(map).toString("base64")}` : "";
+const mapSrc = map ? mapUri(Buffer.from(map).toString("base64")) : "";
 writeFileSync(resolve(out, "card.html"), `<!doctype html><meta charset="utf-8"><title>Result card</title>
 <style>
 @font-face{font-family:DejaVu;font-weight:400;src:url("file://${fonts}/DejaVuSans.ttf")}
@@ -70,7 +68,7 @@ ${markup.replace(`src="${MAP_SRC}"`, `src="${mapSrc}"`)}
 const png = await renderCard(markup, map);
 if (!png) process.exit(1);
 writeFileSync(resolve(out, "card.png"), png);
-console.log(`${out}/card.html\n${out}/card.png (${png.length} B)${map ? "" : " — no map: the image fetch failed"}`);
+console.log(`${out}/card.html\n${out}/card.png (${png.length} B)${map ? "" : ` — no map: nothing bundled for ${result.mapId}`}`);
 
 const to = option("send");
 if (to) {
