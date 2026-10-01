@@ -1,35 +1,42 @@
-// Child process: card markup + map bytes on stdin (JSON) → PNG on stdout, then exit.
+// Child process: card markup + image data URIs on stdin (JSON) → PNG on stdout, then exit.
 // One render per process — resvg-js leaks native memory on raster images, see **Result card**.
 
 import { readFileSync } from "node:fs";
 import satori from "satori";
 import { html } from "satori-html";
 import { Resvg } from "@resvg/resvg-js";
-import { CARD_WIDTH, MAP_SRC, mapUri } from "../view/card.ts";
+import { CARD_WIDTH } from "../view/card.ts";
 
 const ASSETS = new URL("../../assets/", import.meta.url);
 const asset = (path: string): Buffer => readFileSync(new URL(path, ASSETS));
 
-interface Job { markup: string; map: string | null }
+// Node's own crash report opens with the throwing source line — all 64 KB of minified satori.
+process.on("uncaughtException", err => {
+  process.stderr.write(`${err.name}: ${err.message}\n`, () => process.exit(1));
+});
+
+// The markup, and a data URI for each image `src` in it.
+interface Job { markup: string; images: Record<string, string> }
 
 const chunks: Buffer[] = [];
 for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
 const job = JSON.parse(Buffer.concat(chunks).toString("utf8")) as Job;
 
 type Node = { type: string; props: { src?: string; children?: unknown } };
-// satori-html is quadratic on a long attribute, so the data URI goes in after parsing.
-function swapMap(node: Node): void {
-  if (node.type === "img" && node.props.src === MAP_SRC) {
-    if (!job.map) throw new Error("markup has a map but no image was sent");
-    node.props.src = mapUri(job.map);
+// satori-html is quadratic on a long attribute, so the data URIs go in after parsing.
+function swapImages(node: Node): void {
+  if (node.type === "img" && node.props.src !== undefined) {
+    const uri = job.images[node.props.src];
+    if (!uri) throw new Error(`markup has image ${node.props.src} but no bytes were sent`);
+    node.props.src = uri;
   }
   for (const child of [node.props.children].flat()) {
-    if (child && typeof child === "object") swapMap(child as Node);
+    if (child && typeof child === "object") swapImages(child as Node);
   }
 }
 
 const tree = html(job.markup) as unknown as Node;
-swapMap(tree);
+swapImages(tree);
 
 const svg = await satori(tree as Parameters<typeof satori>[0], {
   width: CARD_WIDTH,

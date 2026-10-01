@@ -105,7 +105,7 @@ export interface FaceitMatchStats {
 }
 
 export interface FaceitFaction {
-  roster?: { player_id: string }[];
+  roster?: { player_id: string; avatar?: string }[];
   stats?: { rating?: number | string };
 }
 
@@ -187,6 +187,8 @@ export interface ResultRow {
   eloChange: number | null;
   // Top rating on our whole team, linked or not, on a win. Ties share it.
   mvp: boolean;
+  // FACEIT avatar URL from the match roster; null when the player has none.
+  avatar: string | null;
 }
 
 export interface MatchResult {

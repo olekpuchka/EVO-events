@@ -4,6 +4,8 @@
 import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
+import { cardMarkup, MAP_SRC, avatarSrc } from "../view/card.ts";
+import type { MatchResult } from "../types.ts";
 
 const WORKER = fileURLToPath(new URL("./card-worker.ts", import.meta.url));
 const MAPS = new URL("../../assets/maps/", import.meta.url);
@@ -21,14 +23,34 @@ const TIMEOUT_MS = 20_000;
 // the memory the 250 MB budget was measured against.
 let queue: Promise<unknown> = Promise.resolve();
 
-// PNG bytes, or null on any failure — the caller falls back to the rich message.
-export function renderCard(markup: string, map: Uint8Array | null): Promise<Uint8Array | null> {
-  const run = queue.then(() => renderOnce(markup, map));
+// The image as a data URI, or null unless it is JPEG or PNG — the only two satori decodes.
+export function dataUri(bytes: Uint8Array): string | null {
+  const type = bytes[0] === 0xff && bytes[1] === 0xd8 ? "jpeg" : bytes[0] === 0x89 && bytes[1] === 0x50 ? "png" : null;
+  return type && `data:image/${type};base64,${Buffer.from(bytes).toString("base64")}`;
+}
+
+// PNG bytes, or null on any failure — the caller falls back to the rich message. `avatars` follows `result.rows`.
+export function renderCard(result: MatchResult, map: Uint8Array | null, avatars: (Uint8Array | null)[]): Promise<Uint8Array | null> {
+  const images: Record<string, string> = {};
+  for (const [src, bytes] of [[MAP_SRC, map] as const, ...avatars.map((a, i) => [avatarSrc(i), a] as const)]) {
+    if (!bytes) continue;
+    const uri = dataUri(bytes);
+    if (uri) images[src] = uri;
+    else console.error(`[card] ${src} dropped: not JPEG or PNG`);
+  }
+  const run = queue.then(async () => {
+    const png = await renderOnce(cardMarkup(result, src => src in images), images);
+    if (png || Object.keys(images).every(src => src === MAP_SRC)) return png;
+    // A corrupt avatar or a memory spike from them fails the whole card; one retry without them keeps it.
+    console.error("[card] retrying without avatars");
+    const mapOnly: Record<string, string> = MAP_SRC in images ? { [MAP_SRC]: images[MAP_SRC]! } : {};
+    return renderOnce(cardMarkup(result, src => src in mapOnly), mapOnly);
+  });
   queue = run;
   return run;
 }
 
-function renderOnce(markup: string, map: Uint8Array | null): Promise<Uint8Array | null> {
+function renderOnce(markup: string, images: Record<string, string>): Promise<Uint8Array | null> {
   return new Promise(resolve => {
     const child = spawn(process.execPath, [WORKER], { stdio: ["pipe", "pipe", "pipe"], timeout: TIMEOUT_MS });
     const out: Buffer[] = [];
@@ -48,6 +70,6 @@ function renderOnce(markup: string, map: Uint8Array | null): Promise<Uint8Array 
     });
     // A child that dies before reading its job raises EPIPE here; unheard, that kills the bot.
     child.stdin.on("error", e => console.error("[card] job write failed:", e.message));
-    child.stdin.end(JSON.stringify({ markup, map: map ? Buffer.from(map).toString("base64") : null }));
+    child.stdin.end(JSON.stringify({ markup, images }));
   });
 }

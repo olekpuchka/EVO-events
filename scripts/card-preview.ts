@@ -5,9 +5,9 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Api, InputFile } from "grammy";
-import { cardMarkup, cardCaption, COLOR, MAP_SRC, mapUri } from "../src/view/card.ts";
+import { cardMarkup, cardCaption, COLOR, MAP_SRC } from "../src/view/card.ts";
 import { matchRoomUrl } from "../src/adapters/faceit.ts";
-import { renderCard, bundledMap } from "../src/adapters/card.ts";
+import { renderCard, bundledMap, dataUri } from "../src/adapters/card.ts";
 import { BOT_TOKEN } from "../src/config.ts";
 import type { MatchResult, ResultRow } from "../src/types.ts";
 
@@ -28,6 +28,7 @@ const row = (i: number, nickname: string, rating: number, swing: number, kda: st
   eloAfter: after,
   eloChange: loss ? -Math.abs(change) : change,
   mvp: rated && !loss && i === 0,
+  avatar: null,
 });
 
 const result: MatchResult = {
@@ -47,13 +48,13 @@ const result: MatchResult = {
 };
 
 const map = await bundledMap(result.mapId);
-const markup = cardMarkup(result, map !== null);
+const mapSrc = map ? dataUri(map) ?? "" : "";
+const markup = cardMarkup(result, src => src === MAP_SRC && mapSrc !== "");
 const out = resolve("card-preview");
 mkdirSync(out, { recursive: true });
 
 // The browser gets the same markup and fonts, with the caption under the card.
 const fonts = resolve("assets/fonts");
-const mapSrc = map ? mapUri(Buffer.from(map).toString("base64")) : "";
 writeFileSync(resolve(out, "card.html"), `<!doctype html><meta charset="utf-8"><title>Result card</title>
 <style>
 @font-face{font-family:DejaVu;font-weight:400;src:url("file://${fonts}/DejaVuSans.ttf")}
@@ -65,7 +66,7 @@ ${markup.replace(`src="${MAP_SRC}"`, `src="${mapSrc}"`)}
 <p>${cardCaption(matchRoomUrl(result.matchId))}</p>
 `);
 
-const png = await renderCard(markup, map);
+const png = await renderCard(result, map, result.rows.map(() => null));
 if (!png) process.exit(1);
 writeFileSync(resolve(out, "card.png"), png);
 console.log(`${out}/card.html\n${out}/card.png (${png.length} B)${map ? "" : ` — no map: nothing bundled for ${result.mapId}`}`);
