@@ -21,18 +21,20 @@ export function mapFormat(bytes: Uint8Array): "png" | "jpeg" | null {
   return null;
 }
 
+// FACEIT's neutral greys and orange, not a blue-grey: the card should read as their scoreboard.
 export const COLOR = {
-  bg: "#111418", text: "#f4f6f7", muted: "#d3dcdf", head: "#262d36",
-  rowA: "#181d23", rowB: "#20262e", line: "#353e49", best: "#f3b346", up: "#6ade43", down: "#ff2727",
+  bg: "#121212", text: "#ffffff", muted: "#a3a3a3", head: "#dcdcdc", panel: "#1c1c1c", side: "#242424",
+  strip: "#3a3a3a",
+  line: "#2b2b2b", accent: "#ff5500", best: "#f3b346", up: "#6ade43", down: "#ff2727",
 };
 
-// A body cell: extra style for its box, and what goes in it. `hot` is the MVP row, drawn bold.
+// A body cell: extra style for its box, and what goes in it.
 type Cell = { style: string; body: string };
-type Column = { head: string; flex: number; cell: (r: ResultRow, hot: boolean) => Cell };
+type Column = { head: string; flex: number; cell: (r: ResultRow) => Cell };
 
 // A plain figure, in a colour when it has one.
-const plain = (text: string, color = "", hot = false): Cell => ({
-  style: `${color ? `;color:${color}` : ""}${hot ? ";font-weight:700" : ""}`,
+const plain = (text: string, color = ""): Cell => ({
+  style: color ? `;color:${color}` : "",
   body: `<div style="display:flex">${escapeHtml(text)}</div>`,
 });
 
@@ -41,18 +43,21 @@ function columns(rated: boolean): Column[] {
   return [
     ...(rated ? [
       { head: "Rating", flex: 1, cell: (r: ResultRow): Cell => r.rating === null ? plain("?") : { style: "", body: ratingChip(r.rating) } },
-      { head: "Swing", flex: 1.45, cell: (r: ResultRow, hot: boolean) =>
-        r.swing === null ? plain("?", "", hot) : plain(formatSwing(r.swing), signColor(r.swing), hot) },
+      { head: "Swing", flex: 1.45, cell: (r: ResultRow) =>
+        r.swing === null ? plain("?") : plain(formatSwing(r.swing), signColor(r.swing)) },
     ] : []),
-    { head: "K/D/A", flex: 1.3, cell: (r, hot) => plain(r.kda, "", hot) },
-    { head: "ADR", flex: 1, cell: (r, hot) => plain(r.adr, "", hot) },
+    { head: "K/D/A", flex: 1.3, cell: r => plain(r.kda) },
+    { head: "ADR", flex: 1, cell: r => plain(r.adr) },
   ];
 }
 
 const PLAYER_FLEX = 2.6;
 
-// The table's inner width: the card less the table's margin and border either side.
-const TABLE_WIDTH = CARD_WIDTH - 2 * 16 - 2;
+// The gap splitting the player column from the figures, as FACEIT splits its scoreboard.
+const SPLIT = 4;
+
+// The width the columns share: the card less the panel's margin either side and the split.
+const TABLE_WIDTH = CARD_WIDTH - 2 * 16 - SPLIT;
 const PLAYER_PADDING = 18;
 
 // Room the nickname has: the player column's share of the table, less its padding. The column is
@@ -89,8 +94,8 @@ function tint(hex: string, alpha: number): string {
   return `rgba(${rgb(hex).join(",")},${alpha})`;
 }
 
-// A colour mixed solid onto a base: a chip keeps one shade whichever row stripe it sits on.
-function blend(hex: string, alpha: number, base: string = COLOR.rowA): string {
+// A colour mixed solid onto a base: a chip keeps one shade whatever sits behind it.
+function blend(hex: string, alpha: number, base: string = COLOR.panel): string {
   const [c, b] = [rgb(hex), rgb(base)];
   return "#" + c.map((v, i) => Math.round(v * alpha + b[i]! * (1 - alpha)).toString(16).padStart(2, "0")).join("");
 }
@@ -112,7 +117,8 @@ function ratingChip(rating: number): string {
 
 // The figures as both renderers print them: "1.62", "+6.80%", "↑25" / "↓23" / "±0".
 export const formatRating = (rating: number): string => rating.toFixed(2);
-export const formatSwing = (swing: number): string => `${swing >= 0 ? "+" : ""}${swing.toFixed(2)}%`;
+// A true minus, as wide as the plus, so a column of swings lines up.
+export const formatSwing = (swing: number): string => `${swing >= 0 ? "+" : "−"}${Math.abs(swing).toFixed(2)}%`;
 export const eloArrow = (change: number): string => change > 0 ? `↑${change}` : change < 0 ? `↓${-change}` : "±0";
 
 // Up green, down red, no change grey — for a swing and an Elo change alike.
@@ -122,18 +128,20 @@ const signColor = (n: number): string => n > 0 ? COLOR.up : n < 0 ? COLOR.down :
 // pair small under it. Without a map it sits on a plain band of the same height.
 function banner(result: MatchResult, withMap: boolean): string {
   const shadow = "text-shadow:0 3px 12px rgba(0,0,0,0.85)";
-  const elo = result.elo ? `(${result.elo.ours} Elo vs ${result.elo.theirs} Elo)` : "";
+  const elo = result.elo ? `${result.elo.ours} Elo vs ${result.elo.theirs} Elo` : "";
   const overlay =
     `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;position:absolute;` +
     `top:0;left:0;width:${CARD_WIDTH}px;height:${MAP_HEIGHT}px;background:${tint(COLOR.bg, withMap ? 0.45 : 0)}">` +
     `<div style="display:flex;font-size:92px;font-weight:700;letter-spacing:4px;color:${result.won ? COLOR.up : COLOR.down};${shadow}">` +
     `${escapeHtml(`${result.ourScore}:${result.theirScore}`)}</div>` +
-    (elo ? `<div style="display:flex;font-size:22px;font-weight:700;color:${COLOR.text};${shadow}">${escapeHtml(elo)}</div>` : "") +
+    (elo ? `<div style="display:flex;font-size:20px;font-weight:700;letter-spacing:1px;color:${COLOR.text};${shadow}">${escapeHtml(elo)}</div>` : "") +
     `</div>`;
   const ground = withMap
     ? `<img src="${MAP_SRC}" style="width:${CARD_WIDTH}px;height:${MAP_HEIGHT}px;object-fit:cover"/>`
-    : `<div style="display:flex;width:${CARD_WIDTH}px;height:${MAP_HEIGHT}px;background:${COLOR.head}"></div>`;
-  return `<div style="display:flex;position:relative;width:${CARD_WIDTH}px;height:${MAP_HEIGHT}px">${ground}${overlay}</div>`;
+    : `<div style="display:flex;width:${CARD_WIDTH}px;height:${MAP_HEIGHT}px;background:${COLOR.panel}"></div>`;
+  // FACEIT's orange edge under the banner.
+  const edge = `<div style="display:flex;position:absolute;left:0;bottom:0;width:${CARD_WIDTH}px;height:4px;background:${COLOR.accent}"></div>`;
+  return `<div style="display:flex;position:relative;width:${CARD_WIDTH}px;height:${MAP_HEIGHT}px">${ground}${overlay}${edge}</div>`;
 }
 
 // The nickname in bold, with the MVP star beside it, and under it the Elo and this match's change.
@@ -148,9 +156,9 @@ function playerCell(row: ResultRow, mvp: boolean, width: number): string {
   const change = row.eloChange;
   const arrow = change === null ? "" : eloArrow(change);
   const eloLine = row.eloAfter === null ? "" :
-    `<div style="display:flex;align-items:baseline;gap:12px">` +
+    `<div style="display:flex;align-items:center;gap:12px">` +
     `<span style="font-size:22px;color:${COLOR.muted}">${row.eloAfter}</span>` +
-    (arrow ? `<span style="font-size:20px;font-weight:700;color:${signColor(change!)}">${arrow}</span>` : "") +
+    (arrow ? `<span style="font-size:22px;color:${signColor(change!)}">${arrow}</span>` : "") +
     `</div>`;
   return `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px">` +
     `<div style="display:flex;align-items:center;gap:10px">${nick}${badge}</div>${eloLine}</div>`;
@@ -164,25 +172,33 @@ function table(result: MatchResult): string {
 
   const cellStyle = (flex: number, first: boolean, extra: string) =>
     `display:flex;align-items:center;justify-content:${first ? "flex-start" : "center"};flex:${flex};` +
-    `padding:${first ? `14px ${PLAYER_PADDING}px` : "14px 4px"}${first ? "" : `;border-left:1px solid ${COLOR.line}`};${extra}`;
+    `padding:${first ? `14px ${PLAYER_PADDING}px` : "14px 4px"};${extra}`;
 
   const headCell = (flex: number, first: boolean, label: string) =>
-    `<div style="${cellStyle(flex, first, `font-size:17px;font-weight:700;letter-spacing:1px;color:${COLOR.muted}`)}">` +
-    `<div style="display:flex">${escapeHtml(label.toUpperCase())}</div></div>`;
-  const head = `<div style="display:flex;background:${COLOR.head}">` +
-    headCell(PLAYER_FLEX, true, t("scorePlayer")) + cols.map(c => headCell(c.flex, false, c.head)).join("") + `</div>`;
+    `<div style="${cellStyle(flex, first, `font-size:18px;font-weight:700;color:${COLOR.head};padding-top:13px;padding-bottom:13px`)}">` +
+    `<div style="display:flex">${escapeHtml(label)}</div></div>`;
+  // A row is the tinted player block, the split, then the figures; the rule stops at the split.
+  const statFlex = cols.reduce((sum, c) => sum + c.flex, 0);
+  const rule = (ruled: boolean) => ruled ? `;border-top:1px solid ${COLOR.line}` : "";
+  const line = (player: string, figures: string, ruled: boolean, strip = false) =>
+    `<div style="display:flex">` +
+    `<div style="display:flex;flex:${PLAYER_FLEX};background:${strip ? COLOR.strip : COLOR.side}${rule(ruled)}">${player}</div>` +
+    `<div style="display:flex;width:${SPLIT}px;background:${COLOR.bg}"></div>` +
+    `<div style="display:flex;flex:${statFlex};background:${strip ? COLOR.strip : COLOR.panel}${rule(ruled)}">${figures}</div></div>`;
+
+  // The header is a strip of its own, split from the rows by the same gap as the columns.
+  const head = line(headCell(1, true, t("scorePlayer")), cols.map(c => headCell(c.flex, false, c.head)).join(""), false, true) +
+    `<div style="display:flex;height:${SPLIT}px;background:${COLOR.bg}"></div>`;
 
   const body = rows.map((row, i) => {
-    const hot = row.mvp;
     const cells = cols.map(c => {
-      const { style, body } = c.cell(row, hot);
+      const { style, body } = c.cell(row);
       return `<div style="${cellStyle(c.flex, false, `font-size:26px${style}`)}">${body}</div>`;
     }).join("");
-    return `<div style="display:flex;border-top:1px solid ${COLOR.line};background:${i % 2 ? COLOR.rowB : COLOR.rowA}">` +
-      `<div style="${cellStyle(PLAYER_FLEX, true, "")}">${playerCell(row, hot, room)}</div>${cells}</div>`;
+    return line(`<div style="${cellStyle(1, true, "")}">${playerCell(row, row.mvp, room)}</div>`, cells, i > 0);
   }).join("");
 
-  return `<div style="display:flex;flex-direction:column;margin:16px;border:1px solid ${COLOR.line};border-radius:10px;overflow:hidden">${head}${body}</div>`;
+  return `<div style="display:flex;flex-direction:column;margin:16px;background:${COLOR.panel};border-radius:8px;overflow:hidden">${head}${body}</div>`;
 }
 
 // The whole card. `withMap` is false when the map image could not be had — the banner goes plain.

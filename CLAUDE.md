@@ -538,15 +538,27 @@ card is drawn without a map rather than not at all. Neither a file name nor a Co
 Satori draws only the fonts it is handed, so DejaVu lives in `assets/`, which the Dockerfile copies.
 The card draws no emoji — FACEIT nicknames can't carry one — so there are no emoji images to ship.
 
-**The table is the point of the card.** The player cell is the nickname in bold, and under it the
-Elo after the match (no "Elo" word, not bold) beside the match's change — `↑25` green / `↓23` red,
-bold. Bold is set on the elements meant to be bold, never on a whole cell and undone inside it.
+**The table is the point of the card.** The player cell is the nickname in bold, and under it the Elo
+after the match (no "Elo" word, not bold) beside the match's change — `↑25` green / `↓23` red, at the
+same size and weight as the Elo, so only the colour sets it apart. It was bold and 2 px smaller once:
+the renderer cannot baseline-align mixed sizes, so it sat low, and bold pulled the eye off the
+nickname. Bold is set on the elements meant to be bold, never on a whole cell and undone inside it.
 
 A **Rating** is drawn as FACEIT draws it: the figure bold in its tier's colour on a chip tinted with
 it, over a bar filled linearly from 0.6 to 1.6 — a range read off FACEIT's own chips, not published.
 Gold from 1.80, green from 1.30, white from 0.90, red below. A chip's tint is blended **solid** onto
-one base (`blend`), not left translucent: over striped rows a translucent chip came out a different
-shade on every other row.
+one base (`blend`), not left translucent: over the striped rows the card once had, a translucent chip
+came out a different shade on every other row.
+
+**The surfaces are FACEIT's too**: neutral near-black greys rather than the blue-grey the card first
+had, the table one flat panel split by thin horizontal lines only — no stripes, no column dividers, no
+outer border. The one vertical split is FACEIT's: the player column is a lighter block set off from
+the figures by a 4 px gap of the card's background (`SPLIT`), which the row rules stop at. A gap, not
+a line, and only there — the rating chips already set their own column apart. The column header is
+FACEIT's too: Title Case in bold light grey on a strip of its own, with the same gap under it; spaced
+capitals in dim grey were tried first. FACEIT's orange `#FF5500` appears once, as a 4 px edge under
+the banner; it is an accent, never a value colour. A negative swing is printed with a true minus `−`,
+as wide as the `+`, so the column lines up.
 
 The card has **one** green and red — FACEIT's own, `#6ADE43` and `#FF2727`, read from its
 scoreboard's styles — shared by the ratings, the score, the swing and the Elo arrows; the ratings
@@ -555,29 +567,35 @@ on FACEIT, and so here**: a 1.80+ rating is an orange-to-yellow gradient (`#FF76
 across its figure, bar and chip, sampled from a FACEIT chip; the MVP star is a solid `#F3B346`. The
 gradient figure is `background-clip:text`, which satori supports.
 
-On a **win the highest FACEIT Rating gets a gold MVP star**, ties sharing it, and **only the MVP's
-row is bold**; a loss has neither. The top is taken across **our whole team**, members of the group
-or not, and the star is drawn only when a member holds it — judged on our rows alone, a random
+On a **win the highest FACEIT Rating gets a gold MVP star**, ties sharing it; a loss has none. The
+star is the whole mark — the MVP's row was once bold as well, which said it twice and crowded the
+right-hand figures against the panel edge. The top is taken across **our whole team**, members of the
+group or not, and the star is drawn only when a member holds it — judged on our rows alone, a random
 carrying the game handed the star to our best instead, which the FACEIT link beside it contradicts.
-That is why `mvp` is decided in `buildMatchResult`, the one place that sees the full team, and
-travels on `ResultRow`. The star is inline SVG, not a glyph: FACEIT's has rounded points, which a
-same-colour round-joined stroke gives and a font's ★ cannot. **Swing** is green or red by its sign; a
-zero (`+0.00%`) is grey, like an Elo `±0`. **ADR** is plain. No scoreboard from faceit.com, no Rating
-or Swing column and no MVP — the rich table's rule.
+That is why `mvp` is decided in `buildMatchResult`, the one place that sees the full team, and travels
+on `ResultRow`. The star is inline SVG, not a glyph: FACEIT's has rounded points, which a same-colour
+round-joined stroke gives and a font's ★ cannot. **Swing** is green or red by its sign; a zero
+(`+0.00%`) is grey, like an Elo `±0`. FACEIT leaves most swings white, and that was tried — white with
+red for a big drop, a ±2% band coloured both ways, gains alone in green — but every version lost the
+at-a-glance read of who gained and who lost. **ADR** is plain. No scoreboard from faceit.com, no
+Rating or Swing column and no MVP — the rich table's rule.
 
-**There is no header row.** The score is set at 92 px across a 190 px map banner, green for a win
-and red for a loss, with the team Elo pair small and bold under it; the map is dimmed so the figures
-read on any map. Without a map the band is plain. A long nickname shrinks from 25 px to 15 px before
-an ellipsis clips it (`nickSize`, `nickRoom`); the room is worked out from the player column's real
-width, which is far wider without Rating and Swing. The widths are DejaVu Sans Bold's by class of
-letter, tuned on real nicknames — `TheR0gue0ne` was clipped at 11 characters by the first guess.
+**There is no match header row** — the map banner is the header. The score is set at 92 px across a
+190 px banner, green for a win and red for a loss, with the team Elo pair small and bold under it
+(`1778 Elo vs 1650 Elo`, no brackets); the map is dimmed so the figures read on any map. Without a map
+the band is plain. A long nickname shrinks from 25 px to 15 px before an ellipsis clips it
+(`nickSize`, `nickRoom`); the room is worked out from the player column's real width, which is far
+wider without Rating and Swing. It stays at 2.6 flex: narrowing it to fill the gap short nicknames
+leave was tried and dropped, as it shrank an 18-character nickname from 20 px to 16. The widths are
+DejaVu Sans Bold's by class of letter, tuned on real nicknames — `TheR0gue0ne` was clipped at 11
+characters by the first guess.
 
-All of that was settled against mocks in the group, and these were tried and dropped: level badges,
-an "MVP" text pill, the star beside the rating chip rather than the nickname, a ПЕРЕМОГА/ПОРАЗКА
-word, a separate header row, K/D, HS% and MVPs as columns, the Elo stacked at the cell's right edge,
-a tinted pill or a chip round the Elo, filled ▲/▼, 🔥 on a 1.5, bolding every row rated 1.5 or more
-(whatever the result), and marking the top ADR bold or gold — beside the MVP star, a gold ADR read
-as part of the MVP.
+All of that was settled against mocks in the group, and these were tried and dropped: level badges, an
+"MVP" text pill, the star beside the rating chip rather than the nickname, a ПЕРЕМОГА/ПОРАЗКА word, a
+separate match header row, K/D, HS% and MVPs as columns, the Elo stacked at the cell's right edge, a
+tinted pill or a chip round the Elo, filled ▲/▼, 🔥 on a 1.5, bolding every row rated 1.5 or more
+(whatever the result), bolding the MVP's row, and marking the top ADR bold or gold — beside the MVP
+star, a gold ADR read as part of the MVP.
 
 **The rich table is the fallback**: a failed render (timeout, crash, missing font) sends it instead,
 so a post is never lost to the renderer. `npm run card:preview` writes a sample `card.html` and
