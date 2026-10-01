@@ -573,7 +573,18 @@ a grey disc with the nickname's first letter — as does a player with no avatar
 string), silently. The signature check matters here too: the CDN runs Cloudflare Polish
 (`cf-polished`), which can serve WebP under a `.jpg` name, and that is the map trap again.
 
-Avatars come at up to 1080×1080 and resvg decodes each at full size, ~4.6 MB raw, so five add ~23 MB
+**The card renders at 4×** (`ZOOM` in `card-worker.ts`), 3200 px wide: at 2× the avatar was 112 px and
+read as blocks the moment anyone zoomed in. Whether Telegram keeps those pixels through `sendPhoto` has
+not been checked — a test post is what settles it. A 4× card is ~3 s of CPU on a laptop against ~0.5 s
+at 2×, so `TIMEOUT_MS` in `card.ts` went from 20 s to 60 s.
+
+**Each avatar is shrunk before satori sees it**, to exactly the pixels it is drawn at. resvg samples
+an image without averaging, so a 1254 px avatar drawn at 112 came out grainy with jagged edges. The
+worker draws it 16 times at sub-pixel offsets into one render and averages them, which matched a
+proper downscale. Halving in steps looked the same at three times the cost. FACEIT's CDN resizes
+too, but only to an allowlist of widths, and none of 8–640 is on it.
+
+Avatars come at up to 1254×1254 and resvg decodes each at full size, ~6 MB raw, so five add ~30 MB
 to the render child. That was **not** re-measured in the image at the real limits when they shipped —
 if the card starts falling back to the rich table, check the child for an OOM first. The avatar also
 takes ~70 px from the nickname: an 11-character nickname drops from 25 px to ~19, and further beside
@@ -581,8 +592,10 @@ the MVP star.
 
 **The map banner is bundled, not FACEIT's.** FACEIT serves map images at 428×212 only — the open API's
 `image_lg` and faceit.com alike — and the banner crops that to ~428×100 and draws it at 1600×380, so
-it posted visibly soft. `assets/maps/<game_map_id>.jpg` holds each map pre-cut to exactly 1600×380, so
-resvg draws it 1:1; `bundledMap` reads it by the stats' map id. The ten files cover every CS2
+it posted visibly soft. `assets/maps/<game_map_id>.jpg` holds each map pre-cut to exactly 1600×380 —
+1:1 when the card rendered at 2×, stretched 2× now it renders at 4×; behind the dimming that was judged
+acceptable, and the upstream screenshots are not wide enough for 3200 anyway. `bundledMap` reads it by
+the stats' map id. The ten files cover every CS2
 competitive map so far, current pool and rotated-out alike, so FACEIT's map image is not used at all: a
 map we don't ship gets the plain band, and the rich fallback carries no map.
 
@@ -655,8 +668,9 @@ star, a gold ADR read as part of the MVP.
 **The rich table is the fallback**: a failed render (timeout, crash, missing font) sends it instead —
 after the one retry without avatars — so a post is never lost to the renderer. `npm run card:preview`
 writes a sample `card.html` and `card.png` to `card-preview/` on Mirage; `-- --map-id=<id>` picks
-another bundled map and `-- --send=<chat id>` posts it with `BOT_TOKEN`. The sample rows carry no
-avatar URL, so the preview shows letter discs; it stays offline.
+another bundled map and `-- --send=<chat id>` posts it with `BOT_TOKEN`. The preview stays offline
+and shows letter discs unless `-- --avatars` asks it to look the sample nicknames up on FACEIT —
+which is why `FaceitPlayer` declares `avatar`, though the bot itself reads it from the match roster.
 
 ## FACEIT links
 

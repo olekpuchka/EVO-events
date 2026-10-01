@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 import satori from "satori";
 import { html } from "satori-html";
 import { Resvg } from "@resvg/resvg-js";
-import { CARD_WIDTH } from "../view/card.ts";
+import { CARD_WIDTH, AVATAR, MAP_SRC } from "../view/card.ts";
 
 const ASSETS = new URL("../../assets/", import.meta.url);
 const asset = (path: string): Buffer => readFileSync(new URL(path, ASSETS));
@@ -35,6 +35,27 @@ function swapImages(node: Node): void {
   }
 }
 
+// The card renders at 4x; an avatar is shrunk to the pixels it is drawn at.
+const ZOOM = 4;
+const AVATAR_PX = AVATAR * ZOOM;
+
+// Averages a 4×4 grid of sub-pixel draws: resvg samples without averaging, so one big shrink aliases.
+const GRID = 4;
+function shrink(uri: string): string {
+  let draws = "";
+  for (let i = 0; i < GRID * GRID; i++) {
+    const [x, y] = [i % GRID, Math.floor(i / GRID)].map(v => (v + 0.5) / GRID - 0.5);
+    draws += `<use href="#a" x="${x}" y="${y}" opacity="${1 / (i + 1)}"/>`;
+  }
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${AVATAR_PX}" height="${AVATAR_PX}"><defs>` +
+    `<image id="a" href="${uri}" width="${AVATAR_PX}" height="${AVATAR_PX}" preserveAspectRatio="xMidYMid slice"/></defs>${draws}</svg>`;
+  return `data:image/png;base64,${Buffer.from(new Resvg(svg).render().asPng()).toString("base64")}`;
+}
+
+for (const src of Object.keys(job.images)) {
+  if (src !== MAP_SRC) job.images[src] = shrink(job.images[src]!);
+}
+
 const tree = html(job.markup) as unknown as Node;
 swapImages(tree);
 
@@ -46,4 +67,4 @@ const svg = await satori(tree as Parameters<typeof satori>[0], {
   ],
 });
 
-process.stdout.write(new Resvg(svg, { fitTo: { mode: "zoom", value: 2 } }).render().asPng());
+process.stdout.write(new Resvg(svg, { fitTo: { mode: "zoom", value: ZOOM } }).render().asPng());
