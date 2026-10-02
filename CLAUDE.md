@@ -658,7 +658,8 @@ Rating or Swing column and no MVP — the rich table's rule.
 
 **There is no match header row** — the map banner is the header. The score is set at 92 px across a
 190 px banner, green for a win and red for a loss, with the team Elo pair small and bold under it
-(`1778 Elo vs 1650 Elo`, no brackets); the map is dimmed so the figures read on any map. Without a map
+(`1778 Elo vs 1650 Elo`, no brackets), each on a pill: ours outlined in the result's green or red,
+theirs in grey, so which is ours reads without knowing the order; the map is dimmed so the figures read on any map. Without a map
 the band is plain. A long nickname shrinks from 25 px to 15 px before an ellipsis clips it
 (`nickSize`, `nickRoom`); the room is worked out from the player column's real width, which is far
 wider without Rating and Swing, less the avatar and its gap. It stays at 2.6 flex: narrowing it to fill the gap short nicknames
@@ -669,9 +670,11 @@ characters by the first guess.
 All of that was settled against mocks in the group, and these were tried and dropped: level badges, an
 "MVP" text pill, the star beside the rating chip rather than the nickname, a ПЕРЕМОГА/ПОРАЗКА word, a
 separate match header row, K/D, HS% and MVPs as columns, the Elo stacked at the cell's right edge, a
-tinted pill or a chip round the Elo, filled ▲/▼, 🔥 on a 1.5, bolding every row rated 1.5 or more
+tinted pill or a chip round a player's Elo, filled ▲/▼, 🔥 on a 1.5, bolding every row rated 1.5 or more
 (whatever the result), bolding the MVP's row, and marking the top ADR bold or gold — beside the MVP
-star, a gold ADR read as part of the MVP.
+star, a gold ADR read as part of the MVP. Later: a FACEIT level gauge before the Elo, clutches won (as
+chips beside the nickname, then as a column), the score per half under the Elo pair, with or without
+an overtime count, and the match date in the caption.
 
 **The rich table is the fallback**: a failed render (timeout, crash, missing font) sends it instead —
 after the one retry without avatars — so a post is never lost to the renderer. `npm run card:preview`

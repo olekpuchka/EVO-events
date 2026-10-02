@@ -89,7 +89,7 @@ const paint = (p: string[]): string => p.length === 1 ? p[0]! : `linear-gradient
 
 const rgb = (hex: string): number[] => [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16));
 
-// A hex colour at the given opacity, for the dimming over the map photo.
+// A hex colour at the given opacity, for anything drawn over the map photo.
 function tint(hex: string, alpha: number): string {
   return `rgba(${rgb(hex).join(",")},${alpha})`;
 }
@@ -120,7 +120,8 @@ export const formatRating = (rating: number): string => rating.toFixed(2);
 // A true minus, as wide as the plus, so a column of swings lines up.
 export const formatSwing = (swing: number): string => `${swing >= 0 ? "+" : "−"}${Math.abs(swing).toFixed(2)}%`;
 export const eloArrow = (change: number): string => change > 0 ? `↑${change}` : change < 0 ? `↓${-change}` : "±0";
-export const eloPairText = (elo: EloPair): string => `${elo.ours} Elo vs ${elo.theirs} Elo`;
+const eloText = (elo: number): string => `${elo} Elo`;
+export const eloPairText = (elo: EloPair): string => `${eloText(elo.ours)} vs ${eloText(elo.theirs)}`;
 
 // Up green, down red, no change grey — for a swing and an Elo change alike.
 const signColor = (n: number): string => n > 0 ? COLOR.up : n < 0 ? COLOR.down : COLOR.muted;
@@ -129,13 +130,22 @@ const signColor = (n: number): string => n > 0 ? COLOR.up : n < 0 ? COLOR.down :
 // pair small under it. Without a map it sits on a plain band of the same height.
 function banner(result: MatchResult, withMap: boolean): string {
   const shadow = "text-shadow:0 3px 12px rgba(0,0,0,0.85)";
-  const elo = result.elo ? eloPairText(result.elo) : "";
+  const tone = result.won ? COLOR.up : COLOR.down;
+  // Ours on a pill tinted with the result's colour, theirs on a grey one, so the pair reads without knowing its order.
+  const pill = (elo: number, color: string, ground: string, edge: string) =>
+    `<div style="display:flex;padding:3px 12px;border-radius:6px;color:${color};background:${ground};border:2px solid ${edge}">${escapeHtml(eloText(elo))}</div>`;
+  const elo = result.elo
+    ? `<div style="display:flex;align-items:center;gap:12px;margin-top:6px;font-size:20px;font-weight:700;letter-spacing:1px;${shadow}">` +
+      pill(result.elo.ours, COLOR.text, tint(tone, 0.35), tone) +
+      `<div style="display:flex;color:${COLOR.head}">vs</div>` +
+      pill(result.elo.theirs, COLOR.head, tint(COLOR.bg, 0.6), COLOR.muted) + `</div>`
+    : "";
   const overlay =
     `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;position:absolute;` +
     `top:0;left:0;width:${CARD_WIDTH}px;height:${MAP_HEIGHT}px;background:${tint(COLOR.bg, withMap ? 0.45 : 0)}">` +
-    `<div style="display:flex;font-size:92px;font-weight:700;letter-spacing:4px;color:${result.won ? COLOR.up : COLOR.down};${shadow}">` +
+    `<div style="display:flex;font-size:92px;font-weight:700;letter-spacing:4px;color:${tone};${shadow}">` +
     `${escapeHtml(`${result.ourScore}:${result.theirScore}`)}</div>` +
-    (elo ? `<div style="display:flex;font-size:20px;font-weight:700;letter-spacing:1px;color:${COLOR.text};${shadow}">${escapeHtml(elo)}</div>` : "") +
+    elo +
     `</div>`;
   const ground = withMap
     ? `<img src="${MAP_SRC}" style="width:${CARD_WIDTH}px;height:${MAP_HEIGHT}px;object-fit:cover"/>`
