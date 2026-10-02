@@ -496,6 +496,13 @@ into* the match — checked across three consecutive matches, where each `elo + 
 next one's `elo` — and `elo_delta` is that match's exact change. The post shows `elo + elo_delta`
 with the change as the arrow; a player the scoreboard has no Elo for gets no Elo line.
 
+**The team Elo is the same scoreboard's**: each team's average `elo` going in, shown only when every
+player on that team has one. It used to be the open API match details' `stats.rating`, which is not
+an average of anything — on one match it read 1963 and 1977 against true averages of 1863 and 1877,
+with the teams' order flipped, and no mean, power mean or trimmed mean fitted both. It sits beside
+`winProbability`, so it is most likely FACEIT's matchmaking figure. Don't go back to it: the banner
+would contradict the rows under it.
+
 The library loads a Go shared object through koffi. On Linux x64 it looks for
 `os.tmpdir()/tls-client-x64.so` and, if missing, downloads the glibc build from
 bogdanfinn/tls-client's *latest* release — unpinned. The Dockerfile therefore bakes that same
@@ -566,7 +573,7 @@ throwing source line, and satori ships minified on a single 64 KB line — the p
 never saw the error.
 
 **Each player cell opens with the FACEIT avatar**, a 56 px circle. The URL rides the match details'
-roster, already fetched for the team Elo, so it costs no API call; `getAvatar` downloads it from
+roster, which the post already fetches, so it costs no API call; `getAvatar` downloads it from
 FACEIT's CDN, keyless and outside the Cloudflare challenge. It is best-effort like everything else on
 the card: a failed download or anything over 2 MB logs `[faceit] avatar fetch failed` and the row gets
 a grey disc with the nickname's first letter — as does a player with no avatar (the roster's empty

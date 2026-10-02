@@ -5,7 +5,7 @@
 import { getFaceitMembers, hasPostedMatch, markMatchPosted } from "../adapters/db.ts";
 import { getRecentMatches, getMatchStats, getMatchDetails, getMatchScoreboard, getAvatar, matchRoomUrl, ChallengeError } from "../adapters/faceit.ts";
 import { renderCard, bundledMap } from "../adapters/card.ts";
-import { cardCaption, eloArrow, formatRating, formatSwing } from "../view/card.ts";
+import { cardCaption, eloArrow, eloPairText, formatRating, formatSwing } from "../view/card.ts";
 import { t } from "../view/i18n.ts";
 import { InputFile, type Api } from "grammy";
 import type { RichText, RichBlockTableCell } from "@grammyjs/types";
@@ -52,7 +52,7 @@ async function buildMatchResult(
   // fetch, so a solo game spends none of faceit.com's anonymous rate limit.
   if (registered.length < MIN_PLAYERS) return null;
 
-  // Details (team Elo) only for a match that will post; unavailable, it is never posted.
+  // Details (roster avatars) only for a match that will post; unavailable, it is never posted.
   const matchDetails = await getMatchDetails(matchId);
   if (!matchDetails) return null;
 
@@ -69,8 +69,7 @@ async function buildMatchResult(
   // The MVP is judged on the full team: a non-member topping it means no star on the card.
   const teamRatings = ourTeam.players.flatMap(p => { const r = board?.get(p.player_id); return r ? [round2(r.rating)] : []; });
   const mvpRating = won && teamRatings.length ? Math.max(...teamRatings) : null;
-  const factions = Object.values(matchDetails.teams ?? {});
-  const ourFaction = factions.find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
+  const ourFaction = Object.values(matchDetails.teams ?? {}).find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
   const avatarOf = new Map(ourFaction?.roster?.map(p => [p.player_id, p.avatar || null]));
   const resultRows: ResultRow[] = registered
     .sort((a, b) => ratingOf(b) - ratingOf(a) || adrOf(b) - adrOf(a))
@@ -92,10 +91,18 @@ async function buildMatchResult(
 
   const mapId = round.round_stats?.Map || null;
 
-  const theirFaction = factions.find(f => f !== ourFaction);
-  const ourRating = ourFaction?.stats?.rating;
-  const theirRating = theirFaction?.stats?.rating;
-  const elo: EloPair | null = ourRating && theirRating ? { ours: ourRating, theirs: theirRating } : null;
+  // Each team's average Elo going in, from the scoreboard; a player without one leaves the pair out.
+  const teamElo = (players: FaceitStatPlayer[] = []): number | null => {
+    const before: number[] = [];
+    for (const p of players) {
+      const e = board?.get(p.player_id)?.elo;
+      if (!e) return null;
+      before.push(e.before);
+    }
+    return before.length ? Math.round(before.reduce((a, b) => a + b) / before.length) : null;
+  };
+  const ourElo = teamElo(ourTeam.players), theirElo = teamElo(theirTeam?.players);
+  const elo: EloPair | null = ourElo !== null && theirElo !== null ? { ours: ourElo, theirs: theirElo } : null;
 
   return { won, ourScore, theirScore, elo, mapId, matchId, rows: resultRows };
 }
@@ -123,7 +130,7 @@ function buildResultBlocks(result: MatchResult): RichBlocks {
 
   // The map is never named here: the card shows it, and the rich fallback goes without.
   const header: RichText[] = [`${won ? "🍌" : "❌"} `, { type: "bold", text: `${ourScore}:${theirScore}` }];
-  if (elo) header.push(" ", `${elo.ours} Elo vs ${elo.theirs} Elo`);
+  if (elo) header.push(" ", eloPairText(elo));
 
   const blocks: RichBlocks = [];
   blocks.push({ type: "paragraph", text: header });

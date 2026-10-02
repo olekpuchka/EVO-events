@@ -194,7 +194,7 @@ export async function getMatchScoreboard(matchId: string): Promise<Map<string, S
       if (typeof rating !== "number" || typeof swing !== "number") continue;
       // `elo` is from before the match, so after it is the sum.
       const elo = typeof p.elo === "number" && typeof p.elo_delta === "number"
-        ? { after: p.elo + p.elo_delta, change: p.elo_delta }
+        ? { before: p.elo, after: p.elo + p.elo_delta, change: p.elo_delta }
         : null;
       lines.set(p.player_id, { rating, swing, elo });
     }
