@@ -62,9 +62,9 @@ export async function searchPlayers(nickname: string, limit = 5): Promise<Faceit
   return data?.items ?? [];
 }
 
-// No retries: only `/faceit` calls this, and backoff would be dead air for someone watching.
-export function getPlayerById(playerId: string): Promise<FaceitPlayer | null> {
-  return faceitGet<FaceitPlayer>(`${BASE}/players/${encodeURIComponent(playerId)}`, { retries: 0 });
+// No retries by default, for `/faceit`: backoff would be dead air for someone watching.
+export function getPlayerById(playerId: string, { retries = 0 }: { retries?: number } = {}): Promise<FaceitPlayer | null> {
+  return faceitGet<FaceitPlayer>(`${BASE}/players/${encodeURIComponent(playerId)}`, { retries });
 }
 
 export async function getRecentMatches(playerId: string, limit = 5): Promise<FaceitHistoryItem[]> {

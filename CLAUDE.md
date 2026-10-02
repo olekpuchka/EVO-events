@@ -423,12 +423,14 @@ The count comes from the **match stats**, never from `candidates` in the history
 tally is built from each member's own recent-match history, and a failed history call — already
 counted in `historyFailed` — would read a real squad game as solo and bury it permanently.
 
-**Elo comes from the scoreboard alone**, so a skipped solo game is `markMatchPosted` and nothing
+**Elo comes from the scoreboard**, so a skipped solo game is `markMatchPosted` and nothing
 else. There used to be a stored baseline: live Elo from `getPlayerById`, diffed against the last
 value saved per member. It was approximate — matches finished inside one poll shared one live value,
 so the first posted carried the whole swing — and it needed a save rule for every path: posted,
 skipped solo, held on a failed fetch, and pending behind another match. The scoreboard's exact
 per-match change made all of it redundant, and it was removed rather than kept as a fallback. The
+one live read left is a calibrating player's profile Elo, for the team average only — see **Rating
+and swing** — and it saves nothing. The
 `faceit_elo` column it lived in stays in the `CREATE` — see **Schema** — but nothing reads or
 writes it.
 
@@ -484,7 +486,7 @@ this way: it is about the match, and has been seen to persist. The anonymous lim
 30s per IP**, and a catch-up poll of ten matches hit it on the sixth. A 429 therefore waits out the
 `Ratelimit-Retry-After` it carries (plus a second, capped at 30s) and tries again, up to three
 times — the poll runs in the background, and since the baseline was removed this is the only
-source of per-player Elo. The fetch also runs **after** the `MIN_PLAYERS` gate, so a solo match
+source of per-player Elo (a calibrating player's profile Elo feeds the team average, never a row). The fetch also runs **after** the `MIN_PLAYERS` gate, so a solo match
 spends nothing from it. Swing is shown in percentage points; both it and rating are rounded to two places.
 
 Not every match is readable anonymously: one freshly finished match in thirteen sampled answered
@@ -498,9 +500,14 @@ with the change as the arrow; a player the scoreboard has no Elo for gets no Elo
 
 **The team Elo is the same scoreboard's**: each team's average `elo` going in, shown only when every
 player on that team has one. The exception is a player still **calibrating** (`is_calibrating`, their
-placement matches): the scoreboard carries no Elo for them at all, so they are left out of the
-average rather than hiding the pair — one new account in the opposing lobby used to blank both
-figures. Any other missing Elo still drops the pair. It used to be the open API match details' `stats.rating`, which is not
+placement matches): the scoreboard carries no Elo for them at all — one such player in the opposing
+lobby used to blank both figures. Their profile's **current** Elo (`getPlayerById`) stands in
+instead. It is read when the post is built, so it already counts this match — and any placement games
+since, for a post held back by a catch-up poll or a Cloudflare retry — and it is provisional, so it
+is less exact than the rest of the average; leaving them out was tried first and judged less real — on the match that prompted it, a
+1157 left out read the team as 2037 instead of 1861. A player with no profile Elo, or a failed
+fetch, is left out of the average rather than hiding the pair. Any other missing Elo still drops
+the pair. It used to be the open API match details' `stats.rating`, which is not
 an average of anything — on one match it read 1963 and 1977 against true averages of 1863 and 1877,
 with the teams' order flipped, and no mean, power mean or trimmed mean fitted both. It sits beside
 `winProbability`, so it is most likely FACEIT's matchmaking figure. Don't go back to it: the banner
