@@ -497,7 +497,10 @@ next one's `elo` — and `elo_delta` is that match's exact change. The post show
 with the change as the arrow; a player the scoreboard has no Elo for gets no Elo line.
 
 **The team Elo is the same scoreboard's**: each team's average `elo` going in, shown only when every
-player on that team has one. It used to be the open API match details' `stats.rating`, which is not
+player on that team has one. The exception is a player still **calibrating** (`is_calibrating`, their
+placement matches): the scoreboard carries no Elo for them at all, so they are left out of the
+average rather than hiding the pair — one new account in the opposing lobby used to blank both
+figures. Any other missing Elo still drops the pair. It used to be the open API match details' `stats.rating`, which is not
 an average of anything — on one match it read 1963 and 1977 against true averages of 1863 and 1877,
 with the teams' order flipped, and no mean, power mean or trimmed mean fitted both. It sits beside
 `winProbability`, so it is most likely FACEIT's matchmaking figure. Don't go back to it: the banner

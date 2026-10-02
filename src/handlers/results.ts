@@ -91,13 +91,15 @@ async function buildMatchResult(
 
   const mapId = round.round_stats?.Map || null;
 
-  // Each team's average Elo going in, from the scoreboard; a player without one leaves the pair out.
+  // Each team's average Elo going in, from the scoreboard. A calibrating player has none and is left
+  // out of the average; any other player without one leaves the pair out.
   const teamElo = (players: FaceitStatPlayer[] = []): number | null => {
     const before: number[] = [];
     for (const p of players) {
-      const e = board?.get(p.player_id)?.elo;
-      if (!e) return null;
-      before.push(e.before);
+      const line = board?.get(p.player_id);
+      if (line?.calibrating) continue;
+      if (!line?.elo) return null;
+      before.push(line.elo.before);
     }
     return before.length ? Math.round(before.reduce((a, b) => a + b) / before.length) : null;
   };
