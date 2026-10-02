@@ -31,8 +31,8 @@ and schedule.
 stands as its own word. The tag is dropped and the rest becomes the event text.
 
 **Match results.** Finished matches post automatically as a picture: the score across the map, both
-teams' average Elo (ours outlined in the result's colour; a player still calibrating has none and
-is left out of it), and a table sorted by FACEIT rating — each player with their FACEIT avatar (or their
+teams' average Elo (ours outlined in the result's colour; a player still in placement matches counts at their
+current profile Elo), and a table sorted by FACEIT rating — each player with their FACEIT avatar (or their
 initial, without one), their Elo and that match's change (↑25 / ↓23 / ±0), their rating (gold from
 1.80, green from 1.30, white from 0.90, red below) and swing, and their K/D/A and ADR. On a win the
 team's top rating gets a gold MVP star — judged across all five, so a teammate from outside the group

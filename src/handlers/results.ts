@@ -3,7 +3,7 @@
 // Telegram UX — and shares no state with the event lifecycle.
 
 import { getFaceitMembers, hasPostedMatch, markMatchPosted } from "../adapters/db.ts";
-import { getRecentMatches, getMatchStats, getMatchDetails, getMatchScoreboard, getAvatar, matchRoomUrl, ChallengeError } from "../adapters/faceit.ts";
+import { getRecentMatches, getMatchStats, getMatchDetails, getMatchScoreboard, getPlayerById, getAvatar, matchRoomUrl, ChallengeError } from "../adapters/faceit.ts";
 import { renderCard, bundledMap } from "../adapters/card.ts";
 import { cardCaption, eloArrow, eloPairText, formatRating, formatSwing } from "../view/card.ts";
 import { t } from "../view/i18n.ts";
@@ -91,19 +91,27 @@ async function buildMatchResult(
 
   const mapId = round.round_stats?.Map || null;
 
-  // Each team's average Elo going in, from the scoreboard. A calibrating player has none and is left
-  // out of the average; any other player without one leaves the pair out.
-  const teamElo = (players: FaceitStatPlayer[] = []): number | null => {
-    const before: number[] = [];
-    for (const p of players) {
-      const line = board?.get(p.player_id);
-      if (line?.calibrating) continue;
-      if (!line?.elo) return null;
-      before.push(line.elo.before);
-    }
+  // Elo going in, from the scoreboard; a calibrating player has none, so their profile's current one stands in.
+  // undefined — no Elo and not calibrating — drops the pair; null — calibrating, none found — is skipped.
+  const eloBeforeOf = async (p: FaceitStatPlayer): Promise<number | null | undefined> => {
+    const line = board?.get(p.player_id);
+    if (line?.elo) return line.elo.before;
+    if (!line?.calibrating) return undefined;
+    const player = await getPlayerById(p.player_id, { retries: 2 }).catch(err => {
+      console.error(`[faceit] calibrating Elo fetch failed for ${p.nickname}:`, (err as Error).message);
+      return null;
+    });
+    return player?.games?.cs2?.faceit_elo ?? null;
+  };
+
+  // Each team's average Elo going in.
+  const teamElo = async (players: FaceitStatPlayer[] = []): Promise<number | null> => {
+    const elos = await Promise.all(players.map(eloBeforeOf));
+    if (elos.includes(undefined)) return null;
+    const before = elos.filter((e): e is number => e != null);
     return before.length ? Math.round(before.reduce((a, b) => a + b) / before.length) : null;
   };
-  const ourElo = teamElo(ourTeam.players), theirElo = teamElo(theirTeam?.players);
+  const [ourElo, theirElo] = await Promise.all([teamElo(ourTeam.players), teamElo(theirTeam?.players)]);
   const elo: EloPair | null = ourElo !== null && theirElo !== null ? { ours: ourElo, theirs: theirElo } : null;
 
   return { won, ourScore, theirScore, elo, mapId, matchId, rows: resultRows };
