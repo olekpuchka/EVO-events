@@ -107,7 +107,6 @@ export interface FaceitMatchStats {
 
 export interface FaceitFaction {
   roster?: { player_id: string; avatar?: string }[];
-  stats?: { rating?: number | string };
 }
 
 export interface FaceitMatchDetails {
@@ -136,7 +135,7 @@ export interface FaceitScoreboard {
 export interface ScoreboardLine {
   rating: number;
   swing: number;
-  elo: { after: number; change: number } | null;
+  elo: { before: number; after: number; change: number } | null;
 }
 
 /* ── Birthday phrases ───────────────────────────────────────────────────────
@@ -171,8 +170,8 @@ export interface PhraseChecks {
 /* ── Rendered match result (built and sent by handlers/results.ts) ─────────── */
 
 export interface EloPair {
-  ours: number | string;
-  theirs: number | string;
+  ours: number;
+  theirs: number;
 }
 
 export interface ResultRow {

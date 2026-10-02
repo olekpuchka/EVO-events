@@ -3,7 +3,7 @@
 
 import { escapeHtml } from "./html.ts";
 import { t } from "./i18n.ts";
-import type { MatchResult, ResultRow } from "../types.ts";
+import type { EloPair, MatchResult, ResultRow } from "../types.ts";
 
 export const CARD_WIDTH = 800;
 
@@ -120,6 +120,7 @@ export const formatRating = (rating: number): string => rating.toFixed(2);
 // A true minus, as wide as the plus, so a column of swings lines up.
 export const formatSwing = (swing: number): string => `${swing >= 0 ? "+" : "−"}${Math.abs(swing).toFixed(2)}%`;
 export const eloArrow = (change: number): string => change > 0 ? `↑${change}` : change < 0 ? `↓${-change}` : "±0";
+export const eloPairText = (elo: EloPair): string => `${elo.ours} Elo vs ${elo.theirs} Elo`;
 
 // Up green, down red, no change grey — for a swing and an Elo change alike.
 const signColor = (n: number): string => n > 0 ? COLOR.up : n < 0 ? COLOR.down : COLOR.muted;
@@ -128,7 +129,7 @@ const signColor = (n: number): string => n > 0 ? COLOR.up : n < 0 ? COLOR.down :
 // pair small under it. Without a map it sits on a plain band of the same height.
 function banner(result: MatchResult, withMap: boolean): string {
   const shadow = "text-shadow:0 3px 12px rgba(0,0,0,0.85)";
-  const elo = result.elo ? `${result.elo.ours} Elo vs ${result.elo.theirs} Elo` : "";
+  const elo = result.elo ? eloPairText(result.elo) : "";
   const overlay =
     `<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;position:absolute;` +
     `top:0;left:0;width:${CARD_WIDTH}px;height:${MAP_HEIGHT}px;background:${tint(COLOR.bg, withMap ? 0.45 : 0)}">` +

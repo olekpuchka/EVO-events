@@ -44,7 +44,7 @@ FACEIT's own map images are too small for the banner; a map not in there gets a 
 
 Rating, swing and the exact per-match Elo change come from faceit.com's own scoreboard, which the
 open FACEIT API doesn't carry. That fetch is **best-effort**: when it fails, the post still goes out,
-without the Rating column and without the Elo lines.
+without the Rating column, the Elo lines or the teams' Elo.
 
 **Birthdays.** Members add their own date with `/birthday 25-08-1990`, and on the day the bot posts
 a short toast written for them — 70 words at most, and the only AI-written message the bot sends.
