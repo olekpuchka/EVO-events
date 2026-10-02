@@ -123,6 +123,7 @@ export interface FaceitScoreboard {
           player_id: string;
           elo?: number | null;
           elo_delta?: number | null;
+          is_calibrating?: boolean;
           stats?: { faceit_rating?: number; faceit_rating_swing?: number };
         }[];
       }[];
@@ -131,11 +132,12 @@ export interface FaceitScoreboard {
 }
 
 // One player's line from that scoreboard. Swing is a fraction, not percentage points; `elo` is
-// null when the scoreboard carries no Elo for them.
+// null when the scoreboard carries no Elo for them — always so while `calibrating`.
 export interface ScoreboardLine {
   rating: number;
   swing: number;
   elo: { before: number; after: number; change: number } | null;
+  calibrating: boolean;
 }
 
 /* ── Birthday phrases ───────────────────────────────────────────────────────
