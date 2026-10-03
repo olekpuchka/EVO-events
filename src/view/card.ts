@@ -22,6 +22,7 @@ export const COLOR = {
   bg: "#121212", text: "#ffffff", muted: "#a3a3a3", head: "#dcdcdc", panel: "#1c1c1c", side: "#242424",
   strip: "#3a3a3a",
   line: "#2b2b2b", accent: "#ff5500", best: "#f3b346", up: "#6ade43", down: "#ff2727",
+  poop: "#8b5a35",
 };
 
 // A body cell: extra style for its box, and what goes in it.
@@ -61,8 +62,8 @@ const PLAYER_PADDING = 18;
 const nickRoom = (cols: Column[]): number =>
   Math.floor(TABLE_WIDTH * PLAYER_FLEX / (PLAYER_FLEX + cols.reduce((sum, c) => sum + c.flex, 0))) - 2 * PLAYER_PADDING;
 
-// The room the MVP star takes from the nickname beside it.
-const MVP_ROOM = 40;
+// The room a badge takes from the nickname beside it.
+const BADGE_ROOM = 40;
 
 // The avatar circle before the nickname, and the gap after it.
 export const AVATAR = 56;
@@ -100,6 +101,10 @@ function blend(hex: string, alpha: number, base: string = COLOR.panel): string {
   return "#" + c.map((v, i) => Math.round(v * alpha + b[i]! * (1 - alpha)).toString(16).padStart(2, "0")).join("");
 }
 
+const MVP_BADGE = `<svg width="28" height="28" viewBox="0 0 24 24"><polygon points="${STAR}" fill="${COLOR.best}" stroke="${blend(COLOR.bg, 0.2, COLOR.best)}" stroke-width="1.5" stroke-linejoin="round"/><path d="M12 2.8L14.8 8.7L21.2 9.4L12 12L2.8 9.4L9.2 8.7Z" fill="${blend(COLOR.text, 0.35, COLOR.best)}"/><path d="M12 3L9.2 8.7L3 9.4" fill="none" stroke="${blend(COLOR.text, 0.65, COLOR.best)}" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+
+const LOW_RATING_BADGE = `<svg width="28" height="28" viewBox="0 0 36 36"><path fill="${COLOR.poop}" d="M7 32C1 32 1 24 7 22C3 18 7 13 12 13C9 9 15 7 17 3C18 1 18 0 18 0C25 4 27 9 24 13C30 13 33 18 29 22C36 24 35 32 29 32Z"/><ellipse cx="13" cy="21" rx="4" ry="5" fill="${COLOR.text}"/><ellipse cx="23" cy="21" rx="4" ry="5" fill="${COLOR.text}"/><path d="M9 15L15 17M21 17L27 15" fill="none" stroke="${blend(COLOR.bg, 0.45, COLOR.poop)}" stroke-width="2" stroke-linecap="round"/><circle cx="14" cy="22" r="2" fill="${COLOR.side}"/><circle cx="22" cy="22" r="2" fill="${COLOR.side}"/><path d="M13 30Q18 25 23 30" fill="none" stroke="${COLOR.text}" stroke-width="2" stroke-linecap="round"/></svg>`;
+
 // FACEIT's rating chip: the figure bold in its tier's colour on a faint tint, over a bar filled from 0.6 to 1.6.
 function ratingChip(rating: number): string {
   const tier = ratingPaint(rating);
@@ -113,6 +118,13 @@ function ratingChip(rating: number): string {
     `<div style="display:flex;font-size:26px;font-weight:700;${figure}">${formatRating(rating)}</div>` +
     `<div style="display:flex;width:50px;height:4px;border-radius:2px;background:${paint(track)}">` +
     `<div style="display:flex;width:${fill}%;height:4px;border-radius:2px;background:${paint(tier)}"></div></div></div>`;
+}
+
+// The rating tint fades across both panels; missing ratings keep the neutral background.
+function rowFade(rating: number | null, from: number, to: number): string {
+  if (rating === null) return "";
+  const color = rating >= 1.8 ? COLOR.best : rating >= 1.3 ? COLOR.up : rating >= 0.9 ? COLOR.muted : COLOR.down;
+  return `;background-image:linear-gradient(90deg,${tint(color, from)},${tint(color, to)})`;
 }
 
 // The figures as both renderers print them: "1.62", "+6.80%", "↑25" / "↓23" / "±0".
@@ -165,15 +177,12 @@ function avatar(row: ResultRow, src: string | null): string {
 }
 
 // The avatar, then the nickname in bold with the MVP star beside it, and under it the Elo and this match's change.
-function playerCell(row: ResultRow, mvp: boolean, width: number, src: string | null): string {
+function playerCell(row: ResultRow, lowest: boolean, width: number, src: string | null): string {
   const nickWidth = width - AVATAR - AVATAR_GAP;
-  const room = mvp ? nickWidth - MVP_ROOM : nickWidth;
+  const room = row.mvp || lowest ? nickWidth - BADGE_ROOM : nickWidth;
   const nick = `<div style="display:flex;font-size:${nickSize(row.nickname, room)}px;font-weight:700;max-width:${room}px;` +
     `overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${escapeHtml(row.nickname)}</div>`;
-  const badge = mvp
-    ? `<svg width="28" height="28" viewBox="0 0 24 24"><polygon points="${STAR}" fill="${COLOR.best}" ` +
-      `stroke="${COLOR.best}" stroke-width="2.5" stroke-linejoin="round"/></svg>`
-    : "";
+  const badge = row.mvp ? MVP_BADGE : lowest ? LOW_RATING_BADGE : "";
   const change = row.eloChange;
   const arrow = change === null ? "" : eloArrow(change);
   const eloLine = row.eloAfter === null ? "" :
@@ -191,6 +200,8 @@ function table(result: MatchResult, has: HasImage): string {
   const rated = rows.some(r => r.rating !== null);
   const cols = columns(rated);
   const room = nickRoom(cols);
+  const ratings = rows.flatMap(r => r.rating !== null ? [r.rating] : []);
+  const lowestRating = ratings.length > 1 ? Math.min(...ratings) : null;
 
   const cellStyle = (flex: number, first: boolean, extra: string) =>
     `display:flex;align-items:center;justify-content:${first ? "flex-start" : "center"};flex:${flex};` +
@@ -202,11 +213,11 @@ function table(result: MatchResult, has: HasImage): string {
   // A row is the tinted player block, the split, then the figures; the rule stops at the split.
   const statFlex = cols.reduce((sum, c) => sum + c.flex, 0);
   const rule = (ruled: boolean) => ruled ? `;border-top:1px solid ${COLOR.line}` : "";
-  const line = (player: string, figures: string, ruled: boolean, strip = false) =>
+  const line = (player: string, figures: string, ruled: boolean, strip = false, rating: number | null = null) =>
     `<div style="display:flex">` +
-    `<div style="display:flex;flex:${PLAYER_FLEX};background:${strip ? COLOR.strip : COLOR.side}${rule(ruled)}">${player}</div>` +
+    `<div style="display:flex;flex:${PLAYER_FLEX};background:${strip ? COLOR.strip : COLOR.side}${rowFade(rating, 0.10, 0.066)}${rule(ruled)}">${player}</div>` +
     `<div style="display:flex;width:${SPLIT}px;background:${COLOR.bg}"></div>` +
-    `<div style="display:flex;flex:${statFlex};background:${strip ? COLOR.strip : COLOR.panel}${rule(ruled)}">${figures}</div></div>`;
+    `<div style="display:flex;flex:${statFlex};background:${strip ? COLOR.strip : COLOR.panel}${rowFade(rating, 0.066, 0)}${rule(ruled)}">${figures}</div></div>`;
 
   // The header is a strip of its own, split from the rows by the same gap as the columns.
   const head = line(headCell(1, true, t("scorePlayer")), cols.map(c => headCell(c.flex, false, c.head)).join(""), false, true) +
@@ -217,7 +228,7 @@ function table(result: MatchResult, has: HasImage): string {
       const { style, body } = c.cell(row);
       return `<div style="${cellStyle(c.flex, false, `font-size:26px${style}`)}">${body}</div>`;
     }).join("");
-    return line(`<div style="${cellStyle(1, true, "")}">${playerCell(row, row.mvp, room, has(avatarSrc(i)) ? avatarSrc(i) : null)}</div>`, cells, i > 0);
+    return line(`<div style="${cellStyle(1, true, "")}">${playerCell(row, row.rating !== null && row.rating <= 0.6 && row.rating === lowestRating, room, has(avatarSrc(i)) ? avatarSrc(i) : null)}</div>`, cells, i > 0, false, row.rating);
   }).join("");
 
   return `<div style="display:flex;flex-direction:column;margin:16px;background:${COLOR.panel};border-radius:8px;overflow:hidden">${head}${body}</div>`;
