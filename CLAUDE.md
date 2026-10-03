@@ -486,7 +486,8 @@ this way: it is about the match, and has been seen to persist. The anonymous lim
 30s per IP**, and a catch-up poll of ten matches hit it on the sixth. A 429 therefore waits out the
 `Ratelimit-Retry-After` it carries (plus a second, capped at 30s) and tries again, up to three
 times — the poll runs in the background, and since the baseline was removed this is the only
-source of per-player Elo (a calibrating player's profile Elo feeds the team average, never a row). The fetch also runs **after** the `MIN_PLAYERS` gate, so a solo match
+source of per-player Elo (a calibrating player's profile Elo feeds the team average, never a row).
+The fetch also runs **after** the `MIN_PLAYERS` gate, so a solo match
 spends nothing from it. Swing is shown in percentage points; both it and rating are rounded to two places.
 
 Not every match is readable anonymously: one freshly finished match in thirteen sampled answered
@@ -646,11 +647,19 @@ capitals in dim grey were tried first. FACEIT's orange `#FF5500` appears once, a
 the banner; it is an accent, never a value colour. A negative swing is printed with a true minus `−`,
 as wide as the `+`, so the column lines up.
 
-The card has **one** green and red — FACEIT's own, `#6ADE43` and `#FF2727`, read from its
+Rating rows fade from 10% tint at the player edge to transparent at ADR, using gold from 1.80, green
+from 1.30, grey from 0.90 and the existing red below. Missing ratings stay untinted. The fade
+continues across the two panels with 6.6% opacity at their split. The lowest displayed rating, only
+at 0.60 or below, gets a sad poop SVG beside the nickname, ties sharing it, when at least two
+ratings exist. MVP takes priority and both badges reserve nickname space. Row fades reuse the
+existing palette; star shading and the poop outline are derived with `blend()`. The poop brown is
+the only new base colour.
+
+The card’s figures have **one** green and red — FACEIT's own, `#6ADE43` and `#FF2727`, read from its
 scoreboard's styles — shared by the ratings, the score, the swing and the Elo arrows; the ratings
 briefly had a palette of their own, and two reds side by side read as a mistake. **Gold is two things
 on FACEIT, and so here**: a 1.80+ rating is an orange-to-yellow gradient (`#FF7601` → `#FCD529`)
-across its figure, bar and chip, sampled from a FACEIT chip; the MVP star is a solid `#F3B346`. The
+across its figure, bar and chip, sampled from a FACEIT chip; the MVP star uses `#F3B346` with a warm edge and a lighter upper highlight. The
 gradient figure is `background-clip:text`, which satori supports.
 
 On a **win the highest FACEIT Rating gets a gold MVP star**, ties sharing it; a loss has none. The
