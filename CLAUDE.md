@@ -649,10 +649,12 @@ as wide as the `+`, so the column lines up.
 
 Rating rows fade from 10% tint at the player edge to transparent at ADR, using gold from 1.80, green
 from 1.30, grey from 0.90 and the existing red below. Missing ratings stay untinted. The fade
-continues across the two panels with 6.6% opacity at their split. The lowest displayed rating, only
+continues across the two panels with 6.6% opacity at their split; gold doubles both, 20% and 13.2%. The lowest displayed rating, only
 at 0.60 or below, gets a sad poop SVG beside the nickname, ties sharing it, when at least two
 ratings exist. MVP takes priority and both badges reserve nickname space. Row fades reuse the
-existing palette; star shading and the poop outline are derived with `blend()`. The poop brown is
+existing palette. Gold fades the rating's own orange-to-yellow across the player panel, then yellow
+across the figures, at double strength — any yellow at 10% reads olive on near-black, and the star's
+`best` faded muddy. Star shading and the poop outline are derived with `blend()`. The poop brown is
 the only new base colour.
 
 The card’s figures have **one** green and red — FACEIT's own, `#6ADE43` and `#FF2727`, read from its
