@@ -121,10 +121,13 @@ function ratingChip(rating: number): string {
 }
 
 // The rating tint fades across both panels; missing ratings keep the neutral background.
-function rowFade(rating: number | null, from: number, to: number): string {
+function rowFade(rating: number | null, from: number, to: number, lead: boolean): string {
   if (rating === null) return "";
-  const color = rating >= 1.8 ? COLOR.best : rating >= 1.3 ? COLOR.up : rating >= 0.9 ? COLOR.muted : COLOR.down;
-  return `;background-image:linear-gradient(90deg,${tint(color, from)},${tint(color, to)})`;
+  const tier = rating >= 1.8 ? ratingPaint(rating) : [rating >= 1.3 ? COLOR.up : rating >= 0.9 ? COLOR.muted : COLOR.down];
+  // Gold is the rating's orange-to-yellow, across the player panel, at double strength: yellow alone fades olive.
+  const k = tier.length > 1 ? 2 : 1;
+  const [start, end] = [lead ? tier[0]! : tier.at(-1)!, tier.at(-1)!];
+  return `;background-image:linear-gradient(90deg,${tint(start, from * k)},${tint(end, to * k)})`;
 }
 
 // The figures as both renderers print them: "1.62", "+6.80%", "↑25" / "↓23" / "±0".
@@ -215,9 +218,9 @@ function table(result: MatchResult, has: HasImage): string {
   const rule = (ruled: boolean) => ruled ? `;border-top:1px solid ${COLOR.line}` : "";
   const line = (player: string, figures: string, ruled: boolean, strip = false, rating: number | null = null) =>
     `<div style="display:flex">` +
-    `<div style="display:flex;flex:${PLAYER_FLEX};background:${strip ? COLOR.strip : COLOR.side}${rowFade(rating, 0.10, 0.066)}${rule(ruled)}">${player}</div>` +
+    `<div style="display:flex;flex:${PLAYER_FLEX};background:${strip ? COLOR.strip : COLOR.side}${rowFade(rating, 0.10, 0.066, true)}${rule(ruled)}">${player}</div>` +
     `<div style="display:flex;width:${SPLIT}px;background:${COLOR.bg}"></div>` +
-    `<div style="display:flex;flex:${statFlex};background:${strip ? COLOR.strip : COLOR.panel}${rowFade(rating, 0.066, 0)}${rule(ruled)}">${figures}</div></div>`;
+    `<div style="display:flex;flex:${statFlex};background:${strip ? COLOR.strip : COLOR.panel}${rowFade(rating, 0.066, 0, false)}${rule(ruled)}">${figures}</div></div>`;
 
   // The header is a strip of its own, split from the rows by the same gap as the columns.
   const head = line(headCell(1, true, t("scorePlayer")), cols.map(c => headCell(c.flex, false, c.head)).join(""), false, true) +
