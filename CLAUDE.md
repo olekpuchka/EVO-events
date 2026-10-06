@@ -16,7 +16,7 @@ src/adapters/       one module per external system: db (SQLite), faceit (HTTP, o
 src/view/           data → strings: html, i18n, commands, render, card, eventtime, alltag, birthday, prompt, phrase
 scripts/            dev-only, not in the image: card-preview
 assets/             the fonts and map banners the result card is drawn with
-src/handlers/       Telegram entry points: events, results, birthdays, guards
+src/handlers/       Telegram entry points: events, results, birthdays, guards; match-result builds a post's figures
 ```
 
 **Exactly one module talks to each external system**: nothing outside `adapters/faceit.ts` calls
@@ -438,7 +438,8 @@ Matches post **oldest first**. They were sorted by member count first, but only 
 match would own a swing it shared with a solo game — a question exact per-match Elo no longer asks.
 
 The table is **three columns** — player with Elo, rating with swing, K/D/A with ADR — each cell
-holding two lines under a header naming both. Four and five columns wrapped every cell on a phone,
+holding two lines under a header naming both. KAST joins ADR's line (`98.6 · 79%`) rather than
+taking a fourth column. Four and five columns wrapped every cell on a phone,
 headers included, and Telegram's rich table has no width control; `is_compact` (smaller padding) is
 the only lever it offers, and is on. Rows sort by rating, ADR breaking ties.
 
@@ -547,7 +548,7 @@ typed by hand in `src/node-tls-client.d.ts` — re-check them on a `node-tls-cli
 
 A posted match is a **PNG**, sent with `sendPhoto`, with the FACEIT link in the caption — a link
 drawn inside an image cannot be tapped. The rich table fits three two-line columns into a phone; an
-image is not bound by that, so the card spells out five: player, Rating, Swing, K/D/A, ADR.
+image is not bound by that, so the card spells out six: player, Rating, Swing, K/D/A, ADR, KAST.
 
 The path is `buildMatchResult` → `renderCard` (`adapters/card.ts`), which draws the markup with
 `cardMarkup` (`view/card.ts`, pure, reading the `MatchResult` directly) → a **child process** running
@@ -675,7 +676,8 @@ round-joined stroke gives and a font's ★ cannot. **Swing** is green or red by 
 (`+0.00%`) is grey, like an Elo `±0`. FACEIT leaves most swings white, and that was tried — white with
 red for a big drop, a ±2% band coloured both ways, gains alone in green — but every version lost the
 at-a-glance read of who gained and who lost. **ADR** is plain. No scoreboard from faceit.com, no
-Rating or Swing column and no MVP — the rich table's rule.
+Rating, Swing or KAST column and no MVP — the rich table's rule. KAST is the same scoreboard's
+`stats.kast`, a fraction shown as a whole percentage.
 
 **There is no match header row** — the map banner is the header. The score is set at 92 px across a
 190 px banner, green for a win and red for a loss, with the team Elo pair small and bold under it
@@ -703,6 +705,12 @@ writes a sample `card.html` and `card.png` to `card-preview/` on Mirage; `-- --m
 another bundled map and `-- --send=<chat id>` posts it with `BOT_TOKEN`. The preview stays offline
 and shows letter discs unless `-- --avatars` asks it to look the sample nicknames up on FACEIT —
 which is why `FaceitPlayer` declares `avatar`, though the bot itself reads it from the match roster.
+
+`-- --match=<id or room URL> --players=a,b` runs a real match through the bot's own
+`buildMatchResult`, so the preview cannot drift from the post — a hand-copied builder showed every
+player and starred a non-member. That is why the builder lives in `handlers/match-result.ts`, apart
+from `results.ts`: it imports no `db.ts`, so the preview opens no database. `--players` stands in for
+the `members` table.
 
 ## FACEIT links
 

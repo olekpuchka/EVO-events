@@ -169,7 +169,7 @@ function siteSession(): Promise<Session> {
 // Cloudflare's "Just a moment..." page rather than an answer from faceit.com.
 export class ChallengeError extends Error {}
 
-// Rating, swing and match-time Elo by player id, first map only — the open API's stats read only
+// Rating, swing, KAST and match-time Elo by player id, first map only — the open API's stats read only
 // rounds[0] too. The anonymous limit is 5 requests per 30s, so a 429 waits out the slot it names —
 // the poll is in the background, and this is the only source of per-player Elo.
 export async function getMatchScoreboard(matchId: string): Promise<Map<string, ScoreboardLine>> {
@@ -196,7 +196,8 @@ export async function getMatchScoreboard(matchId: string): Promise<Map<string, S
       const elo = typeof p.elo === "number" && typeof p.elo_delta === "number"
         ? { before: p.elo, after: p.elo + p.elo_delta, change: p.elo_delta }
         : null;
-      lines.set(p.player_id, { rating, swing, elo, calibrating: p.is_calibrating === true });
+      const kast = typeof p.stats?.kast === "number" ? p.stats.kast : null;
+      lines.set(p.player_id, { rating, swing, kast, elo, calibrating: p.is_calibrating === true });
     }
   }
   return lines;

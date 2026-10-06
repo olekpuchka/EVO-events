@@ -124,18 +124,19 @@ export interface FaceitScoreboard {
           elo?: number | null;
           elo_delta?: number | null;
           is_calibrating?: boolean;
-          stats?: { faceit_rating?: number; faceit_rating_swing?: number };
+          stats?: { faceit_rating?: number; faceit_rating_swing?: number; kast?: number };
         }[];
       }[];
     };
   };
 }
 
-// One player's line from that scoreboard. Swing is a fraction, not percentage points; `elo` is
+// One player's line from that scoreboard. Swing and KAST are fractions, not percentages; `elo` is
 // null when the scoreboard carries no Elo for them — always so while `calibrating`.
 export interface ScoreboardLine {
   rating: number;
   swing: number;
+  kast: number | null;
   elo: { before: number; after: number; change: number } | null;
   calibrating: boolean;
 }
@@ -184,6 +185,8 @@ export interface ResultRow {
   // Rating and swing (in percentage points) are rounded to 2 places once, where the row is built.
   rating: number | null;
   swing: number | null;
+  // KAST as a whole percentage, from the same scoreboard; null drops it like the rating.
+  kast: number | null;
   // Elo after the match, and the match's change.
   eloAfter: number | null;
   eloChange: number | null;

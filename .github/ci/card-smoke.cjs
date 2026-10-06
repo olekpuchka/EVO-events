@@ -4,7 +4,7 @@
 const { readFileSync } = require("node:fs");
 import("../../src/adapters/card.ts").then(async ({ renderCard }) => {
   const avatar = readFileSync(require.resolve("../../assets/maps/de_mirage.jpg"));
-  const row = { nickname: "smoke", kda: "20/15/5", adr: "90.0", rating: 1.2, swing: 1, eloAfter: 2000, eloChange: 25, mvp: true, avatar: null };
+  const row = { nickname: "smoke", kda: "20/15/5", adr: "90.0", kast: 75, rating: 1.2, swing: 1, eloAfter: 2000, eloChange: 25, mvp: true, avatar: null };
   const result = { won: true, ourScore: "13", theirScore: "9", elo: null, mapId: null, matchId: "1-smoke", rows: [row, { ...row, nickname: "other", mvp: false }] };
   // renderCard hides a failed avatar behind its retry and a bad one behind a drop; either fails the smoke.
   let degraded = "";
