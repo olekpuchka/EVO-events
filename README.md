@@ -34,7 +34,7 @@ stands as its own word. The tag is dropped and the rest becomes the event text.
 teams' average Elo (ours outlined in the result's colour; a player still in placement matches counts at their
 current profile Elo), and a table sorted by FACEIT rating — each player with their FACEIT avatar (or their
 initial, without one), their Elo and that match's change (↑25 / ↓23 / ±0), their rating (gold from
-1.80, green from 1.30, white from 0.90, red below) and swing, and their K/D/A and ADR. On a win the
+1.80, green from 1.30, white from 0.90, red below) and swing, and their K/D/A, ADR and KAST. On a win the
 team's top rating gets a highlighted gold MVP star — judged across all five, so a teammate from outside the group
 topping it means no star. Rows have a subtle rating-coloured tint fading toward ADR — 10%, or 20% for a gold
 rating, which fades FACEIT's orange to yellow. The
@@ -47,9 +47,9 @@ off the group's feed.
 The map behind the score is drawn from HD screenshots bundled in [`assets/maps/`](assets/maps/), since
 FACEIT's own map images are too small for the banner; a map not in there gets a plain banner.
 
-Rating, swing and the exact per-match Elo change come from faceit.com's own scoreboard, which the
+Rating, swing, KAST and the exact per-match Elo change come from faceit.com's own scoreboard, which the
 open FACEIT API doesn't carry. That fetch is **best-effort**: when it fails, the post still goes out,
-without the Rating column, the Elo lines or the teams' Elo.
+without the Rating and KAST columns, the Elo lines or the teams' Elo.
 
 **Birthdays.** Members add their own date with `/birthday 25-08-1990`, and on the day the bot posts
 a short toast written for them — 70 words at most, and the only AI-written message the bot sends.
@@ -104,7 +104,9 @@ pre-installed instead. `npm run dev` restarts on change; `npm run typecheck` is 
 check. `npm run card:preview` draws a sample result card into `card-preview/` (`card.html` and
 `card.png`) on Mirage, offline, so the avatars show as initials; `-- --avatars` fetches the sample
 nicknames' real FACEIT avatars with `FACEIT_API_KEY`, `-- --map-id=de_nuke` picks another map, and
-`-- --send=<chat id>` with `BOT_TOKEN` set posts it to a chat.
+`-- --send=<chat id>` with `BOT_TOKEN` set posts it to a chat. `-- --match=<match id or room URL>
+--players=nick1,nick2` draws a real match instead, exactly as the bot would post it, treating the
+named players as linked members (the first team, without `--players`). The script reads `.env`.
 
 **The mention list starts empty.** The Bot API cannot enumerate a group's members, so people add
 themselves with `/unmute` — until someone does, `@all` has nobody to mention and says so.

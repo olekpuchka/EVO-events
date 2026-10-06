@@ -35,8 +35,8 @@ const plain = (text: string, color = ""): Cell => ({
   body: `<div style="display:flex">${escapeHtml(text)}</div>`,
 });
 
-// Rating and Swing only when faceit.com's scoreboard answered — the same rule as the rich table.
-function columns(rated: boolean): Column[] {
+// Rating, Swing and KAST only when faceit.com's scoreboard answered — the same rule as the rich table.
+function columns(rated: boolean, kasted: boolean): Column[] {
   return [
     ...(rated ? [
       { head: "Rating", flex: 1, cell: (r: ResultRow): Cell => r.rating === null ? plain("?") : { style: "", body: ratingChip(r.rating) } },
@@ -45,6 +45,7 @@ function columns(rated: boolean): Column[] {
     ] : []),
     { head: "K/D/A", flex: 1.3, cell: r => plain(r.kda) },
     { head: "ADR", flex: 1, cell: r => plain(r.adr) },
+    ...(kasted ? [{ head: "KAST", flex: 1, cell: (r: ResultRow) => plain(r.kast === null ? "?" : formatKast(r.kast)) }] : []),
   ];
 }
 
@@ -130,10 +131,11 @@ function rowFade(rating: number | null, from: number, to: number, lead: boolean)
   return `;background-image:linear-gradient(90deg,${tint(start, from * k)},${tint(end, to * k)})`;
 }
 
-// The figures as both renderers print them: "1.62", "+6.80%", "↑25" / "↓23" / "±0".
+// The figures as both renderers print them: "1.62", "+6.80%", "75%", "↑25" / "↓23" / "±0".
 export const formatRating = (rating: number): string => rating.toFixed(2);
 // A true minus, as wide as the plus, so a column of swings lines up.
 export const formatSwing = (swing: number): string => `${swing >= 0 ? "+" : "−"}${Math.abs(swing).toFixed(2)}%`;
+export const formatKast = (kast: number): string => `${kast}%`;
 export const eloArrow = (change: number): string => change > 0 ? `↑${change}` : change < 0 ? `↓${-change}` : "±0";
 const eloText = (elo: number): string => `${elo} Elo`;
 export const eloPairText = (elo: EloPair): string => `${eloText(elo.ours)} vs ${eloText(elo.theirs)}`;
@@ -201,7 +203,7 @@ function playerCell(row: ResultRow, lowest: boolean, width: number, src: string 
 function table(result: MatchResult, has: HasImage): string {
   const { rows } = result;
   const rated = rows.some(r => r.rating !== null);
-  const cols = columns(rated);
+  const cols = columns(rated, rows.some(r => r.kast !== null));
   const room = nickRoom(cols);
   const ratings = rows.flatMap(r => r.rating !== null ? [r.rating] : []);
   const lowestRating = ratings.length > 1 ? Math.min(...ratings) : null;
