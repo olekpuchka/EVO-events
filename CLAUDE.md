@@ -477,13 +477,13 @@ Chrome derives the GREASE brand (`Not?A_Brand`) and the brand order from its maj
 It is **best-effort by design**. A failed fetch logs `[faceit] scoreboard fetch failed` and the post
 ships without the Rating column and without Elo lines.
 
-The one exception is a **Cloudflare challenge** — the "Just a moment..." page, recognised by
-`cf-mitigated: challenge` or its title and thrown as `ChallengeError`. It is a verdict on the
+There are two exceptions, both **held** rather than shipped bare: `err_f0`, covered further down,
+and a **Cloudflare challenge** — the "Just a moment..." page, recognised by `cf-mitigated:
+challenge` or its title and thrown as `ChallengeError`. A challenge is a verdict on the
 server's IP at that moment, not on the match, so it is left to fail the whole post: nothing is
 marked posted and the poll's ordinary retry tries again every `FACEIT_POLL_MINUTES`. There is no
 separate deadline — a challenge lasting past the 24-hour candidate window loses the match
-silently, which was judged better than shipping it without figures. `403 err_f0` is *not* treated
-this way: it is about the match, and has been seen to persist. The anonymous limit is **5 requests per
+silently, which was judged better than shipping it without figures. The anonymous limit is **5 requests per
 30s per IP**, and a catch-up poll of ten matches hit it on the sixth. A 429 therefore waits out the
 `Ratelimit-Retry-After` it carries (plus a second, capped at 30s) and tries again, up to three
 times — the poll runs in the background, and since the baseline was removed this is the only
@@ -493,7 +493,25 @@ spends nothing from it. Swing is shown in percentage points; both it and rating 
 
 Not every match is readable anonymously: one freshly finished match in thirteen sampled answered
 `403 err_f0` and kept doing so, while matches Cloudflare had never cached (`MISS`) served fine.
-The cause is unknown, which is one more reason the fetch never holds a post back.
+The cause is unknown.
+
+`err_f0` is therefore **held once**: thrown as `DeniedError`, it fails the post like a challenge
+the first time, the match goes into `deniedOnce`, and the next poll fetches it again with no hold —
+so the scoreboard gets exactly one retry, then the post ships without figures. Unlike a challenge it
+is about the match and has been seen to persist, so more retries mostly bought delay. A count rather
+than a time window, because a window depends on the poll interval and on when the match was first
+seen: three polls was a dozen hours under a long `FACEIT_POLL_MINUTES`, and none at all for a match
+first seen after downtime. The set is in memory, so a restart between the two attempts grants one
+more retry; harmless.
+
+An `err_f0` hold **stops the poll** rather than skipping to the next match: skipping posted the
+newer matches first and the held one landed below them later. The cost is knowing — one held match
+delays every later one in the chat, readable or not, by one poll — and is bounded by the single
+retry. A challenge does **not** stop the poll: it has no retry cap, so stopping would let one
+match block the chat for up to the 24-hour window, and it usually hits every match anyway. Stopping
+also means a held match is the only scoreboard request the poll spends; the open API's stats and
+details are fetched again each poll, but those sit outside faceit.com's anonymous limit.
+`buildMatchResult` holds only when asked (`holdDenied`) — the preview never does.
 
 The same scoreboard carries **match-time Elo**, and is the only source of it: `elo` is Elo *going
 into* the match — checked across three consecutive matches, where each `elo + elo_delta` was the

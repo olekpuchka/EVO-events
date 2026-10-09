@@ -49,7 +49,10 @@ FACEIT's own map images are too small for the banner; a map not in there gets a 
 
 Rating, swing, KAST and the exact per-match Elo change come from faceit.com's own scoreboard, which the
 open FACEIT API doesn't carry. That fetch is **best-effort**: when it fails, the post still goes out,
-without the Rating and KAST columns, the Elo lines or the teams' Elo.
+without the Rating and KAST columns, the Elo lines or the teams' Elo. Two cases are held instead. A
+match faceit.com withholds from anonymous callers (`403 err_f0`) is held, along with any match
+played after it, and retried once on the next poll, then posted without them. A Cloudflare challenge
+holds its match until the challenge clears.
 
 **Birthdays.** Members add their own date with `/birthday 25-08-1990`, and on the day the bot posts
 a short toast written for them — 70 words at most, and the only AI-written message the bot sends.
