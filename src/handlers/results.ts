@@ -3,7 +3,7 @@
 // Telegram UX — and shares no state with the event lifecycle.
 
 import { getFaceitMembers, hasPostedMatch, markMatchPosted } from "../adapters/db.ts";
-import { getRecentMatches, getMatchStats, getMatchDetails, getAvatar, matchRoomUrl } from "../adapters/faceit.ts";
+import { getRecentMatches, getMatchStats, getMatchDetails, getAvatar, matchRoomUrl, DeniedError } from "../adapters/faceit.ts";
 import { buildMatchResult } from "./match-result.ts";
 import { renderCard, bundledMap } from "../adapters/card.ts";
 import { cardCaption, eloArrow, eloPairText, formatKast, formatRating, formatSwing } from "../view/card.ts";
@@ -14,6 +14,9 @@ import type { ResultRow, MatchResult } from "../types.ts";
 
 // The exact block-array type sendRichMessage accepts, so buildResultBlocks stays in sync with grammy.
 type RichBlocks = NonNullable<NonNullable<Parameters<Api["sendRichMessage"]>[1]>["blocks"]>;
+
+// Matches already held once for err_f0, by chat; the next poll posts them without figures.
+const deniedOnce = new Set<string>();
 
 // Non-breaking spaces keep "1234 Elo ↑25" on one line, so the narrow player cell never wraps past two.
 const eloLine = (after: number, change: number | null): string =>
@@ -98,6 +101,7 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
   const sortedMatches = [...candidates.entries()].sort((a, b) => a[1] - b[1]);
 
   for (const [matchId, finishedAt] of sortedMatches) {
+    const heldKey = `${chatId}:${matchId}`;
     let result: MatchResult | null;
     try {
       const stats = await getMatchStats(matchId);
@@ -107,14 +111,21 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
         if (!details || details.status !== "FINISHED" || now - finishedAt > 30 * 60) markMatchPosted(chatId, matchId);
         continue;
       }
-      result = await buildMatchResult(stats, registeredIds, matchId);
+      result = await buildMatchResult(stats, registeredIds, matchId, !deniedOnce.has(heldKey));
     } catch (err) {
+      // A held err_f0 match stops the poll, so the matches after it still post in play order.
+      if (err instanceof DeniedError) {
+        deniedOnce.add(heldKey);
+        console.log("[faceit] scoreboard denied (err_f0), held for one poll:", err.message);
+        break;
+      }
       console.error("[faceit] poll fetch failed:", (err as Error).message);
       continue;
     }
     // Too few of us, or no details: never posted, so marked done.
     if (!result) {
       markMatchPosted(chatId, matchId);
+      deniedOnce.delete(heldKey);
       continue;
     }
 
@@ -126,6 +137,7 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
       continue;
     }
     markMatchPosted(chatId, matchId);
+    deniedOnce.delete(heldKey);
     console.log("[faceit] auto-posted result");
   }
 }

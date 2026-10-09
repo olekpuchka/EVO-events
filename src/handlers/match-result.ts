@@ -1,7 +1,7 @@
 // Finished FACEIT match → the MatchResult both renderers draw. Apart from results.ts because it
 // imports no database, so scripts/card-preview.ts can build a real match through it.
 
-import { getMatchDetails, getMatchScoreboard, getPlayerById, ChallengeError } from "../adapters/faceit.ts";
+import { getMatchDetails, getMatchScoreboard, getPlayerById, ChallengeError, DeniedError } from "../adapters/faceit.ts";
 import type { FaceitMatchStats, FaceitStatPlayer, EloPair, ResultRow, MatchResult } from "../types.ts";
 
 // A match posts only if this many of us were on our team.
@@ -13,7 +13,8 @@ const round2 = (n: number): number => Math.round(Number((n * 100).toPrecision(12
 export async function buildMatchResult(
   stats: FaceitMatchStats,
   registeredIds: Set<string>,
-  matchId: string
+  matchId: string,
+  holdDenied = false
 ): Promise<MatchResult | null> {
   const round = stats.rounds?.[0];
   if (!round) return null;
@@ -40,9 +41,10 @@ export async function buildMatchResult(
   const matchDetails = await getMatchDetails(matchId);
   if (!matchDetails) return null;
 
-  // Best-effort: a failed scoreboard drops Rating and Elo. A Cloudflare challenge is rethrown, so the poll retries.
+  // Best-effort: a failed scoreboard drops Rating and Elo. A challenge, or err_f0 while held, is rethrown so the poll retries.
   const board = await getMatchScoreboard(matchId).catch(err => {
     if (err instanceof ChallengeError) throw err;
+    if (err instanceof DeniedError && holdDenied) throw err;
     console.error("[faceit] scoreboard fetch failed:", (err as Error).message);
     return null;
   });
