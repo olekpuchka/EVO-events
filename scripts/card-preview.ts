@@ -44,6 +44,7 @@ async function realMatch(ref: string): Promise<MatchResult> {
   const ours = named.size ? teams.flatMap(t => t.players).filter(p => named.has(p.nickname.toLowerCase())) : teams[0]!.players;
   const built = await buildMatchResult(stats, new Set(ours.map(p => p.player_id)), matchId);
   if (!built) throw new Error("not postable: fewer than two of --players on one team");
+  if (built.scoreboardProblem) console.error("scoreboard:", built.scoreboardProblem);
   return built;
 }
 
