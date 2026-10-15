@@ -3,7 +3,8 @@
 // Telegram UX — and shares no state with the event lifecycle.
 
 import { getFaceitMembers, hasPostedMatch, markMatchPosted } from "../adapters/db.ts";
-import { getRecentMatches, getMatchStats, getMatchDetails, getAvatar, matchRoomUrl, DeniedError } from "../adapters/faceit.ts";
+import { FACEIT_POLL_MINUTES } from "../config.ts";
+import { getRecentMatches, getMatchStats, getMatchDetails, getAvatar, matchRoomUrl } from "../adapters/faceit.ts";
 import { buildMatchResult } from "./match-result.ts";
 import { renderCard, bundledMap } from "../adapters/card.ts";
 import { cardCaption, eloArrow, eloPairText, formatKast, formatRating, formatSwing } from "../view/card.ts";
@@ -15,8 +16,11 @@ import type { ResultRow, MatchResult } from "../types.ts";
 // The exact block-array type sendRichMessage accepts, so buildResultBlocks stays in sync with grammy.
 type RichBlocks = NonNullable<NonNullable<Parameters<Api["sendRichMessage"]>[1]>["blocks"]>;
 
-// Matches already held once for err_f0, by chat; the next poll posts them without figures.
-const deniedOnce = new Set<string>();
+// How long after finishing a match is still a candidate.
+const WINDOW_SECONDS = 24 * 60 * 60;
+
+// Matches already held once for a failed scoreboard, by chat; the next poll posts them without figures.
+const heldOnce = new Set<string>();
 
 // Non-breaking spaces keep "1234 Elo ↑25" on one line, so the narrow player cell never wraps past two.
 const eloLine = (after: number, change: number | null): string =>
@@ -86,7 +90,7 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
     }
     for (const match of result.value ?? []) {
       if (match.status !== "finished") continue;
-      if (now - match.finished_at > 24 * 60 * 60) continue;
+      if (now - match.finished_at > WINDOW_SECONDS) continue;
       if (hasPostedMatch(chatId, match.match_id)) continue;
       candidates.set(match.match_id, match.finished_at);
     }
@@ -100,6 +104,8 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
   // Oldest first, so several matches from one session post in the order they were played.
   const sortedMatches = [...candidates.entries()].sort((a, b) => a[1] - b[1]);
 
+  // Set once a match is held: the rest are still tried, so each scoreboard gets its own hold, but post after it.
+  let holding = false;
   for (const [matchId, finishedAt] of sortedMatches) {
     const heldKey = `${chatId}:${matchId}`;
     let result: MatchResult | null;
@@ -111,23 +117,27 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
         if (!details || details.status !== "FINISHED" || now - finishedAt > 30 * 60) markMatchPosted(chatId, matchId);
         continue;
       }
-      result = await buildMatchResult(stats, registeredIds, matchId, !deniedOnce.has(heldKey));
+      result = await buildMatchResult(stats, registeredIds, matchId);
     } catch (err) {
-      // A held err_f0 match stops the poll, so the matches after it still post in play order.
-      if (err instanceof DeniedError) {
-        deniedOnce.add(heldKey);
-        console.log("[faceit] scoreboard denied (err_f0), held for one poll:", err.message);
-        break;
-      }
       console.error("[faceit] poll fetch failed:", (err as Error).message);
       continue;
     }
     // Too few of us, or no details: never posted, so marked done.
     if (!result) {
       markMatchPosted(chatId, matchId);
-      deniedOnce.delete(heldKey);
+      heldOnce.delete(heldKey);
       continue;
     }
+
+    // Held once, unless near the window's end, where the next poll would no longer see it.
+    if (result.scoreboardProblem && !heldOnce.has(heldKey) && now - finishedAt < WINDOW_SECONDS - 2 * FACEIT_POLL_MINUTES * 60) {
+      heldOnce.add(heldKey);
+      holding = true;
+      console.log("[faceit] scoreboard failed, held for one poll:", result.scoreboardProblem);
+      continue;
+    }
+    if (holding) continue;
+    if (result.scoreboardProblem) console.error("[faceit] scoreboard fetch failed:", result.scoreboardProblem);
 
     // Not marked posted on failure, so the next poll retries.
     try {
@@ -137,7 +147,7 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
       continue;
     }
     markMatchPosted(chatId, matchId);
-    deniedOnce.delete(heldKey);
+    heldOnce.delete(heldKey);
     console.log("[faceit] auto-posted result");
   }
 }

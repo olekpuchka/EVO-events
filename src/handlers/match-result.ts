@@ -1,7 +1,7 @@
 // Finished FACEIT match → the MatchResult both renderers draw. Apart from results.ts because it
 // imports no database, so scripts/card-preview.ts can build a real match through it.
 
-import { getMatchDetails, getMatchScoreboard, getPlayerById, ChallengeError, DeniedError } from "../adapters/faceit.ts";
+import { getMatchDetails, getMatchScoreboard, getPlayerById, ChallengeError } from "../adapters/faceit.ts";
 import type { FaceitMatchStats, FaceitStatPlayer, EloPair, ResultRow, MatchResult } from "../types.ts";
 
 // A match posts only if this many of us were on our team.
@@ -13,8 +13,7 @@ const round2 = (n: number): number => Math.round(Number((n * 100).toPrecision(12
 export async function buildMatchResult(
   stats: FaceitMatchStats,
   registeredIds: Set<string>,
-  matchId: string,
-  holdDenied = false
+  matchId: string
 ): Promise<MatchResult | null> {
   const round = stats.rounds?.[0];
   if (!round) return null;
@@ -41,20 +40,23 @@ export async function buildMatchResult(
   const matchDetails = await getMatchDetails(matchId);
   if (!matchDetails) return null;
 
-  // Best-effort: a failed scoreboard drops Rating and Elo. A challenge, or err_f0 while held, is rethrown so the poll retries.
+  // Best-effort: a failed scoreboard drops Rating and Elo and is reported, not thrown; a challenge is rethrown.
+  let scoreboardProblem: string | undefined;
   const board = await getMatchScoreboard(matchId).catch(err => {
     if (err instanceof ChallengeError) throw err;
-    if (err instanceof DeniedError && holdDenied) throw err;
-    console.error("[faceit] scoreboard fetch failed:", (err as Error).message);
+    scoreboardProblem = (err as Error).message;
     return null;
   });
+  // A fresh match can answer 200 before faceit.com has worked out its figures; the MVP needs our whole team's.
+  const unrated = board ? ourTeam.players.filter(p => !board.has(p.player_id)) : [];
+  if (unrated.length) scoreboardProblem = `faceit.com 200: no rating for ${unrated.map(p => p.nickname).join(", ")}`;
 
   // Display rows, by rating desc. Unrated players sink; ADR breaks ties, and orders all when unrated.
   const ratingOf = (p: FaceitStatPlayer): number => board?.get(p.player_id)?.rating ?? -Infinity;
   const adrOf = (p: FaceitStatPlayer): number => Number(p.player_stats?.ADR ?? 0);
-  // The MVP is judged on the full team: a non-member topping it means no star on the card.
+  // The MVP is judged on the full team: a non-member topping it, or anyone unrated, means no star on the card.
   const teamRatings = ourTeam.players.flatMap(p => { const r = board?.get(p.player_id); return r ? [round2(r.rating)] : []; });
-  const mvpRating = won && teamRatings.length ? Math.max(...teamRatings) : null;
+  const mvpRating = won && teamRatings.length === ourTeam.players.length ? Math.max(...teamRatings) : null;
   const ourFaction = Object.values(matchDetails.teams ?? {}).find(f => f.roster?.some(p => registeredIds.has(p.player_id)));
   const avatarOf = new Map(ourFaction?.roster?.map(p => [p.player_id, p.avatar || null]));
   const resultRows: ResultRow[] = registered
@@ -101,5 +103,5 @@ export async function buildMatchResult(
   const [ourElo, theirElo] = await Promise.all([teamElo(ourTeam.players), teamElo(theirTeam?.players)]);
   const elo: EloPair | null = ourElo !== null && theirElo !== null ? { ours: ourElo, theirs: theirElo } : null;
 
-  return { won, ourScore, theirScore, elo, mapId, matchId, rows: resultRows };
+  return { won, ourScore, theirScore, elo, mapId, matchId, rows: resultRows, scoreboardProblem };
 }

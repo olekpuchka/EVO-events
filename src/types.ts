@@ -205,4 +205,6 @@ export interface MatchResult {
   mapId: string | null;
   matchId: string;
   rows: ResultRow[];
+  // Why faceit.com's figures are missing or partial; the poll holds such a match once.
+  scoreboardProblem?: string;
 }

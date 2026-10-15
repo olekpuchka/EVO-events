@@ -474,11 +474,11 @@ challenge ("Just a moment...") on a fingerprint two years stale. `sec-ch-ua` mus
 Chrome derives the GREASE brand (`Not?A_Brand`) and the brand order from its major version, and
 131's string sent under a 152 user agent is itself a bot signal.
 
-It is **best-effort by design**. A failed fetch logs `[faceit] scoreboard fetch failed` and the post
-ships without the Rating column and without Elo lines.
+It is **best-effort by design**, but not on the first failure: any failed fetch is **held once**
+(covered further down), and a failure with no hold left logs `[faceit] scoreboard fetch failed` and
+ships the post without the Rating column and without Elo lines.
 
-There are two exceptions, both **held** rather than shipped bare: `err_f0`, covered further down,
-and a **Cloudflare challenge** — the "Just a moment..." page, recognised by `cf-mitigated:
+The exception is a **Cloudflare challenge** — the "Just a moment..." page, recognised by `cf-mitigated:
 challenge` or its title and thrown as `ChallengeError`. A challenge is a verdict on the
 server's IP at that moment, not on the match, so it is left to fail the whole post: nothing is
 marked posted and the poll's ordinary retry tries again every `FACEIT_POLL_MINUTES`. There is no
@@ -495,23 +495,49 @@ Not every match is readable anonymously: one freshly finished match in thirteen 
 `403 err_f0` and kept doing so, while matches Cloudflare had never cached (`MISS`) served fine.
 The cause is unknown.
 
-`err_f0` is therefore **held once**: thrown as `DeniedError`, it fails the post like a challenge
-the first time, the match goes into `deniedOnce`, and the next poll fetches it again with no hold —
-so the scoreboard gets exactly one retry, then the post ships without figures. Unlike a challenge it
-is about the match and has been seen to persist, so more retries mostly bought delay. A count rather
-than a time window, because a window depends on the poll interval and on when the match was first
-seen: three polls was a dozen hours under a long `FACEIT_POLL_MINUTES`, and none at all for a match
-first seen after downtime. The set is in memory, so a restart between the two attempts grants one
-more retry; harmless.
+A fresh match can also answer **200 before faceit.com has computed its figures**: every player
+present, none with a rating. That once parsed to an empty map and shipped a bare card with no log line
+at all, while the same match read in full later. `buildMatchResult` therefore reports a scoreboard
+missing a rating for **anyone on our team** as a failed fetch, so a half-computed board is caught too.
+Our whole team rather than our members, because the MVP is judged across it (see **Result card**);
+the opponents are left out, so a missing figure there costs only the Elo pair. A player FACEIT never
+rates holds the match for a poll and then ships it with that row unrated and no MVP star, since the
+top can't be known; the log names who is missing. A payload with no players at all
+throws its own `scoreboard has no players` from `getMatchScoreboard`, so a schema change doesn't log
+as a timing problem.
 
-An `err_f0` hold **stops the poll** rather than skipping to the next match: skipping posted the
-newer matches first and the held one landed below them later. The cost is knowing — one held match
-delays every later one in the chat, readable or not, by one poll — and is bounded by the single
-retry. A challenge does **not** stop the poll: it has no retry cap, so stopping would let one
-match block the chat for up to the 24-hour window, and it usually hits every match anyway. Stopping
-also means a held match is the only scoreboard request the poll spends; the open API's stats and
-details are fetched again each poll, but those sit outside faceit.com's anonymous limit.
-`buildMatchResult` holds only when asked (`holdDenied`) — the preview never does.
+Every non-challenge failure is therefore **held once**. `buildMatchResult` never decides that: it
+builds best-effort and names what went wrong in `scoreboardProblem`, and `autoPostResult` holds — the
+match goes into `heldOnce`, and the next poll fetches it again and posts whatever it gets — so the
+scoreboard gets exactly one retry, then the post ships without figures. The builder once took a
+`holdDenied` flag and threw `DeniedError` through it, which put the poll's policy inside a builder
+the preview shares.
+`err_f0`, an unready scoreboard, a timeout, a 5xx and a 429 past its three waits are all the same
+case: a post with no figures is a real loss and nobody waits on it, so one poll's delay is cheap.
+It was `err_f0` alone at first (`DeniedError`), which held the failure seen to persist and shipped
+the transient ones bare on the first try — backwards. One retry, not more, because `err_f0` has been
+seen to persist and more retries mostly bought delay. A count rather than a time window, because a
+window depends on the poll interval and on when the match was first seen: three polls was a dozen
+hours under a long `FACEIT_POLL_MINUTES`, and none at all for a match first seen after downtime. The
+set is in memory, so a restart between the two attempts grants one more retry; harmless. A match
+within two poll intervals of the 24-hour candidate window's end is not held: the next poll would no
+longer see it, and the hold would lose the post outright.
+
+A hold **keeps later matches back** rather than posting past it: posting them first put the held
+one below them in the chat. They are still built, so each one's scoreboard is tried and a failure gets
+its own hold — `heldOnce` only ever means "this match's scoreboard failed once". The cost is knowing:
+one held match delays every later one in the chat, readable or not, by one poll, and spends a
+scoreboard request on each that the next poll repeats. Two cheaper versions were tried. The first hold
+**stopped the poll**, which let a lasting failure (the TLS library not loading, faceit.com down)
+through a catch-up backlog one match per poll, each held for a retry that could never work. Marking
+the matches behind a hold as already held, by age, then cost a match whose stats arrived late its
+retry before its scoreboard was ever fetched. Switching holding off once a retry failed read one
+match's persistent `err_f0` as the scoreboard being down. The order is not guaranteed past that: a
+held match whose retry fails some other way (its stats fetch throwing, a failed send) lets the later
+ones post above it. Holding them back then too was tried, and with no cap it let one match whose
+fetch kept failing keep every later post back for up to 24 hours. A challenge does **not** keep later matches back: it has no retry cap, so one match could block the
+chat for up to the 24-hour window, and it usually hits every match anyway.
+The preview prints `scoreboardProblem` and renders what it has.
 
 The same scoreboard carries **match-time Elo**, and is the only source of it: `elo` is Elo *going
 into* the match — checked across three consecutive matches, where each `elo + elo_delta` was the
@@ -553,7 +579,8 @@ That failed load also **crashed the process**, and not through the request. The 
 workers up front; the one given the request failed it, which `getMatchScoreboard`'s caller caught
 and logged — but the idle ones have no request to fail, so the pool emits `'error'`, and an
 EventEmitter with no listener throws. `siteSession` therefore listens on the pool: a library that
-won't load now logs `[faceit] tls worker failed` once per worker and costs the scoreboard only.
+won't load now logs `[faceit] tls worker failed` once per worker and costs the scoreboard only —
+plus one poll's delay, since the first failure is held (see **Rating and swing**).
 
 On a failed download the library calls **`process.exit(1)`** from inside `initTLS`, where no
 `.catch` can reach it. `ensureNativeLibrary` runs the same check and download itself first, so a

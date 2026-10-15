@@ -169,9 +169,6 @@ function siteSession(): Promise<Session> {
 // Cloudflare's "Just a moment..." page rather than an answer from faceit.com.
 export class ChallengeError extends Error {}
 
-// 403 err_f0: faceit.com withholding this match's scoreboard from anonymous callers.
-export class DeniedError extends Error {}
-
 // Rating, swing, KAST and match-time Elo by player id, first map only — the open API's stats read only
 // rounds[0] too. The anonymous limit is 5 requests per 30s, so a 429 waits out the slot it names —
 // the poll is in the background, and this is the only source of per-player Elo.
@@ -187,12 +184,13 @@ export async function getMatchScoreboard(matchId: string): Promise<Map<string, S
   if (firstHeader(res.headers["Cf-Mitigated"]) === "challenge" || res.body.includes("<title>Just a moment")) {
     throw new ChallengeError(`faceit.com ${res.status}: Cloudflare challenge`);
   }
-  if (res.status === 403 && res.body.includes("err_f0")) throw new DeniedError(`faceit.com 403: ${res.body.slice(0, 160)}`);
   // Status 0 is the library's own transport error, and its reason is only in the body.
   if (res.status !== 200) throw new Error(`faceit.com ${res.status}: ${res.body.slice(0, 160)}`);
   const data = await res.json<FaceitScoreboard>();
   const lines = new Map<string, ScoreboardLine>();
-  for (const team of data.payload?.cs2?.teams ?? []) {
+  const teams = data.payload?.cs2?.teams ?? [];
+  if (!teams.some(t => t.players?.length)) throw new Error("faceit.com 200: scoreboard has no players");
+  for (const team of teams) {
     for (const p of team.players ?? []) {
       const rating = p.stats?.faceit_rating, swing = p.stats?.faceit_rating_swing;
       if (typeof rating !== "number" || typeof swing !== "number") continue;
