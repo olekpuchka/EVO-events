@@ -63,9 +63,6 @@ const PLAYER_PADDING = 18;
 const nickRoom = (cols: Column[]): number =>
   Math.floor(TABLE_WIDTH * PLAYER_FLEX / (PLAYER_FLEX + cols.reduce((sum, c) => sum + c.flex, 0))) - 2 * PLAYER_PADDING;
 
-// The room a badge takes from the nickname beside it.
-const BADGE_ROOM = 40;
-
 // The avatar circle before the nickname, and the gap after it.
 export const AVATAR = 56;
 const AVATAR_GAP = 14;
@@ -181,13 +178,11 @@ function avatar(row: ResultRow, src: string | null): string {
     `font-size:24px;font-weight:700;color:${COLOR.muted}">${escapeHtml(letter)}</div>`;
 }
 
-// The avatar, then the nickname in bold with the MVP star beside it, and under it the Elo and this match's change.
+// The avatar with its badge, then the nickname in bold, and under it the Elo and this match's change.
 function playerCell(row: ResultRow, lowest: boolean, width: number, src: string | null): string {
-  const nickWidth = width - AVATAR - AVATAR_GAP;
-  const room = row.mvp || lowest ? nickWidth - BADGE_ROOM : nickWidth;
+  const room = width - AVATAR - AVATAR_GAP;
   const nick = `<div style="display:flex;font-size:${nickSize(row.nickname, room)}px;font-weight:700;max-width:${room}px;` +
     `overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${escapeHtml(row.nickname)}</div>`;
-  const badge = row.mvp ? MVP_BADGE : lowest ? LOW_RATING_BADGE : "";
   const change = row.eloChange;
   const arrow = change === null ? "" : eloArrow(change);
   const eloLine = row.eloAfter === null ? "" :
@@ -195,9 +190,12 @@ function playerCell(row: ResultRow, lowest: boolean, width: number, src: string 
     `<span style="font-size:22px;color:${COLOR.muted}">${row.eloAfter}</span>` +
     (arrow ? `<span style="font-size:22px;color:${signColor(change!)}">${arrow}</span>` : "") +
     `</div>`;
-  return `<div style="display:flex;align-items:center;gap:${AVATAR_GAP}px">${avatar(row, src)}` +
+  const badge = row.mvp ? MVP_BADGE : lowest ? LOW_RATING_BADGE : null;
+  const pinned = badge ? `<div style="display:flex;position:absolute;right:-6px;bottom:-6px">${badge}</div>` : "";
+  return `<div style="display:flex;align-items:center;gap:${AVATAR_GAP}px">` +
+    `<div style="display:flex;position:relative">${avatar(row, src)}${pinned}</div>` +
     `<div style="display:flex;flex-direction:column;align-items:flex-start;gap:4px">` +
-    `<div style="display:flex;align-items:center;gap:10px">${nick}${badge}</div>${eloLine}</div></div>`;
+    `${nick}${eloLine}</div></div>`;
 }
 
 function table(result: MatchResult, has: HasImage): string {

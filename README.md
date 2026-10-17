@@ -35,10 +35,10 @@ teams' average Elo (ours outlined in the result's colour; a player still in plac
 current profile Elo), and a table sorted by FACEIT rating — each player with their FACEIT avatar (or their
 initial, without one), their Elo and that match's change (↑25 / ↓23 / ±0), their rating (gold from
 1.80, green from 1.30, white from 0.90, red below) and swing, and their K/D/A, ADR and KAST. On a win the
-team's top rating gets a highlighted gold MVP star — judged across all five, so a teammate from outside the group
+team's top rating gets a highlighted gold MVP star on their avatar — judged across all five, so a teammate from outside the group
 topping it means no star. Rows have a subtle rating-coloured tint fading toward ADR — 10%, or 20% for a gold
 rating, which fades FACEIT's orange to yellow. The
-lowest-rated displayed players share a sad poop marker only at 0.70 or below, when at least two
+lowest-rated displayed players share a sad poop marker on the avatar only at 0.70 or below, when at least two
 ratings are available; MVP takes priority. The FACEIT link rides in the caption. If the picture
 can't be drawn, the
 same result posts as Telegram's own rich table. Only matches **two or more** linked members played in — solo queue stays

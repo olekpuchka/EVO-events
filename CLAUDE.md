@@ -654,8 +654,7 @@ paths, never text, and the default scans the system's fonts on each construction
 100 MB a time on macOS. Measured on macOS with five 1254 px avatars: peak 199 MB and 0.5 s, against 373 MB
 and 2.0 s on 1.22.1. That is **not** a measurement in the image at the real limits — if the card starts
 falling back to the rich table, check the child for an OOM first. The avatar also
-takes ~70 px from the nickname: an 11-character nickname drops from 25 px to ~19, and further beside
-the MVP star.
+takes ~70 px from the nickname: an 11-character nickname drops from 25 px to ~16.
 
 **The map banner is bundled, not FACEIT's.** FACEIT serves map images at 428×212 only — the open API's
 `image_lg` and faceit.com alike — and the banner crops that to ~428×100 and draws it at 1600×380, so
@@ -696,8 +695,10 @@ as wide as the `+`, so the column lines up.
 Rating rows fade from 10% tint at the player edge to transparent at ADR, using gold from 1.80, green
 from 1.30, grey from 0.90 and the existing red below. Missing ratings stay untinted. The fade
 continues across the two panels with 6.6% opacity at their split; gold doubles both, 20% and 13.2%. The lowest displayed rating, only
-at 0.70 or below, gets a sad poop SVG beside the nickname, ties sharing it, when at least two
-ratings exist. MVP takes priority and both badges reserve nickname space. Row fades reuse the
+at 0.70 or below, gets a sad poop SVG, ties sharing it, when at least two ratings exist. MVP takes priority. **Both
+badges sit on the avatar's bottom-right corner**, so the nickname keeps its whole line: beside the
+nickname, a badge took 40 px and `TheR0gue0ne` was clipped to «TheR0gu…»; the end of the Elo line
+was tried next and overflowed with a four-digit Elo. Row fades reuse the
 existing palette. Gold fades the rating's own orange-to-yellow across the player panel, then yellow
 across the figures, at double strength — any yellow at 10% reads olive on near-black, and the star's
 `best` faded muddy. Star shading and the poop outline are derived with `blend()`. The poop brown is
@@ -736,7 +737,7 @@ DejaVu Sans Bold's by class of letter, tuned on real nicknames — `TheR0gue0ne`
 characters by the first guess.
 
 All of that was settled against mocks in the group, and these were tried and dropped: level badges, an
-"MVP" text pill, the star beside the rating chip rather than the nickname, a ПЕРЕМОГА/ПОРАЗКА word, a
+"MVP" text pill, the star beside the rating chip or beside the nickname, a ПЕРЕМОГА/ПОРАЗКА word, a
 separate match header row, K/D, HS% and MVPs as columns, the Elo stacked at the cell's right edge, a
 tinted pill or a chip round a player's Elo, filled ▲/▼, 🔥 on a 1.5, bolding every row rated 1.5 or more
 (whatever the result), bolding the MVP's row, and marking the top ADR bold or gold — beside the MVP
@@ -790,7 +791,8 @@ if the TLS library won't load in the request worker or in any idle one. A 403 or
 faceit.com still passes: the runner's IP may be challenged, but a status code means the library
 worked. `.github/ci/card-smoke.cjs` then renders a card offline inside the container — resvg is
 native as well, and its glibc build and the fonts in `assets/` are only proven there. One row carries a
-raster avatar (a bundled map stands in) and the other the letter disc, so both cell shapes are drawn.
+raster avatar (a bundled map stands in) and the other the letter disc, so both cell shapes are drawn,
+one with the MVP star and the other with the poop pinned to it.
 Any `[card]` error log fails it: `renderCard`'s retry would otherwise hand back an avatar-less card and
 pass CI while every card in the group lost its avatars.
 
