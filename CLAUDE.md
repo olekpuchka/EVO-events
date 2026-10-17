@@ -696,7 +696,7 @@ as wide as the `+`, so the column lines up.
 Rating rows fade from 10% tint at the player edge to transparent at ADR, using gold from 1.80, green
 from 1.30, grey from 0.90 and the existing red below. Missing ratings stay untinted. The fade
 continues across the two panels with 6.6% opacity at their split; gold doubles both, 20% and 13.2%. The lowest displayed rating, only
-at 0.60 or below, gets a sad poop SVG beside the nickname, ties sharing it, when at least two
+at 0.70 or below, gets a sad poop SVG beside the nickname, ties sharing it, when at least two
 ratings exist. MVP takes priority and both badges reserve nickname space. Row fades reuse the
 existing palette. Gold fades the rating's own orange-to-yellow across the player panel, then yellow
 across the figures, at double strength — any yellow at 10% reads olive on near-black, and the star's

@@ -38,7 +38,7 @@ initial, without one), their Elo and that match's change (↑25 / ↓23 / ±0), 
 team's top rating gets a highlighted gold MVP star — judged across all five, so a teammate from outside the group
 topping it means no star. Rows have a subtle rating-coloured tint fading toward ADR — 10%, or 20% for a gold
 rating, which fades FACEIT's orange to yellow. The
-lowest-rated displayed players share a sad poop marker only at 0.60 or below, when at least two
+lowest-rated displayed players share a sad poop marker only at 0.70 or below, when at least two
 ratings are available; MVP takes priority. The FACEIT link rides in the caption. If the picture
 can't be drawn, the
 same result posts as Telegram's own rich table. Only matches **two or more** linked members played in — solo queue stays

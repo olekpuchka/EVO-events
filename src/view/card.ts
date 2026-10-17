@@ -233,7 +233,7 @@ function table(result: MatchResult, has: HasImage): string {
       const { style, body } = c.cell(row);
       return `<div style="${cellStyle(c.flex, false, `font-size:26px${style}`)}">${body}</div>`;
     }).join("");
-    return line(`<div style="${cellStyle(1, true, "")}">${playerCell(row, row.rating !== null && row.rating <= 0.6 && row.rating === lowestRating, room, has(avatarSrc(i)) ? avatarSrc(i) : null)}</div>`, cells, i > 0, false, row.rating);
+    return line(`<div style="${cellStyle(1, true, "")}">${playerCell(row, row.rating !== null && row.rating <= 0.7 && row.rating === lowestRating, room, has(avatarSrc(i)) ? avatarSrc(i) : null)}</div>`, cells, i > 0, false, row.rating);
   }).join("");
 
   return `<div style="display:flex;flex-direction:column;margin:16px;background:${COLOR.panel};border-radius:8px;overflow:hidden">${head}${body}</div>`;
