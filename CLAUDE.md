@@ -694,8 +694,10 @@ as wide as the `+`, so the column lines up.
 
 Rating rows fade from 10% tint at the player edge to transparent at ADR, using gold from 1.80, green
 from 1.30, grey from 0.90 and the existing red below. Missing ratings stay untinted. The fade
-continues across the two panels with 6.6% opacity at their split; gold doubles both, 20% and 13.2%. The lowest displayed rating, only
-at 0.70 or below, gets a sad poop SVG, ties sharing it, when at least two ratings exist. MVP takes priority. **Both
+continues across the two panels with 6.6% opacity at their split; gold doubles both, 20% and 13.2%.
+Every displayed rating at 0.70 or below gets a sad poop SVG, not only the lowest — that left a second
+0.5 on the same card unmarked. The cutoff is absolute, so a lone rated row at 0.65 gets it too. MVP
+takes priority: a win topped by a 0.68 shows the star, not the poop. **Both
 badges sit on the avatar's bottom-right corner**, so the nickname keeps its whole line: beside the
 nickname, a badge took 40 px and `TheR0gue0ne` was clipped to «TheR0gu…»; the end of the Elo line
 was tried next and overflowed with a four-digit Elo. Row fades reuse the
