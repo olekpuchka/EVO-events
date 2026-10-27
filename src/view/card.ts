@@ -179,7 +179,7 @@ function avatar(row: ResultRow, src: string | null): string {
 }
 
 // The avatar with its badge, then the nickname in bold, and under it the Elo and this match's change.
-function playerCell(row: ResultRow, lowest: boolean, width: number, src: string | null): string {
+function playerCell(row: ResultRow, width: number, src: string | null): string {
   const room = width - AVATAR - AVATAR_GAP;
   const nick = `<div style="display:flex;font-size:${nickSize(row.nickname, room)}px;font-weight:700;max-width:${room}px;` +
     `overflow:hidden;white-space:nowrap;text-overflow:ellipsis">${escapeHtml(row.nickname)}</div>`;
@@ -190,7 +190,8 @@ function playerCell(row: ResultRow, lowest: boolean, width: number, src: string 
     `<span style="font-size:22px;color:${COLOR.muted}">${row.eloAfter}</span>` +
     (arrow ? `<span style="font-size:22px;color:${signColor(change!)}">${arrow}</span>` : "") +
     `</div>`;
-  const badge = row.mvp ? MVP_BADGE : lowest ? LOW_RATING_BADGE : null;
+  const low = row.rating !== null && row.rating <= 0.7;
+  const badge = row.mvp ? MVP_BADGE : low ? LOW_RATING_BADGE : null;
   const pinned = badge ? `<div style="display:flex;position:absolute;right:-6px;bottom:-6px">${badge}</div>` : "";
   return `<div style="display:flex;align-items:center;gap:${AVATAR_GAP}px">` +
     `<div style="display:flex;position:relative">${avatar(row, src)}${pinned}</div>` +
@@ -203,8 +204,6 @@ function table(result: MatchResult, has: HasImage): string {
   const rated = rows.some(r => r.rating !== null);
   const cols = columns(rated, rows.some(r => r.kast !== null));
   const room = nickRoom(cols);
-  const ratings = rows.flatMap(r => r.rating !== null ? [r.rating] : []);
-  const lowestRating = ratings.length > 1 ? Math.min(...ratings) : null;
 
   const cellStyle = (flex: number, first: boolean, extra: string) =>
     `display:flex;align-items:center;justify-content:${first ? "flex-start" : "center"};flex:${flex};` +
@@ -231,7 +230,7 @@ function table(result: MatchResult, has: HasImage): string {
       const { style, body } = c.cell(row);
       return `<div style="${cellStyle(c.flex, false, `font-size:26px${style}`)}">${body}</div>`;
     }).join("");
-    return line(`<div style="${cellStyle(1, true, "")}">${playerCell(row, row.rating !== null && row.rating <= 0.7 && row.rating === lowestRating, room, has(avatarSrc(i)) ? avatarSrc(i) : null)}</div>`, cells, i > 0, false, row.rating);
+    return line(`<div style="${cellStyle(1, true, "")}">${playerCell(row, room, has(avatarSrc(i)) ? avatarSrc(i) : null)}</div>`, cells, i > 0, false, row.rating);
   }).join("");
 
   return `<div style="display:flex;flex-direction:column;margin:16px;background:${COLOR.panel};border-radius:8px;overflow:hidden">${head}${body}</div>`;
