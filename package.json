@@ -1,6 +1,6 @@
 {
   "name": "evo-events-telegram-bot",
-  "version": "1.25.0",
+  "version": "1.25.1",
   "description": "Telegram bot for organizing gaming events — @all mentions, RSVP, auto-pin/unpin, reminders, and squad management",
   "type": "module",
   "scripts": {
@@ -16,13 +16,13 @@
     "@resvg/resvg-js": "^2.6.2",
     "grammy": "^1.46.0",
     "node-tls-client": "^2.1.0",
-    "openai": "^7.23.0",
-    "satori": "^0.33.5",
+    "openai": "^7.47.0",
+    "satori": "^0.63.2",
     "satori-html": "^0.3.2"
   },
   "devDependencies": {
     "@grammyjs/types": "^5.0.0",
-    "@types/node": "^24.13.6",
+    "@types/node": "^24.19.2",
     "typescript": "^7.0.2"
   },
   "overrides": {
