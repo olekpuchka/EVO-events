@@ -18,7 +18,7 @@ ENV FACEIT_POLL_MINUTES=20
 ENV EU_TIMEZONE_MEMBERS=""
 
 # Secrets stay out of the image — ENV is readable via `docker history`. Supply at runtime:
-# BOT_TOKEN and FACEIT_API_KEY (required), DEEPSEEK_API_KEY (optional).
+# BOT_TOKEN and FACEIT_API_KEY (required), FACEIT_COOKIE and DEEPSEEK_API_KEY (optional).
 
 # System CA roots: the Go TLS library verifies against them, unlike Node, which bundles its own —
 # slim ships none, and every faceit.com request then failed its handshake.

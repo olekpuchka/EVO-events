@@ -14,7 +14,7 @@ import { Session, ClientIdentifier, initTLS } from "node-tls-client";
 import { LibraryHandler } from "node-tls-client/dist/utils/native.js";
 import { LibraryDownloader } from "node-tls-client/dist/utils/download.js";
 import { Client } from "node-tls-client/dist/lib/Client.js";
-import { FACEIT_API_KEY } from "../config.ts";
+import { FACEIT_API_KEY, FACEIT_COOKIE } from "../config.ts";
 
 const BASE = "https://open.faceit.com/data/v4";
 
@@ -144,45 +144,106 @@ async function ensureNativeLibrary(): Promise<void> {
 // The library hands header values back as arrays.
 const firstHeader = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v);
 
-// Opened on first use; a failed init is dropped so the next poll tries again.
-let site: Promise<Session> | null = null;
-function siteSession(): Promise<Session> {
-  site ??= ensureNativeLibrary()
+// Loaded on first use; a failed init is dropped so the next poll tries again.
+let tls: Promise<void> | null = null;
+function tlsReady(): Promise<void> {
+  tls ??= ensureNativeLibrary()
     .then(() => initTLS())
     .then(() => {
       // An idle worker whose library won't load has no request to fail, so the pool emits 'error' —
       // unheard, that kills the process. Heard, a bad library costs only the scoreboard.
       Client.getInstance().pool.on("error", err => console.error("[faceit] tls worker failed:", (err as Error).message));
     })
-    .then(() => new Session({
-      // Newer than the wrapper's enum; the Go library knows it, and falls back silently on a name it doesn't.
-      clientIdentifier: `chrome_${CHROME}` as ClientIdentifier,
-      timeout: TIMEOUT_MS,
-      headers: SITE_HEADERS,
-      // Header names at runtime; the library's typings mistype it as an array of header objects.
-      headerOrder: Object.keys(SITE_HEADERS) as unknown as OutgoingHttpHeaders[],
-    }))
-    .catch(err => { site = null; throw err; });
-  return site;
+    .catch(err => { tls = null; throw err; });
+  return tls;
+}
+
+function newSession(headers: Record<string, string>): Session {
+  return new Session({
+    // Newer than the wrapper's enum; the Go library knows it, and falls back silently on a name it doesn't.
+    clientIdentifier: `chrome_${CHROME}` as ClientIdentifier,
+    timeout: TIMEOUT_MS,
+    headers,
+    // Header names at runtime; the library's typings mistype it as an array of header objects.
+    headerOrder: Object.keys(headers) as unknown as OutgoingHttpHeaders[],
+  });
+}
+
+let anonymous: Session | null = null;
+async function siteSession(): Promise<Session> {
+  await tlsReady();
+  return anonymous ??= newSession(SITE_HEADERS);
 }
 
 // Cloudflare's "Just a moment..." page rather than an answer from faceit.com.
 export class ChallengeError extends Error {}
 
-// Rating, swing, KAST and match-time Elo by player id, first map only — the open API's stats read only
-// rounds[0] too. The anonymous limit is 5 requests per 30s, so a 429 waits out the slot it names —
-// the poll is in the background, and this is the only source of per-player Elo.
-export async function getMatchScoreboard(matchId: string): Promise<Map<string, ScoreboardLine>> {
-  const session = await siteSession();
-  const url = `https://www.faceit.com/api/statistics/v1/cs2/matches/${encodeURIComponent(matchId)}/match-rounds/1/scoreboard-summary`;
-  let res = await session.get(url);
+type SiteResponse = Awaited<ReturnType<Session["get"]>>;
+
+// One GET, waiting out up to three 429s — the anonymous limit is 5 per 30s. A challenge throws.
+async function siteGet(get: () => Promise<SiteResponse>): Promise<SiteResponse> {
+  let res = await get();
   for (let retry = 0; res.status === 429 && retry < 3; retry++) {
     const wait = Number(firstHeader(res.headers["Ratelimit-Retry-After"])) || 10;
     await sleep(Math.min(wait + 1, 30) * 1000);
-    res = await session.get(url);
+    res = await get();
   }
   if (firstHeader(res.headers["Cf-Mitigated"]) === "challenge" || res.body.includes("<title>Just a moment")) {
     throw new ChallengeError(`faceit.com ${res.status}: Cloudflare challenge`);
+  }
+  return res;
+}
+
+// Chrome sends the cookie between accept-language and priority; the header order is part of the fingerprint.
+const { priority, ...headersBeforePriority } = SITE_HEADERS;
+const SIGNED_IN_HEADERS = { ...headersBeforePriority, cookie: `__Host-FaceitGatewayAuthorization=${FACEIT_COOKIE}`, priority };
+
+// The env var is read once, so a rejected token stays dead until a restart: tried, and logged, once.
+let cookieRejected = false;
+
+// A session per request, 429 retries included: a jar would replay a rotated token beside ours, and
+// the anonymous session must never carry a signed-in cookie.
+async function oneShotGet(url: string): Promise<SiteResponse> {
+  const session = newSession(SIGNED_IN_HEADERS);
+  try {
+    return await session.get(url);
+  } finally {
+    await session.close().catch(() => {});
+  }
+}
+
+// The `error` code of an OAuth-style JSON body (`{"error":"invalid_token",…}`), or undefined.
+function oauthError(body: string): unknown {
+  try { return (JSON.parse(body) as { error?: unknown }).error; } catch { return undefined; }
+}
+
+// The retry of a withheld board; every failure names FACEIT_COOKIE.
+async function signedInGet(url: string): Promise<SiteResponse> {
+  const res = await siteGet(() => oneShotGet(url))
+    // The anonymous request just got through, so a challenge here is held like any other failure.
+    .catch(err => { throw new Error(`FACEIT_COOKIE retry ${err instanceof ChallengeError ? "challenged" : "failed"}: ${(err as Error).message}`); });
+  if (res.status === 200) return res;
+  if ((res.status === 400 || res.status === 401) && oauthError(res.body) === "invalid_token") {
+    // Polls of several chats can be in flight at once; the first to see it logs it.
+    if (!cookieRejected) console.error(`[faceit] FACEIT_COOKIE rejected (${res.status} invalid_token): the login expired or was logged out — copy a fresh __Host-FaceitGatewayAuthorization from a signed-in browser and restart`);
+    cookieRejected = true;
+    throw new Error(`faceit.com ${res.status}: FACEIT_COOKIE rejected`);
+  }
+  throw new Error(`faceit.com ${res.status}: with FACEIT_COOKIE: ${res.body.slice(0, 160)}`);
+}
+
+// Rating, swing, KAST and match-time Elo by player id, first map only — the open API's stats read only
+// rounds[0] too. Anonymous first; a withheld board is asked again with FACEIT_COOKIE when it is set.
+export async function getMatchScoreboard(matchId: string): Promise<Map<string, ScoreboardLine>> {
+  const url = `https://www.faceit.com/api/statistics/v1/cs2/matches/${encodeURIComponent(matchId)}/match-rounds/1/scoreboard-summary`;
+  const session = await siteSession();
+  let res = await siteGet(() => session.get(url));
+  const withheldAnonymously = res.status === 403 && res.body.includes("err_f0");
+  if (withheldAnonymously) {
+    if (!FACEIT_COOKIE || cookieRejected) {
+      throw new Error(`faceit.com 403: err_f0, and FACEIT_COOKIE is ${cookieRejected ? "rejected — set a fresh one and restart" : "not set"}`);
+    }
+    res = await signedInGet(url);
   }
   // Status 0 is the library's own transport error, and its reason is only in the body.
   if (res.status !== 200) throw new Error(`faceit.com ${res.status}: ${res.body.slice(0, 160)}`);
@@ -202,5 +263,6 @@ export async function getMatchScoreboard(matchId: string): Promise<Map<string, S
       lines.set(p.player_id, { rating, swing, kast, elo, calibrating: p.is_calibrating === true });
     }
   }
+  if (withheldAnonymously) console.log(`[faceit] scoreboard ${matchId} withheld anonymously, read with FACEIT_COOKIE`);
   return lines;
 }

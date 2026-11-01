@@ -8,7 +8,7 @@ import { getDueUnpins, getDueReminders, deleteScheduledReminder, saveReminderMes
 import { t } from "./src/view/i18n.ts";
 import { COMMANDS } from "./src/view/commands.ts";
 import { ALL_TAG, stripAllTag } from "./src/view/alltag.ts";
-import { BOT_TOKEN, FACEIT_API_KEY, DEEPSEEK_API_KEY, FACEIT_POLL_MINUTES } from "./src/config.ts";
+import { BOT_TOKEN, FACEIT_API_KEY, FACEIT_COOKIE, DEEPSEEK_API_KEY, FACEIT_POLL_MINUTES } from "./src/config.ts";
 
 // State the config up front — a missing FACEIT key otherwise just 401s forever, silently.
 if (!BOT_TOKEN) {
@@ -17,6 +17,12 @@ if (!BOT_TOKEN) {
 }
 if (!FACEIT_API_KEY) {
   console.warn("[config] FACEIT_API_KEY is not set — /faceit and auto match results will fail (every poll 401s).");
+}
+if (FACEIT_COOKIE.includes("=")) {
+  console.warn("[config] FACEIT_COOKIE doesn't look like a bare token — check it is __Host-FaceitGatewayAuthorization's value, not another cookie.");
+}
+if (!FACEIT_COOKIE) {
+  console.log("[config] FACEIT_COOKIE is not set — a scoreboard faceit.com withholds (err_f0) is held one poll, then posts without Rating, Swing, KAST or Elo.");
 }
 if (!DEEPSEEK_API_KEY) {
   console.log("[config] DEEPSEEK_API_KEY is not set — birthday greetings use the built-in toast instead of AI.");

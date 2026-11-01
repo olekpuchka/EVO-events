@@ -462,7 +462,8 @@ The open API has no FACEIT rating or swing; only faceit.com's own
 `/api/statistics/v1/cs2/matches/{id}/match-rounds/1/scoreboard-summary` does, and it sits behind
 Cloudflare. Plain `fetch` is challenged, so `adapters/faceit.ts` goes through `node-tls-client`
 with the **chrome_152** profile and navigation headers (`sec-fetch-mode: navigate`) — 120/124 get
-a challenge, `cors` gets a 403. No cookies or key. The match-wide `/scoreboard-summary` 403s
+a challenge, `cors` gets a 403. No key, and no cookie on the first request — see **The signed-in
+retry** below for the one exception. The match-wide `/scoreboard-summary` 403s
 anonymous callers with `err_f0`; the per-map one does not, and it is what the site itself calls.
 Only map 1 is read, matching `rounds[0]` on the open API side.
 
@@ -493,7 +494,49 @@ spends nothing from it. Swing is shown in percentage points; both it and rating 
 
 Not every match is readable anonymously: one freshly finished match in thirteen sampled answered
 `403 err_f0` and kept doing so, while matches Cloudflare had never cached (`MISS`) served fine.
-The cause is unknown.
+**From 31 October 2026 it was nearly every match** — 8 of 8 recent ones, and a clean incognito
+browser got the same refusal, so it is FACEIT closing the board to anonymous callers, not our
+fingerprint. A board some signed-in visitor has opened turns readable anonymously afterwards; that
+is the only reason any still are. No public FACEIT source mentions `err_f0`, and the open API still
+carries no rating, swing, KAST or match-time Elo.
+
+**The signed-in retry.** A board withheld with `err_f0` is asked once more carrying
+`FACEIT_COOKIE`: the value of a **spare** account's `__Host-FaceitGatewayAuthorization` cookie,
+which alone was enough — `__Host-AuthSession` and `__Secure-FaceitBrowserId` each still got
+`err_f0`, tested one at a time on boards no request had unlocked. Anonymous stays first, so a
+readable board costs the account nothing and the cookie is exposed on as few requests as possible;
+a withheld one costs a second request against the same 5-per-30s limit.
+
+The value is an opaque 36-character id, not a JWT — nothing in it says when it expires. The
+browser keeps the cookie 90 days and `__Host-AuthSession` 30, but those are storage dates, not
+FACEIT's verdict; **logging the account out kills it at once**, and two tokens died that way while
+this was being built. Expect to re-copy it roughly monthly, and never from your main account:
+whatever is stored can act as that account, and it is that account that risks a ban.
+
+A dead token answers **`400 invalid_token`**, distinct from `err_f0`, so it is the one failure that
+names the cookie in the log (`[faceit] FACEIT_COOKIE rejected … restart`). The env var is read once,
+so a rejected token cannot recover in-process: it is logged once and never sent again until a
+restart, rather than spending a request and a log line on every withheld board of every poll. Every
+other failure of the retry — `err_f0` again, a restricted account's 403, a challenge — becomes an
+ordinary scoreboard failure naming `FACEIT_COOKIE` and is held once like any other; a challenge on
+the retry is deliberately *not* a `ChallengeError`, since the anonymous request had just got through.
+
+Every signed-in request — a 429 re-try included — opens a **fresh session and closes it**
+(`oneShotGet`). The native library keeps a cookie jar per session and replays any `Set-Cookie`:
+shared with the anonymous session, a signed-in cookie would ride on every later "anonymous" request
+and hide the token's death; reused, even for one 429 re-try, a rotated token would go out beside the
+stale one. A token reused across many requests over hours stayed valid, so it does not rotate on
+use. Passing the cookie through the request's `cookies` option instead fails outright —
+tough-cookie refuses a `__Host-` cookie set without `Secure`. The cookie header goes where Chrome
+puts it, before `priority`, not at the end: header
+order is part of the fingerprint, and these are the requests carrying the account. `config.ts`
+takes a bare value, a `name=value` pair or a whole pasted Cookie header, and strips quotes.
+
+Only a 400 or 401 whose JSON `error` is `invalid_token` counts as a dead token — not any 401, nor
+an error page that happens to mention it: either would switch the retry off until a restart. With
+the cookie unset or dead, a withheld board is still
+**held once** like any failure — a signed-in visitor opening it in that poll is the one way the hold
+pays off, and dropping the hold was left as a separate decision.
 
 A fresh match can also answer **200 before faceit.com has computed its figures**: every player
 present, none with a rating. That once parsed to an empty map and shipped a bare card with no log line

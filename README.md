@@ -54,6 +54,11 @@ yet — the match is held, along with any match played after it, and retried onc
 If it fails again the post goes out without the Rating and KAST columns, the Elo lines or the teams'
 Elo. A Cloudflare challenge holds its match until the challenge clears.
 
+Since late October 2026 faceit.com withholds nearly every scoreboard from anonymous callers. With
+`FACEIT_COOKIE` set, a withheld one is fetched again as a signed-in spare account, and posts with
+its figures. When that login expires the log says `[faceit] FACEIT_COOKIE rejected`: copy a fresh
+value and restart.
+
 **Birthdays.** Members add their own date with `/birthday 25-08-1990`, and on the day the bot posts
 a short toast written for them — 70 words at most, and the only AI-written message the bot sends.
 The model is told only the age they're turning; the name reaches it as a placeholder and is swapped
@@ -126,6 +131,7 @@ Everything is set through environment variables, all read in one place,
 |---|---|
 | `BOT_TOKEN` | Required. The process exits at startup without it |
 | `FACEIT_API_KEY` | Required for match results ([developers.faceit.com](https://developers.faceit.com)). Without it the bot starts, warns, and every poll 401s |
+| `FACEIT_COOKIE` | Optional. The value of the `__Host-FaceitGatewayAuthorization` cookie from a **spare** FACEIT account, signed in on faceit.com (DevTools → Application → Cookies). Unset means a withheld scoreboard is held one poll, then posts without figures. Don't log that account out — it kills the value; expect to re-copy it about monthly |
 | `DEEPSEEK_API_KEY` | Optional, for birthday toasts. Unset means a built-in toast instead of an AI one |
 
 **Everything else** is defaulted, so the bot runs with no configuration at all.
@@ -164,7 +170,7 @@ it importable on its own — `adapters/db.ts` creates the database at import tim
 ## Deploying
 
 Hosted on [JustRunMy.App](https://justrunmy.app/telegram-bots) — always-on container, free tier.
-Deploy from Git, set `BOT_TOKEN` and `FACEIT_API_KEY`, and mount a persistent volume at `/app/data`.
+Deploy from Git, set `BOT_TOKEN` and `FACEIT_API_KEY` (and `FACEIT_COOKIE` for full scoreboards), and mount a persistent volume at `/app/data`.
 Deploying from CI needs one repo secret, `JUSTRUNMY_DEPLOY_URL` =
 `https://<user>:<token>@justrunmy.app/git/<repo-id>`.
 
