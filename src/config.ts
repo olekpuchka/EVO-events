@@ -13,6 +13,12 @@ export const BOT_TOKEN = process.env.BOT_TOKEN || "";
 // Required for /faceit and match results; every request 401s without it.
 export const FACEIT_API_KEY = process.env.FACEIT_API_KEY || "";
 
+// Optional. A spare account's __Host-FaceitGatewayAuthorization value, for scoreboards withheld
+// anonymously. A bare value, a `name=value` pair or a whole pasted Cookie header all work.
+const cookieInput = (process.env.FACEIT_COOKIE || "").trim();
+export const FACEIT_COOKIE = (cookieInput.match(/__Host-FaceitGatewayAuthorization\s*=([^;]*)/)?.[1] ?? cookieInput.split(";")[0]!)
+  .replace(/\s+/g, "").replace(/^["']|["']$/g, "");
+
 // Optional. Unset means the built-in birthday toast instead of an AI one.
 export const DEEPSEEK_API_KEY = process.env.DEEPSEEK_API_KEY || "";
 
