@@ -49,15 +49,15 @@ FACEIT's own map images are too small for the banner; a map not in there gets a 
 
 Rating, swing, KAST and the exact per-match Elo change come from faceit.com's own scoreboard, which the
 open FACEIT API doesn't carry. That fetch is **best-effort**: when it fails — an error, a match
-faceit.com withholds from anonymous callers (`403 err_f0`), or one whose figures it hasn't computed
-yet — the match is held, along with any match played after it, and retried once on the next poll.
+faceit.com withholds (`403 err_f0`) both signed in and anonymously, or one whose figures it hasn't
+computed yet — the match is held, along with any match played after it, and retried once on the next poll.
 If it fails again the post goes out without the Rating and KAST columns, the Elo lines or the teams'
 Elo. A Cloudflare challenge holds its match until the challenge clears.
 
 Since late October 2026 faceit.com withholds nearly every scoreboard from anonymous callers. With
-`FACEIT_COOKIE` set, a withheld one is fetched again as a signed-in spare account, and posts with
-its figures. When that login expires the log says `[faceit] FACEIT_COOKIE rejected`: copy a fresh
-value and restart.
+`FACEIT_COOKIE` set, every scoreboard is fetched as a signed-in spare account; without it, once
+that login has expired, or when the signed-in request is refused, the bot asks anonymously. When
+the login expires the log says `[faceit] FACEIT_COOKIE rejected`: copy a fresh value and restart.
 
 **Birthdays.** Members add their own date with `/birthday 25-08-1990`, and on the day the bot posts
 a short toast written for them — 70 words at most, and the only AI-written message the bot sends.
@@ -131,7 +131,7 @@ Everything is set through environment variables, all read in one place,
 |---|---|
 | `BOT_TOKEN` | Required. The process exits at startup without it |
 | `FACEIT_API_KEY` | Required for match results ([developers.faceit.com](https://developers.faceit.com)). Without it the bot starts, warns, and every poll 401s |
-| `FACEIT_COOKIE` | Optional. The value of the `__Host-FaceitGatewayAuthorization` cookie from a **spare** FACEIT account, signed in on faceit.com (DevTools → Application → Cookies). Unset means a withheld scoreboard is held one poll, then posts without figures. Don't log that account out — it kills the value; expect to re-copy it about monthly |
+| `FACEIT_COOKIE` | Optional. The value of the `__Host-FaceitGatewayAuthorization` cookie from a **spare** FACEIT account, signed in on faceit.com (DevTools → Application → Cookies). Sent on every scoreboard request. Unset, scoreboards are asked for anonymously, and a withheld one is held one poll, then posts without figures. Don't log that account out — it kills the value; expect to re-copy it about monthly |
 | `DEEPSEEK_API_KEY` | Optional, for birthday toasts. Unset means a built-in toast instead of an AI one |
 
 **Everything else** is defaulted, so the bot runs with no configuration at all.

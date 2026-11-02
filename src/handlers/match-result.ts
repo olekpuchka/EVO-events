@@ -33,7 +33,7 @@ export async function buildMatchResult(
   const registered = ourTeam.players.filter(p => registeredIds.has(p.player_id));
 
   // Counted from the stats: a failed history call would undercount. Gated before the scoreboard
-  // fetch, so a solo game spends none of faceit.com's anonymous rate limit.
+  // fetch, so a solo game spends none of faceit.com's rate limit.
   if (registered.length < MIN_PLAYERS) return null;
 
   // Details (roster avatars) only for a match that will post; unavailable, it is never posted.

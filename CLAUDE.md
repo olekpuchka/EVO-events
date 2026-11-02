@@ -462,8 +462,8 @@ The open API has no FACEIT rating or swing; only faceit.com's own
 `/api/statistics/v1/cs2/matches/{id}/match-rounds/1/scoreboard-summary` does, and it sits behind
 Cloudflare. Plain `fetch` is challenged, so `adapters/faceit.ts` goes through `node-tls-client`
 with the **chrome_152** profile and navigation headers (`sec-fetch-mode: navigate`) — 120/124 get
-a challenge, `cors` gets a 403. No key, and no cookie on the first request — see **The signed-in
-retry** below for the one exception. The match-wide `/scoreboard-summary` 403s
+a challenge, `cors` gets a 403. No key; the one cookie is the spare account's — see **Signed in
+first** below. The match-wide `/scoreboard-summary` 403s
 anonymous callers with `err_f0`; the per-map one does not, and it is what the site itself calls.
 Only map 1 is read, matching `rounds[0]` on the open API side.
 
@@ -484,7 +484,7 @@ challenge` or its title and thrown as `ChallengeError`. A challenge is a verdict
 server's IP at that moment, not on the match, so it is left to fail the whole post: nothing is
 marked posted and the poll's ordinary retry tries again every `FACEIT_POLL_MINUTES`. There is no
 separate deadline — a challenge lasting past the 24-hour candidate window loses the match
-silently, which was judged better than shipping it without figures. The anonymous limit is **5 requests per
+silently, which was judged better than shipping it without figures. The limit is **5 requests per
 30s per IP**, and a catch-up poll of ten matches hit it on the sixth. A 429 therefore waits out the
 `Ratelimit-Retry-After` it carries (plus a second, capped at 30s) and tries again, up to three
 times — the poll runs in the background, and since the baseline was removed this is the only
@@ -500,12 +500,17 @@ fingerprint. A board some signed-in visitor has opened turns readable anonymousl
 is the only reason any still are. No public FACEIT source mentions `err_f0`, and the open API still
 carries no rating, swing, KAST or match-time Elo.
 
-**The signed-in retry.** A board withheld with `err_f0` is asked once more carrying
-`FACEIT_COOKIE`: the value of a **spare** account's `__Host-FaceitGatewayAuthorization` cookie,
-which alone was enough — `__Host-AuthSession` and `__Secure-FaceitBrowserId` each still got
-`err_f0`, tested one at a time on boards no request had unlocked. Anonymous stays first, so a
-readable board costs the account nothing and the cookie is exposed on as few requests as possible;
-a withheld one costs a second request against the same 5-per-30s limit.
+**Signed in first.** With `FACEIT_COOKIE` set, every board is asked for carrying it: the value of
+a **spare** account's `__Host-FaceitGatewayAuthorization` cookie, which alone was enough —
+`__Host-AuthSession` and `__Secure-FaceitBrowserId` each still got `err_f0`, tested one at a time on
+boards no request had unlocked. Anonymous is the fallback: with the cookie unset or dead, or when
+the signed-in request is refused (below).
+
+It was anonymous first at the start, so a readable board would cost the account nothing. On
+1 November every one of four boards was withheld anonymously, so that order exposed the cookie on
+nearly every match anyway, while spending **two** requests per match against the 5-per-30s limit
+and a wasted round trip on every post. Should FACEIT reopen the board to anonymous callers, switch
+back.
 
 The value is an opaque 36-character id, not a JWT — nothing in it says when it expires. The
 browser keeps the cookie 90 days and `__Host-AuthSession` 30, but those are storage dates, not
@@ -516,10 +521,19 @@ whatever is stored can act as that account, and it is that account that risks a 
 A dead token answers **`400 invalid_token`**, distinct from `err_f0`, so it is the one failure that
 names the cookie in the log (`[faceit] FACEIT_COOKIE rejected … restart`). The env var is read once,
 so a rejected token cannot recover in-process: it is logged once and never sent again until a
-restart, rather than spending a request and a log line on every withheld board of every poll. Every
-other failure of the retry — `err_f0` again, a restricted account's 403, a challenge — becomes an
-ordinary scoreboard failure naming `FACEIT_COOKIE` and is held once like any other; a challenge on
-the retry is deliberately *not* a `ChallengeError`, since the anonymous request had just got through.
+restart, rather than spending a request and a log line on every board of every poll. The board that
+saw it dies is asked again anonymously in the same call. Any other refusal — `err_f0`, a restricted
+account's 403, a 5xx, a challenge — is asked anonymously too: a spare
+account restricted without its token dying would otherwise cost every board its figures until
+someone noticed, including the ones a visitor had already unlocked. It costs a second request per
+board while it lasts. `refused with FACEIT_COOKIE` is logged once per kind of refusal — a status,
+`err_f0`, a challenge — so a lasting one is one line rather than one per board, and
+a signed-in read clears it. A failed anonymous attempt then is an ordinary scoreboard failure, held
+once, its message naming both answers. A challenge on the signed-in request alone is deliberately
+*not* a `ChallengeError`: the anonymous request got past Cloudflare, so the IP isn't what's
+challenged, and the uncapped challenge retry would only lose the match at 24 hours. A 429 or a status 0
+(the library's transport error) gets no anonymous attempt: the anonymous request shares the IP's
+limit and network, so it would wait out the same retries or the same timeout a second time. Only a challenge is caught as a refusal, so a library that won't load fails as itself.
 
 Every signed-in request — a 429 re-try included — opens a **fresh session and closes it**
 (`oneShotGet`). The native library keeps a cookie jar per session and replays any `Set-Cookie`:
@@ -533,7 +547,7 @@ order is part of the fingerprint, and these are the requests carrying the accoun
 takes a bare value, a `name=value` pair or a whole pasted Cookie header, and strips quotes.
 
 Only a 400 or 401 whose JSON `error` is `invalid_token` counts as a dead token — not any 401, nor
-an error page that happens to mention it: either would switch the retry off until a restart. With
+an error page that happens to mention it: either would switch the cookie off until a restart. With
 the cookie unset or dead, a withheld board is still
 **held once** like any failure — a signed-in visitor opening it in that poll is the one way the hold
 pays off, and dropping the hold was left as a separate decision.
@@ -834,7 +848,9 @@ a native library that couldn't load in production. It checks that `botuser` stil
 the Alpine image gave it, then runs `.github/ci/image-smoke.cjs` inside the container, which fails
 if the TLS library won't load in the request worker or in any idle one. A 403 or 429 from
 faceit.com still passes: the runner's IP may be challenged, but a status code means the library
-worked. `.github/ci/card-smoke.cjs` then renders a card offline inside the container — resvg is
+worked. It sets a fake `FACEIT_COOKIE`, so the signed-in session — the main path — runs first, is
+refused, and the anonymous one follows. A signed-in status 0 throws rather than falling back,
+so a broken signed-in session fails it. `.github/ci/card-smoke.cjs` then renders a card offline inside the container — resvg is
 native as well, and its glibc build and the fonts in `assets/` are only proven there. One row carries a
 raster avatar (a bundled map stands in) and the other the letter disc, so both cell shapes are drawn,
 one with the MVP star and the other with the poop pinned to it.

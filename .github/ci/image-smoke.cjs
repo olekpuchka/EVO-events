@@ -1,5 +1,6 @@
-// Run inside the built image by CI: proves node-tls-client's native library loads and can complete a
-// request there. A real HTTP status still passes — the runner's IP may be challenged — but 0 fails.
+// Run in the built image by CI: proves the TLS library loads and completes a request, signed in (a fake
+// cookie) and anonymously. A real HTTP status passes — the runner's IP may be challenged — but 0 fails.
+process.env.FACEIT_COOKIE = "ci-smoke";
 import("../../src/adapters/faceit.ts").then(async ({ getMatchScoreboard }) => {
   let workerFailed = false;
   const log = console.error;

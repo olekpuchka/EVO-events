@@ -180,7 +180,7 @@ export class ChallengeError extends Error {}
 
 type SiteResponse = Awaited<ReturnType<Session["get"]>>;
 
-// One GET, waiting out up to three 429s — the anonymous limit is 5 per 30s. A challenge throws.
+// One GET, waiting out up to three 429s — the limit is 5 per 30s per IP. A challenge throws.
 async function siteGet(get: () => Promise<SiteResponse>): Promise<SiteResponse> {
   let res = await get();
   for (let retry = 0; res.status === 429 && retry < 3; retry++) {
@@ -200,10 +200,13 @@ const SIGNED_IN_HEADERS = { ...headersBeforePriority, cookie: `__Host-FaceitGate
 
 // The env var is read once, so a rejected token stays dead until a restart: tried, and logged, once.
 let cookieRejected = false;
+// The last refusal logged; a new kind logs again, and a signed-in read clears it.
+let lastRefusal = "";
 
 // A session per request, 429 retries included: a jar would replay a rotated token beside ours, and
 // the anonymous session must never carry a signed-in cookie.
 async function oneShotGet(url: string): Promise<SiteResponse> {
+  await tlsReady();
   const session = newSession(SIGNED_IN_HEADERS);
   try {
     return await session.get(url);
@@ -217,36 +220,56 @@ function oauthError(body: string): unknown {
   try { return (JSON.parse(body) as { error?: unknown }).error; } catch { return undefined; }
 }
 
-// The retry of a withheld board; every failure names FACEIT_COOKIE.
-async function signedInGet(url: string): Promise<SiteResponse> {
-  const res = await siteGet(() => oneShotGet(url))
-    // The anonymous request just got through, so a challenge here is held like any other failure.
-    .catch(err => { throw new Error(`FACEIT_COOKIE retry ${err instanceof ChallengeError ? "challenged" : "failed"}: ${(err as Error).message}`); });
-  if (res.status === 200) return res;
+// Why the signed-in request gave no board; `kind` is what the log dedupes on, `detail` what it shows.
+interface Refusal { kind: string; detail: string }
+
+// The board, a Refusal to ask anonymously instead, or null once the token is dead. A 429 or status 0
+// throws: the anonymous request shares the IP's limit and network, and would only fail the same way.
+async function signedInGet(url: string): Promise<SiteResponse | Refusal | null> {
+  let res: SiteResponse;
+  try {
+    res = await siteGet(() => oneShotGet(url));
+  } catch (err) {
+    // Transport errors arrive as status 0, so anything else thrown — the library not loading — is ours.
+    if (!(err instanceof ChallengeError)) throw err;
+    return { kind: "challenge", detail: err.message };
+  }
   if ((res.status === 400 || res.status === 401) && oauthError(res.body) === "invalid_token") {
     // Polls of several chats can be in flight at once; the first to see it logs it.
     if (!cookieRejected) console.error(`[faceit] FACEIT_COOKIE rejected (${res.status} invalid_token): the login expired or was logged out — copy a fresh __Host-FaceitGatewayAuthorization from a signed-in browser and restart`);
     cookieRejected = true;
-    throw new Error(`faceit.com ${res.status}: FACEIT_COOKIE rejected`);
+    return null;
   }
-  throw new Error(`faceit.com ${res.status}: with FACEIT_COOKIE: ${res.body.slice(0, 160)}`);
+  if (res.status === 429 || res.status === 0) throw new Error(`faceit.com ${res.status}: with FACEIT_COOKIE: ${res.body.slice(0, 160)}`);
+  if (res.status === 200) return res;
+  // err_f0 is its own kind, so a restricted account's 403 still logs after it; a body can carry ids.
+  return { kind: `${res.status}${res.body.includes("err_f0") ? " err_f0" : ""}`, detail: `${res.status} ${res.body.slice(0, 80)}` };
 }
 
 // Rating, swing, KAST and match-time Elo by player id, first map only — the open API's stats read only
-// rounds[0] too. Anonymous first; a withheld board is asked again with FACEIT_COOKIE when it is set.
+// rounds[0] too. Signed in when FACEIT_COOKIE is usable; anonymous otherwise, or when that is refused.
 export async function getMatchScoreboard(matchId: string): Promise<Map<string, ScoreboardLine>> {
   const url = `https://www.faceit.com/api/statistics/v1/cs2/matches/${encodeURIComponent(matchId)}/match-rounds/1/scoreboard-summary`;
-  const session = await siteSession();
-  let res = await siteGet(() => session.get(url));
-  const withheldAnonymously = res.status === 403 && res.body.includes("err_f0");
-  if (withheldAnonymously) {
-    if (!FACEIT_COOKIE || cookieRejected) {
-      throw new Error(`faceit.com 403: err_f0, and FACEIT_COOKIE is ${cookieRejected ? "rejected — set a fresh one and restart" : "not set"}`);
+  const signedIn = FACEIT_COOKIE && !cookieRejected ? await signedInGet(url) : null;
+  let res: SiteResponse;
+  if (signedIn && "status" in signedIn) {
+    lastRefusal = "";
+    res = signedIn;
+  } else {
+    if (signedIn) {
+      if (signedIn.kind !== lastRefusal) console.error(`[faceit] scoreboard refused with FACEIT_COOKIE (${signedIn.detail}), asking anonymously`);
+      lastRefusal = signedIn.kind;
     }
-    res = await signedInGet(url);
+    const session = await siteSession();
+    res = await siteGet(() => session.get(url));
+    // Status 0 is the library's own transport error, and its reason is only in the body.
+    if (res.status !== 200) {
+      // The cookie is named only where it could have helped: after a refusal, or on a withheld board.
+      const via = signedIn ? `, after FACEIT_COOKIE got ${signedIn.detail}`
+        : res.body.includes("err_f0") ? `, FACEIT_COOKIE ${cookieRejected ? "rejected — set a fresh one and restart" : "not set"}` : "";
+      throw new Error(`faceit.com ${res.status}: anonymously${via}: ${res.body.slice(0, 160)}`);
+    }
   }
-  // Status 0 is the library's own transport error, and its reason is only in the body.
-  if (res.status !== 200) throw new Error(`faceit.com ${res.status}: ${res.body.slice(0, 160)}`);
   const data = await res.json<FaceitScoreboard>();
   const lines = new Map<string, ScoreboardLine>();
   const teams = data.payload?.cs2?.teams ?? [];
@@ -263,6 +286,5 @@ export async function getMatchScoreboard(matchId: string): Promise<Map<string, S
       lines.set(p.player_id, { rating, swing, kast, elo, calibrating: p.is_calibrating === true });
     }
   }
-  if (withheldAnonymously) console.log(`[faceit] scoreboard ${matchId} withheld anonymously, read with FACEIT_COOKIE`);
   return lines;
 }
