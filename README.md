@@ -94,7 +94,7 @@ two can't disagree.
 
 ## Running it
 
-You need Node 24+, a bot token, and two settings on the bot itself:
+You need Node 24.3+, a bot token, and two settings on the bot itself:
 
 - **Privacy mode off** — BotFather → `/setprivacy` → your bot → Disable. Without this the bot never
   sees `@all`, because Telegram only forwards commands to a privacy-mode bot.
@@ -143,6 +143,7 @@ Everything is set through environment variables, all read in one place,
 | `DATA_DIR` | `/app/data` in the image, `app/data` locally | Where `members.db` goes |
 | `FACEIT_POLL_MINUTES` | `20` | How often to check for finished matches (minimum `5`) |
 | `EU_TIMEZONE_MEMBERS` | empty | Comma-separated user IDs whose typed times mean CET rather than Kyiv |
+| `UV_THREADPOOL_SIZE` | `8` in the image, CPU cores × 2 locally | Node's libuv threadpool, which faceit.com requests share with DNS; at most half of it goes to them |
 
 > A Dockerfile `ENV` beats the default in `src/config.ts`, so changing one alone won't reach the
 > container — change both.
@@ -183,7 +184,8 @@ manually from the Actions tab against the commit SHA you want.
 
 ## Contributing
 
-Branch, open a PR against `main`, let [CI](.github/workflows/ci.yml) typecheck it. Merging
+Branch, open a PR against `main`, let [CI](.github/workflows/ci.yml) typecheck it and smoke-test
+the Docker image. Merging
 deploys to production, so keep `main` green — run `npm run typecheck` before you push.
 
 Since the merge is the release, fold the version bump into the change's own commit rather than a

@@ -29,6 +29,10 @@ export const DATA_DIR = process.env.DATA_DIR || "./app/data";
 // Floored at 5 so a typo can't turn the poll into a hammer.
 export const FACEIT_POLL_MINUTES = Math.max(5, Number(process.env.FACEIT_POLL_MINUTES) || 20);
 
+// libuv's threadpool, which libuv itself reads; faceit.com requests may hold half of it, so DNS keeps
+// the rest. Unset locally, node-tls-client sets it to cores × 2 on import, so the cap there depends on load order.
+export const TLS_CONCURRENCY = Math.max(1, Math.floor((Number(process.env.UV_THREADPOOL_SIZE) || 8) / 2));
+
 // Comma-separated Telegram user IDs whose typed event times mean CET, not Kyiv. Parsed by
 // eventtime.ts, which warns about entries that aren't user IDs.
 export const EU_TIMEZONE_MEMBERS = process.env.EU_TIMEZONE_MEMBERS || "";

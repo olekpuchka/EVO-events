@@ -461,19 +461,26 @@ rich fallback's map photo, the likeliest rejection, went with FACEIT's image.
 The open API has no FACEIT rating or swing; only faceit.com's own
 `/api/statistics/v1/cs2/matches/{id}/match-rounds/1/scoreboard-summary` does, and it sits behind
 Cloudflare. Plain `fetch` is challenged, so `adapters/faceit.ts` goes through `node-tls-client`
-with the **chrome_152** profile and navigation headers (`sec-fetch-mode: navigate`) — 120/124 get
+with the **chrome_154** profile and navigation headers (`sec-fetch-mode: navigate`) — 120/124 get
 a challenge, `cors` gets a 403. No key; the one cookie is the spare account's — see **Signed in
 first** below. The match-wide `/scoreboard-summary` 403s
 anonymous callers with `err_f0`; the per-map one does not, and it is what the site itself calls.
 Only map 1 is read, matching `rounds[0]` on the open API side.
 
-The profile is **newer than `node-tls-client`'s own enum**, which stops at 131: the name is passed
-through as a string to the Go library, whose pinned build (see below) knows up to 152. An unknown
-name does not fail — it silently falls back to a default fingerprint — so check a new one against
-that version's `profiles.go` before using it. It was moved off 131 after a production Cloudflare
-challenge ("Just a moment...") on a fingerprint two years stale. `sec-ch-ua` must move with it:
-Chrome derives the GREASE brand (`Not?A_Brand`) and the brand order from its major version, and
-131's string sent under a 152 user agent is itself a bot signal.
+The profile is picked from `node-tls-client`'s own enum by `CHROME`, so a version the wrapper
+doesn't know fails typecheck. That is only half the check: the name is handed to the Go library,
+whose pinned build (see below) is what actually draws the fingerprint, and the two drift — 154
+needed Go 1.18.1, since 1.16.0 stopped at 152. An unknown name does not fail there — it silently
+falls back to a default fingerprint — so CI's image smoke fails unless the baked library carries
+the profile's name, which sits in the binary as a plain string. Check the pinned version's
+`profiles/internal_browser_profiles.go` before bumping all the same. It was moved off 131 after a production Cloudflare
+challenge ("Just a moment...") on a fingerprint two years stale.
+
+`sec-ch-ua` is **computed from `CHROME`** (`secChUa`, a port of Chromium's
+`GetGreasedUserAgentBrandVersion`): the GREASE brand, its version and the brands' order all follow
+the major version, and a string from another version is itself a bot signal. It was hand-written
+before, and the 152 one had the order wrong — `Google Chrome` first where 152 sends `Chromium` —
+from the day it shipped. The port reproduces 120, 124, 131 and 138's real strings.
 
 It is **best-effort by design**, but not on the first failure: any failed fetch is **held once**
 (covered further down), and a failure with no hold left logs `[faceit] scoreboard fetch failed` and
@@ -540,9 +547,10 @@ Every signed-in request — a 429 re-try included — opens a **fresh session an
 shared with the anonymous session, a signed-in cookie would ride on every later "anonymous" request
 and hide the token's death; reused, even for one 429 re-try, a rotated token would go out beside the
 stale one. A token reused across many requests over hours stayed valid, so it does not rotate on
-use. Passing the cookie through the request's `cookies` option instead fails outright —
-tough-cookie refuses a `__Host-` cookie set without `Secure`. The cookie header goes where Chrome
-puts it, before `priority`, not at the end: header
+use. On 2.1, passing the cookie through the request's `cookies` option failed outright —
+tough-cookie refused a `__Host-` cookie set without `Secure`; 2.2 no longer routes it through
+tough-cookie, but the header stays, because only the header puts it where Chrome does — before
+`priority`, not at the end: header
 order is part of the fingerprint, and these are the requests carrying the account. `config.ts`
 takes a bare value, a `name=value` pair or a whole pasted Cookie header, and strips quotes.
 
@@ -645,11 +653,30 @@ with the teams' order flipped, and no mean, power mean or trimmed mean fitted bo
 `winProbability`, so it is most likely FACEIT's matchmaking figure. Don't go back to it: the banner
 would contradict the rows under it.
 
-The library loads a Go shared object through koffi. On Linux x64 it looks for
-`os.tmpdir()/tls-client-x64.so` and, if missing, downloads the glibc build from
-bogdanfinn/tls-client's *latest* release — unpinned. The Dockerfile therefore bakes that same
-**ubuntu-amd64** build, pinned by version and sha256, at that exact path. Bump both args together.
-On a dev machine the download is left to happen once.
+The library loads a Go shared object through koffi. Since 2.2 it looks for
+`os.tmpdir()/tls-client-<package version>-linux-amd64.so` on Linux x64 and, if missing, downloads
+bogdanfinn/tls-client's *latest* release — unpinned. The Dockerfile therefore bakes the
+**ubuntu-amd64** build, pinned by version and sha256, at that path, reading the package version from
+its installed `package.json` so an npm bump can't drift from it. That file is copied in on its own
+before the rest of `node_modules`, so only a node-tls-client bump re-runs the GitHub download — any
+other dependency change would otherwise fail to build whenever GitHub did. Bump the two args together. The name
+changed once already: 2.1 looked for `tls-client-x64.so`, and 2.2 reads that only after a download
+fails — a Dockerfile left on the old name would have shipped whatever upstream released last. CI's
+image smoke fails unless the temp dir holds that one file, owned by root: a library the bot downloaded
+itself would be `botuser`'s, even under the same name. On a dev machine the
+download is left to happen once.
+
+Each request on the upstream binary **holds a libuv threadpool thread** for its whole length, the same
+pool that serves DNS for every `fetch` and file reads. 2.2 sizes it at twice `availableParallelism()`
+when `UV_THREADPOOL_SIZE` is unset, and what a 0.25-CPU container reports there depends on the host —
+affinity mask or cgroup quota — so the size would be unknown. The Dockerfile pins it at 8, and
+`tlsReady` caps the library at half of it (`TLS_CONCURRENCY` in `config.ts`, passed as
+`initTLS({ concurrency })`, which otherwise takes the whole pool), so half always stays free for DNS:
+slow faceit.com requests can't stall Telegram. The cap is derived rather than a constant so a host
+override of the variable moves both. Locally the variable is unset and the library sets it to
+cores × 2 on import, so the cap reads 4 or the core count depending on which module loads first —
+harmless on a dev machine, and the image pins it either way. `engines` asks for Node 24.3 or later:
+before it, an ES-module entry like `bot.ts` started the pool at 4 before the library could size it.
 
 **The image is Debian (`node:24-slim`), not Alpine, because of this library.** 1.15.0 shipped on
 `node:24-alpine` with upstream's *alpine* build, and it would not load: `Error relocating …
@@ -661,19 +688,14 @@ musl can't be `dlopen`ed into Node that way, whatever the file is called. The sl
 it on Alpine. The files already on the `/app/data` volume belong to those ids; a Debian-assigned
 pair would boot unable to write `members.db`. CI builds both and fails if they differ.
 
-That failed load also **crashed the process**, and not through the request. The pool starts several
-workers up front; the one given the request failed it, which `getMatchScoreboard`'s caller caught
-and logged — but the idle ones have no request to fail, so the pool emits `'error'`, and an
-EventEmitter with no listener throws. `siteSession` therefore listens on the pool: a library that
-won't load now logs `[faceit] tls worker failed` once per worker and costs the scoreboard only —
-plus one poll's delay, since the first failure is held (see **Rating and swing**).
-
-On a failed download the library calls **`process.exit(1)`** from inside `initTLS`, where no
-`.catch` can reach it. `ensureNativeLibrary` runs the same check and download itself first, so a
-failure throws instead and the post just loses Rating and Elo. The library creates the file
-before downloading and keeps it on an HTTP error, so a failure also deletes it — left behind, every
-later check would trust an empty library. That guard and the pool listener reach three internals,
-typed by hand in `src/node-tls-client.d.ts` — re-check them on a `node-tls-client` bump.
+That failed load also **crashed the process** on 2.1: its worker pool's idle workers had no request
+to fail, so the pool emitted an unheard `'error'`; and a failed download called `process.exit(1)`
+from inside `initTLS`. Both needed workarounds reaching three internals. **2.2 removed both causes** —
+no worker pool, and `initTLS` throws a `TlsClientError` on a library that won't load or download,
+having written it to a temp file first — so `tlsReady` is now just `initTLS()` with the failure
+dropped for the next poll to retry, and the bot imports nothing from the package but its public API
+and shipped typings. A library that won't load costs the scoreboard only, plus one poll's delay,
+since the first failure is held (see **Rating and swing**).
 
 ## Result card
 
@@ -875,7 +897,8 @@ Deploy typechecks again before shipping, so a red one means the merge would fail
 `image` builds the real Docker image, because typecheck can't see inside it: 1.15.0 passed CI with
 a native library that couldn't load in production. It checks that `botuser` still has the uid/gid
 the Alpine image gave it, then runs `.github/ci/image-smoke.cjs` inside the container, which fails
-if the TLS library won't load in the request worker or in any idle one. A 403 or 429 from
+if the TLS library won't complete a request, or if it downloaded a library of its own rather than
+using the one the Dockerfile baked, or if that one lacks the Chrome profile `faceit.ts` asks for (see **Rating and swing**). A 403 or 429 from
 faceit.com still passes: the runner's IP may be challenged, but a status code means the library
 worked. It sets a fake `FACEIT_COOKIE`, so the signed-in session — the main path — runs first, is
 refused, and the anonymous one follows. A signed-in status 0 throws rather than falling back,

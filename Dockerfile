@@ -26,20 +26,29 @@ RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
-# node-tls-client's native library, pinned and pre-placed where it looks first — left to itself it
-# downloads an unpinned release at runtime. Fetched with Node: the slim image has no wget or curl.
-ARG TLS_CLIENT_VERSION=1.16.0
-ARG TLS_CLIENT_SHA256=2ec853496634545e7a7ea028715763948d55bbdd97aca7ecaa9fea8c2ebb08df
-RUN node -e "fetch(process.argv[1]).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }).then(b => require('fs').writeFileSync('/tmp/tls-client-x64.so', Buffer.from(b)))" \
-      "https://github.com/bogdanfinn/tls-client/releases/download/v${TLS_CLIENT_VERSION}/tls-client-linux-ubuntu-amd64-${TLS_CLIENT_VERSION}.so" \
- && echo "${TLS_CLIENT_SHA256}  /tmp/tls-client-x64.so" | sha256sum -c - \
- && chmod 644 /tmp/tls-client-x64.so
-
 # Non-root user, with the uid/gid the Alpine image gave it: files already on the /app/data volume
 # belong to those ids, and a new pair would boot unable to write members.db. CI checks they match.
 RUN groupadd --system --gid 101 botgroup && useradd --system --uid 100 --gid botgroup --no-create-home botuser
 
+# Its package.json alone first, so a bump to any other dependency doesn't re-download the library.
+COPY --from=deps /app/node_modules/node-tls-client/package.json /tmp/node-tls-client.json
+
+# node-tls-client's native library, pinned, under the versioned name it looks for before downloading
+# an unpinned release. Fetched with Node: slim has no wget or curl.
+ARG TLS_CLIENT_VERSION=1.18.1
+ARG TLS_CLIENT_SHA256=719ad7f9772d4a72572e4eb9c1aace289a13eaa9bf3862c32f5dce6222d5644f
+RUN lib="/tmp/tls-client-$(node -p "require('/tmp/node-tls-client.json').version")-linux-amd64.so" \
+ && node -e "fetch(process.argv[1]).then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.arrayBuffer(); }).then(b => require('fs').writeFileSync(process.argv[2], Buffer.from(b)))" \
+      "https://github.com/bogdanfinn/tls-client/releases/download/v${TLS_CLIENT_VERSION}/tls-client-linux-ubuntu-amd64-${TLS_CLIENT_VERSION}.so" "$lib" \
+ && echo "${TLS_CLIENT_SHA256}  $lib" | sha256sum -c - \
+ && chmod 644 "$lib" \
+ && rm /tmp/node-tls-client.json
+
+# Each faceit.com request holds a libuv thread, the pool DNS uses too; unset, it scales with CPU count.
+ENV UV_THREADPOOL_SIZE=8
+
 COPY --from=deps /app/node_modules ./node_modules
+
 COPY bot.ts ./
 COPY src/ ./src/
 # The fonts the result card is drawn with — satori draws only the fonts it is handed.
