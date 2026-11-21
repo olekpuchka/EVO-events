@@ -205,6 +205,8 @@ export interface MatchResult {
   mapId: string | null;
   matchId: string;
   rows: ResultRow[];
-  // Why faceit.com's figures are missing or partial; the poll holds such a match once.
+  // Why faceit.com's figures are missing or partial; the poll holds such a match once, unless pending.
   scoreboardProblem?: string;
+  // The board answered but isn't filled in yet; the poll holds it up to an hour after the match.
+  scoreboardPending?: boolean;
 }

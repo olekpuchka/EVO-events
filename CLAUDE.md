@@ -559,9 +559,11 @@ missing a rating for **anyone on our team** as a failed fetch, so a half-compute
 Our whole team rather than our members, because the MVP is judged across it (see **Result card**);
 the opponents are left out, so a missing figure there costs only the Elo pair. A player FACEIT never
 rates holds the match for a poll and then ships it with that row unrated and no MVP star, since the
-top can't be known; the log names who is missing. A payload with no players at all
-throws its own `scoreboard has no players` from `getMatchScoreboard`, so a schema change doesn't log
-as a timing problem.
+top can't be known; the log names who is missing. A payload with no players at all, or with nobody
+rated, throws `ScoreboardNotReadyError` from `getMatchScoreboard` — the one place "not ready" is
+decided. The first was read
+as a likely schema change once, but on 20 November 2026 a board answered that way for over 23 minutes
+after the match and read in full later — it is FACEIT still computing the board.
 
 Every non-challenge failure is therefore **held once**. `buildMatchResult` never decides that: it
 builds best-effort and names what went wrong in `scoreboardProblem`, and `autoPostResult` holds — the
@@ -569,7 +571,7 @@ match goes into `heldOnce`, and the next poll fetches it again and posts whateve
 scoreboard gets exactly one retry, then the post ships without figures. The builder once took a
 `holdDenied` flag and threw `DeniedError` through it, which put the poll's policy inside a builder
 the preview shares.
-`err_f0`, an unready scoreboard, a timeout, a 5xx and a 429 past its three waits are all the same
+`err_f0`, a partly rated scoreboard, a timeout, a 5xx and a 429 past its three waits are all the same
 case: a post with no figures is a real loss and nobody waits on it, so one poll's delay is cheap.
 It was `err_f0` alone at first (`DeniedError`), which held the failure seen to persist and shipped
 the transient ones bare on the first try — backwards. One retry, not more, because `err_f0` has been
@@ -579,6 +581,33 @@ hours under a long `FACEIT_POLL_MINUTES`, and none at all for a match first seen
 set is in memory, so a restart between the two attempts grants one more retry; harmless. A match
 within two poll intervals of the 24-hour candidate window's end is not held: the next poll would no
 longer see it, and the hold would lose the post outright.
+
+The exception is a board **faceit.com hasn't filled in yet**: no players at all, or nobody on either
+team rated (`scoreboardPending`) — the two shapes a still-computing board has actually been seen in.
+That is held on **every** poll until `PENDING_SECONDS` — an hour — after the match finished, logged
+each time (about three lines at the default interval). It never spends `heldOnce`: when it did, a 5xx
+or a half-filled board on the next poll found the one hold already spent and shipped bare at once. A
+separate `pendingHeld` set briefly deduplicated the log line, and was dropped as a second set every
+exit path had to clear. Entering the pending state also clears a hold an earlier
+failure spent, so past the hour a board still unready takes the ordinary hold and the last word is
+one poll later than the hour. One retry lost the figures of a match whose board took
+over 23 minutes, and unlike `err_f0` this failure is known to clear. A time window here, against the
+count rule above, because it is the board's age that decides whether it is ready, not how many times
+we asked; a match first seen after downtime older than an hour gets the ordinary one hold. Only *nobody*
+rated counts — our team unrated with the opponents rated, or one or two unrated, may be players FACEIT
+never rates, and those keep the one hold. A changed payload — `teams` gone, or the rating field
+renamed — looks exactly like a slow board, and the 20 November log can't say which shape that board
+had, so both are held as pending. What tells them apart is time: a board still unfilled once the hour
+is up logs `still unfilled an hour after the match (payload changed?)`.
+
+A pending hold **stops the poll** for that chat, unlike the ordinary hold: later matches are not built
+until it clears. Built, each spent a scoreboard request against the 5-per-30s limit on every poll of
+the hour, and a transient failure there spent its one hold while it couldn't post anyway — then
+shipped bare the moment the pending match cleared. Stopping the poll is what the ordinary hold
+rejected (below), but the hour bounds it here: a match more than an hour old is never pending, so a
+lasting empty board can't walk a backlog through one match an hour. The cost: a pending match keeps
+every later post back for up to that hour, and a board that never fills in costs that hour each
+time; the ordinary hold's log line after the hour is what shows it.
 
 A hold **keeps later matches back** rather than posting past it: posting them first put the held
 one below them in the chat. They are still built, so each one's scoreboard is tried and a failure gets

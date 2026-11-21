@@ -178,6 +178,9 @@ async function siteSession(): Promise<Session> {
 // Cloudflare's "Just a moment..." page rather than an answer from faceit.com.
 export class ChallengeError extends Error {}
 
+// A 200 whose board faceit.com hasn't filled in yet; it fills in later, unlike err_f0.
+export class ScoreboardNotReadyError extends Error {}
+
 type SiteResponse = Awaited<ReturnType<Session["get"]>>;
 
 // One GET, waiting out up to three 429s — the limit is 5 per 30s per IP. A challenge throws.
@@ -272,8 +275,9 @@ export async function getMatchScoreboard(matchId: string): Promise<Map<string, S
   }
   const data = await res.json<FaceitScoreboard>();
   const lines = new Map<string, ScoreboardLine>();
+  // Which shape a still-computing board takes is unknown, so a missing teams array counts as not ready too.
   const teams = data.payload?.cs2?.teams ?? [];
-  if (!teams.some(t => t.players?.length)) throw new Error("faceit.com 200: scoreboard has no players");
+  if (!teams.some(t => t.players?.length)) throw new ScoreboardNotReadyError("faceit.com 200: scoreboard has no players");
   for (const team of teams) {
     for (const p of team.players ?? []) {
       const rating = p.stats?.faceit_rating, swing = p.stats?.faceit_rating_swing;
@@ -286,5 +290,7 @@ export async function getMatchScoreboard(matchId: string): Promise<Map<string, S
       lines.set(p.player_id, { rating, swing, kast, elo, calibrating: p.is_calibrating === true });
     }
   }
+  // Players listed but nobody rated is the other shape of a board still being computed.
+  if (!lines.size) throw new ScoreboardNotReadyError("faceit.com 200: no player rated yet");
   return lines;
 }

@@ -49,10 +49,12 @@ FACEIT's own map images are too small for the banner; a map not in there gets a 
 
 Rating, swing, KAST and the exact per-match Elo change come from faceit.com's own scoreboard, which the
 open FACEIT API doesn't carry. That fetch is **best-effort**: when it fails — an error, a match
-faceit.com withholds (`403 err_f0`) both signed in and anonymously, or one whose figures it hasn't
-computed yet — the match is held, along with any match played after it, and retried once on the next poll.
+faceit.com withholds (`403 err_f0`) both signed in and anonymously, or one with a player still unrated —
+the match is held, along with any match played after it, and retried once on the next poll.
 If it fails again the post goes out without the Rating and KAST columns, the Elo lines or the teams'
-Elo. A Cloudflare challenge holds its match until the challenge clears.
+Elo. A scoreboard faceit.com hasn't filled in yet — no players, or nobody on either team rated — is
+instead retried on every poll until an hour after the match, then held once more like any failure;
+matches played after it wait without being fetched. A Cloudflare challenge holds its match until the challenge clears.
 
 Since late October 2026 faceit.com withholds nearly every scoreboard from anonymous callers. With
 `FACEIT_COOKIE` set, every scoreboard is fetched as a signed-in spare account; without it, once

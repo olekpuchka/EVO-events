@@ -22,6 +22,9 @@ const WINDOW_SECONDS = 24 * 60 * 60;
 // Matches already held once for a failed scoreboard, by chat; the next poll posts them without figures.
 const heldOnce = new Set<string>();
 
+// A board faceit.com is still filling in is held every poll until this long after the match.
+const PENDING_SECONDS = 60 * 60;
+
 // Non-breaking spaces keep "1234 Elo ↑25" on one line, so the narrow player cell never wraps past two.
 const eloLine = (after: number, change: number | null): string =>
   `${after}\u00a0Elo${change !== null ? `\u00a0${eloArrow(change)}` : ""}`;
@@ -108,13 +111,14 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
   let holding = false;
   for (const [matchId, finishedAt] of sortedMatches) {
     const heldKey = `${chatId}:${matchId}`;
+    const settle = (): void => { markMatchPosted(chatId, matchId); heldOnce.delete(heldKey); };
     let result: MatchResult | null;
     try {
       const stats = await getMatchStats(matchId);
       if (!stats) {
         // The details tell a voided match, or one missing stats >30 min, from one still processing.
         const details = await getMatchDetails(matchId);
-        if (!details || details.status !== "FINISHED" || now - finishedAt > 30 * 60) markMatchPosted(chatId, matchId);
+        if (!details || details.status !== "FINISHED" || now - finishedAt > 30 * 60) settle();
         continue;
       }
       result = await buildMatchResult(stats, registeredIds, matchId);
@@ -124,20 +128,30 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
     }
     // Too few of us, or no details: never posted, so marked done.
     if (!result) {
-      markMatchPosted(chatId, matchId);
-      heldOnce.delete(heldKey);
+      settle();
       continue;
     }
 
+    // Stops the poll: later matches aren't built, so they spend no requests or holds while blocked.
+    // Past the hour it falls through to the ordinary one hold, kept unspent here.
+    if (result.scoreboardPending && now - finishedAt < PENDING_SECONDS) {
+      console.log("[faceit] scoreboard not ready, held up to an hour:", result.scoreboardProblem);
+      heldOnce.delete(heldKey);
+      break;
+    }
+    // Unfilled past the hour reads the same as a renamed rating field, so the log says so.
+    const problem = result.scoreboardPending
+      ? `${result.scoreboardProblem}, still unfilled an hour after the match (payload changed?)`
+      : result.scoreboardProblem;
     // Held once, unless near the window's end, where the next poll would no longer see it.
-    if (result.scoreboardProblem && !heldOnce.has(heldKey) && now - finishedAt < WINDOW_SECONDS - 2 * FACEIT_POLL_MINUTES * 60) {
+    if (problem && !heldOnce.has(heldKey) && now - finishedAt < WINDOW_SECONDS - 2 * FACEIT_POLL_MINUTES * 60) {
       heldOnce.add(heldKey);
       holding = true;
-      console.log("[faceit] scoreboard failed, held for one poll:", result.scoreboardProblem);
+      console.log("[faceit] scoreboard failed, held for one poll:", problem);
       continue;
     }
     if (holding) continue;
-    if (result.scoreboardProblem) console.error("[faceit] scoreboard fetch failed:", result.scoreboardProblem);
+    if (problem) console.error("[faceit] scoreboard fetch failed:", problem);
 
     // Not marked posted on failure, so the next poll retries.
     try {
@@ -146,8 +160,7 @@ export async function autoPostResult(api: Api, chatId: number | string): Promise
       console.error("[faceit] poll send failed:", (err as Error).message);
       continue;
     }
-    markMatchPosted(chatId, matchId);
-    heldOnce.delete(heldKey);
+    settle();
     console.log("[faceit] auto-posted result");
   }
 }
