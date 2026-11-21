@@ -522,8 +522,10 @@ back.
 The value is an opaque 36-character id, not a JWT — nothing in it says when it expires. The
 browser keeps the cookie 90 days and `__Host-AuthSession` 30, but those are storage dates, not
 FACEIT's verdict; **logging the account out kills it at once**, and two tokens died that way while
-this was being built. Expect to re-copy it roughly monthly, and never from your main account:
-whatever is stored can act as that account, and it is that account that risks a ban.
+this was being built. Left alone it **lasts 21 days**: the token copied on 1 November died on
+21 November with nobody logging out, so a fresh one is due every three weeks. Never copy it from
+your main account: whatever is stored can act as that account, and it is that account that risks a
+ban.
 
 A dead token answers **`400 invalid_token`**, distinct from `err_f0`, so it is the one failure that
 names the cookie in the log (`[faceit] FACEIT_COOKIE rejected … restart`). The env var is read once,

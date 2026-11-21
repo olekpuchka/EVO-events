@@ -59,7 +59,7 @@ matches played after it wait without being fetched. A Cloudflare challenge holds
 Since late October 2026 faceit.com withholds nearly every scoreboard from anonymous callers. With
 `FACEIT_COOKIE` set, every scoreboard is fetched as a signed-in spare account; without it, once
 that login has expired, or when the signed-in request is refused, the bot asks anonymously. When
-the login expires the log says `[faceit] FACEIT_COOKIE rejected`: copy a fresh value and restart.
+the login expires — after 21 days — the log says `[faceit] FACEIT_COOKIE rejected`: copy a fresh value and restart.
 
 **Birthdays.** Members add their own date with `/birthday 25-08-1990`, and on the day the bot posts
 a short toast written for them — 70 words at most, and the only AI-written message the bot sends.
@@ -133,7 +133,7 @@ Everything is set through environment variables, all read in one place,
 |---|---|
 | `BOT_TOKEN` | Required. The process exits at startup without it |
 | `FACEIT_API_KEY` | Required for match results ([developers.faceit.com](https://developers.faceit.com)). Without it the bot starts, warns, and every poll 401s |
-| `FACEIT_COOKIE` | Optional. The value of the `__Host-FaceitGatewayAuthorization` cookie from a **spare** FACEIT account, signed in on faceit.com (DevTools → Application → Cookies). Sent on every scoreboard request. Unset, scoreboards are asked for anonymously, and a withheld one is held one poll, then posts without figures. Don't log that account out — it kills the value; expect to re-copy it about monthly |
+| `FACEIT_COOKIE` | Optional. The value of the `__Host-FaceitGatewayAuthorization` cookie from a **spare** FACEIT account, signed in on faceit.com (DevTools → Application → Cookies). Sent on every scoreboard request. Unset, scoreboards are asked for anonymously, and a withheld one is held one poll, then posts without figures. Don't log that account out — it kills the value. It lasts **21 days**, so re-copy it every three weeks |
 | `DEEPSEEK_API_KEY` | Optional, for birthday toasts. Unset means a built-in toast instead of an AI one |
 
 **Everything else** is defaulted, so the bot runs with no configuration at all.
