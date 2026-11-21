@@ -52,7 +52,7 @@ jobs:
           echo "image: $new, Alpine: $old"
           [ "$new" = "$old" ]
 
-      - name: The native TLS library loads inside the image
+      - name: The pinned native TLS library loads inside the image
         run: >
           docker run --rm
           -v "$PWD/.github/ci/image-smoke.cjs:/app/.github/ci/image-smoke.cjs:ro"

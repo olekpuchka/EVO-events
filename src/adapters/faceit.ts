@@ -8,13 +8,8 @@ import type {
   ScoreboardLine,
 } from "../types.ts";
 
-import type { OutgoingHttpHeaders } from "node:http";
-import { access, rm } from "node:fs/promises";
 import { Session, ClientIdentifier, initTLS } from "node-tls-client";
-import { LibraryHandler } from "node-tls-client/dist/utils/native.js";
-import { LibraryDownloader } from "node-tls-client/dist/utils/download.js";
-import { Client } from "node-tls-client/dist/lib/Client.js";
-import { FACEIT_API_KEY, FACEIT_COOKIE } from "../config.ts";
+import { FACEIT_API_KEY, FACEIT_COOKIE, TLS_CONCURRENCY } from "../config.ts";
 
 const BASE = "https://open.faceit.com/data/v4";
 
@@ -108,12 +103,26 @@ export async function getAvatar(url: string | null): Promise<Uint8Array | null> 
 
 // faceit.com's own API, for what the open one lacks. Cloudflare admits a current Chrome fingerprint
 // with navigation headers — see **Rating and swing** in CLAUDE.md.
-const CHROME = 152;
+export const CHROME = 154;
+
+// Chromium's GetGreasedUserAgentBrandVersion: the GREASE brand and the brands' order follow the major version.
+function secChUa(major: number): string {
+  const c = [" ", "(", ":", "-", ".", "/", ")", ";", "=", "?", "_"];
+  const brands = [
+    `"Not${c[major % 11]}A${c[(major + 1) % 11]}Brand";v="${["8", "99", "24"][major % 3]}"`,
+    `"Chromium";v="${major}"`,
+    `"Google Chrome";v="${major}"`,
+  ];
+  const order = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]][major % 6]!;
+  const out: string[] = [];
+  order.forEach((at, i) => (out[at] = brands[i]!));
+  return out.join(", ");
+}
+
 const SITE_HEADERS = {
   "cache-control": "no-cache",
   pragma: "no-cache",
-  // Chrome's GREASE brand and order change with its version; this is 152's.
-  "sec-ch-ua": `"Google Chrome";v="${CHROME}", "Not?A_Brand";v="24", "Chromium";v="${CHROME}"`,
+  "sec-ch-ua": secChUa(CHROME),
   "sec-ch-ua-mobile": "?0",
   "sec-ch-ua-platform": '"Windows"',
   "upgrade-insecure-requests": "1",
@@ -128,44 +137,24 @@ const SITE_HEADERS = {
   priority: "u=0, i",
 };
 
-// initTLS process.exit()s if its native library is missing and the download fails, so fetch it
-// here first, where failing is an ordinary error.
-async function ensureNativeLibrary(): Promise<void> {
-  const file = LibraryHandler.path;
-  if (await access(file).then(() => true, () => false)) return;
-  if (!(await LibraryDownloader.retrieveLibrary(LibraryHandler.retrieveFileInfo(), file))) {
-    // The library creates the file before downloading and leaves it on an HTTP error; left
-    // there, the next check would take it for a real library.
-    await rm(file, { force: true });
-    throw new Error("tls-client native library unavailable");
-  }
-}
-
 // The library hands header values back as arrays.
 const firstHeader = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v);
 
-// Loaded on first use; a failed init is dropped so the next poll tries again.
+// Loaded on first use; a library that won't load or download throws, and the next poll tries again.
+// Capped at half the threadpool: each request holds a pool thread DNS needs too.
 let tls: Promise<void> | null = null;
 function tlsReady(): Promise<void> {
-  tls ??= ensureNativeLibrary()
-    .then(() => initTLS())
-    .then(() => {
-      // An idle worker whose library won't load has no request to fail, so the pool emits 'error' —
-      // unheard, that kills the process. Heard, a bad library costs only the scoreboard.
-      Client.getInstance().pool.on("error", err => console.error("[faceit] tls worker failed:", (err as Error).message));
-    })
-    .catch(err => { tls = null; throw err; });
+  tls ??= initTLS({ concurrency: TLS_CONCURRENCY }).catch(err => { tls = null; throw err; });
   return tls;
 }
 
 function newSession(headers: Record<string, string>): Session {
   return new Session({
-    // Newer than the wrapper's enum; the Go library knows it, and falls back silently on a name it doesn't.
-    clientIdentifier: `chrome_${CHROME}` as ClientIdentifier,
+    // The pinned Go build must know it too: on a name it doesn't, it falls back silently.
+    clientIdentifier: ClientIdentifier[`chrome_${CHROME}`],
     timeout: TIMEOUT_MS,
     headers,
-    // Header names at runtime; the library's typings mistype it as an array of header objects.
-    headerOrder: Object.keys(headers) as unknown as OutgoingHttpHeaders[],
+    headerOrder: Object.keys(headers),
   });
 }
 
