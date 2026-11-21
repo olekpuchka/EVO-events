@@ -1,7 +1,7 @@
 // Finished FACEIT match → the MatchResult both renderers draw. Apart from results.ts because it
 // imports no database, so scripts/card-preview.ts can build a real match through it.
 
-import { getMatchDetails, getMatchScoreboard, getPlayerById, ChallengeError } from "../adapters/faceit.ts";
+import { getMatchDetails, getMatchScoreboard, getPlayerById, ChallengeError, ScoreboardNotReadyError } from "../adapters/faceit.ts";
 import type { FaceitMatchStats, FaceitStatPlayer, EloPair, ResultRow, MatchResult } from "../types.ts";
 
 // A match posts only if this many of us were on our team.
@@ -42,9 +42,11 @@ export async function buildMatchResult(
 
   // Best-effort: a failed scoreboard drops Rating and Elo and is reported, not thrown; a challenge is rethrown.
   let scoreboardProblem: string | undefined;
+  let scoreboardPending = false;
   const board = await getMatchScoreboard(matchId).catch(err => {
     if (err instanceof ChallengeError) throw err;
     scoreboardProblem = (err as Error).message;
+    scoreboardPending = err instanceof ScoreboardNotReadyError;
     return null;
   });
   // A fresh match can answer 200 before faceit.com has worked out its figures; the MVP needs our whole team's.
@@ -103,5 +105,5 @@ export async function buildMatchResult(
   const [ourElo, theirElo] = await Promise.all([teamElo(ourTeam.players), teamElo(theirTeam?.players)]);
   const elo: EloPair | null = ourElo !== null && theirElo !== null ? { ours: ourElo, theirs: theirElo } : null;
 
-  return { won, ourScore, theirScore, elo, mapId, matchId, rows: resultRows, scoreboardProblem };
+  return { won, ourScore, theirScore, elo, mapId, matchId, rows: resultRows, scoreboardProblem, scoreboardPending };
 }
